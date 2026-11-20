@@ -26,9 +26,11 @@ class RuntimeBundleImporter(
     fun importTree(uri: Uri): RuntimeImportResult {
         val source = DocumentFile.fromTreeUri(resolverContext(), uri)
         if (source == null || !source.isDirectory || !source.canRead()) throw IOException("Selected SAF tree is not readable.")
-        parent.mkdirs()
+        if (!parent.mkdirs() && !parent.isDirectory) throw IOException("Unable to create private runtime storage.")
+        // Recover a previous import interrupted between moving the active bundle and activating staging.
+        if (!target.exists() && backup.exists() && !backup.renameTo(target)) throw IOException("Unable to recover previous runtime bundle.")
+        if (target.exists()) backup.deleteRecursively()
         staging.deleteRecursively()
-        backup.deleteRecursively()
         if (!staging.mkdirs()) throw IOException("Unable to create runtime staging directory.")
         val counter = Counter()
         var activated = false
