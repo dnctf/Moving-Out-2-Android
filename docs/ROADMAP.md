@@ -11,7 +11,9 @@
 - [ ] Build or integrate Wine ARM64 + Box64 in reproducible CI pipeline
 - [ ] Android-safe native executable launch strategy and device verification
 - [ ] Wine prefix bootstrap and Windows x64 process execution integration
+- [x] Add bounded Unity version, metadata magic/version and PE architecture detection to selected game folder validation (file evidence only)
 - [ ] Unity 2021 / IL2CPP target-specific requirements and dependency checks
+- [x] Optional DXVK x64 DLL and Turnip ARM64 driver/ICD presence assessment in runtime bundle (presence only)
 - [ ] Vulkan surface/swapchain, memory heap and presentation testing
 - [ ] DXVK feasibility/integration and Turnip assessment for Adreno
 - [ ] Real first-frame test gate (capture and evidence, not simulated)
