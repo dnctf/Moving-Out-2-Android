@@ -3,6 +3,7 @@ package com.dnctf.movingout2.runtime
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
+import java.nio.file.Files
 
 class RuntimeManagerTest {
     @Test fun missingBundleBlocksLaunchAndReportsMissingComponents() {
@@ -14,7 +15,7 @@ class RuntimeManagerTest {
         assertTrue(manager.diagnostics().snapshot().isNotEmpty())
     }
     @Test fun validBundleIsNotMistakenForInstalledRuntime() {
-        val root = createTempDir(prefix = "manager-bundle-")
+        val root = Files.createTempDirectory("manager-bundle-").toFile()
         File(root, "runtime.properties").writeText("format_version=1\ntarget_abi=arm64-v8a\nbox64=b\nwine64=w\nwineserver=s\nlibrary_dir=lib\n")
         listOf("b","w","s").forEach { name ->
             File(root, name).apply {
