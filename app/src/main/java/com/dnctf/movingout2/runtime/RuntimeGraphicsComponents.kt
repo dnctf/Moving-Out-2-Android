@@ -33,15 +33,22 @@ object RuntimeGraphicsComponents {
             turnipDir == null -> "NOT_CONFIGURED"
             !turnipDir.isDirectory || !turnipDir.canRead() -> "INVALID_DIRECTORY"
             else -> {
-                val files = turnipDir.walkTopDown().maxDepth(8).filter { it.isFile }.toList()
+                val files = turnipDir.walkTopDown().maxDepth(8).filter { it.isFile }.take(2000).toList()
                 val driver = files.any { it.extension == "so" && isArm64Elf(it) }
-                val icd = files.any { it.extension.equals("json", true) && runCatching { it.readText().take(8192).contains("library_path") }.getOrDefault(false) }
+                val icd = files.any { it.extension.equals("json", true) && runCatching { readBoundedText(it, 8192).contains("library_path") }.getOrDefault(false) }
                 if (driver && icd) "FILES_PRESENT_UNVERIFIED" else "INCOMPLETE"
             }
         }
         if (turnipStatus == "FILES_PRESENT_UNVERIFIED") notes += "Turnip ARM64 driver and ICD metadata are present; loader integration and GPU execution are not verified."
         if (turnipStatus == "INCOMPLETE" || turnipStatus == "INVALID_DIRECTORY") notes += "Turnip path configured but ARM64 driver .so and ICD JSON are not both valid/present."
         return GraphicsBundleAssessment(dxvkStatus, turnipStatus, notes)
+    }
+
+    private fun readBoundedText(file: File, maxBytes: Int): String = file.inputStream().use { input ->
+        val buffer = ByteArray(maxBytes)
+        var offset = 0
+        while (offset < buffer.size) { val n = input.read(buffer, offset, buffer.size - offset); if (n <= 0) break; offset += n }
+        String(buffer, 0, offset, Charsets.UTF_8)
     }
 
     private fun isX64Pe(file: File): Boolean = runCatching {
