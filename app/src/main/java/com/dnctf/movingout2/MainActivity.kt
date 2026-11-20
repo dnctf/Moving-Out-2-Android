@@ -45,6 +45,7 @@ class MainActivity : Activity() {
         override fun onInputDeviceAdded(deviceId: Int) {}
         override fun onInputDeviceChanged(deviceId: Int) {}
         override fun onInputDeviceRemoved(deviceId: Int) {
+            gamepadTranslator.releaseAll()
             physicalControllerState = com.dnctf.movingout2.input.ControllerState()
             sendCombinedInput()
         }
@@ -82,6 +83,10 @@ class MainActivity : Activity() {
         container.addView(pad, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 460))
         dialog.setContentView(container)
         dialog.setTitle("Controller test")
+        dialog.setOnDismissListener {
+            touchControllerState = com.dnctf.movingout2.input.ControllerState()
+            sendCombinedInput()
+        }
         dialog.show()
         dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.96f).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
     }
