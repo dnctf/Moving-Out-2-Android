@@ -25,7 +25,8 @@ object LauncherHomeView {
         val importZip = Button(context).apply { text = "Import game from ZIP"; setOnClickListener { onImportGameZip() } }
         val select = Button(context).apply { text = "Select game folder"; setOnClickListener { onSelectFolder() } }
         val revalidate = Button(context).apply { text = "Revalidate saved folder"; setOnClickListener { onRevalidate() } }
-        val settings = Button(context).apply { text = "Audio, graphics and resolution settings"; setOnClickListener { onOpenSettings() } }\n        val controller = Button(context).apply { text = "Virtual controller test"; setOnClickListener { onControllerTest() } }
+        val settings = Button(context).apply { text = "Audio, graphics and resolution settings"; setOnClickListener { onOpenSettings() } }
+        val controller = Button(context).apply { text = "Virtual controller test"; setOnClickListener { onControllerTest() } }
         val graphicsTitle = TextView(context).apply { text = "Vulkan / GPU Diagnostics"; textSize = 20f; setPadding(0, 32, 0, 12) }
         val graphicsStatus = TextView(context).apply { textSize = 14f; setPadding(0, 8, 0, 12); text = "Probe pending." }
         val runtimeTitle = TextView(context).apply { text = "Native Runtime Bundle"; textSize = 20f; setPadding(0, 32, 0, 12) }
