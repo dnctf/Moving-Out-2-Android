@@ -59,7 +59,8 @@ class RuntimeManager(
         state = RuntimeState.STOPPING
         val launcher = wineLauncher
         runCatching { process.stop(1000) }
-        runCatching { launcher?.stop(process, 1000) }
+        runCatching { launcher?.neutralizeInputBridge() }
+        runCatching { launcher?.stopWineserver() }
         activeProcess = null
         state = RuntimeState.STOPPED
         diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "runtime", "Runtime stopped by user."))
