@@ -2,6 +2,7 @@ package com.dnctf.movingout2
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.ProgressDialog
 import android.os.Bundle
 import android.content.Intent
 import android.widget.TextView
@@ -20,6 +21,7 @@ import com.dnctf.movingout2.runtime.RuntimeGraphicsComponents
 import com.dnctf.movingout2.settings.LauncherSettings
 import com.dnctf.movingout2.ui.home.LauncherHomeView
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
@@ -162,18 +164,30 @@ class MainActivity : Activity() {
                 runtimeStatus.text = "Runtime bundle: STRUCTURE_VALIDATED\nCopied ${imported.copiedFiles} files (${imported.copiedBytes} bytes).\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${graphics.notes.joinToString("\n")}\nExecution/driver loading not verified; launch remains blocked."
             } catch (e: Exception) { runtimeStatus.text = "Runtime bundle import failed: ${e.message ?: e.javaClass.simpleName}\nExisting bundle is preserved when possible." }
             pickGameZip -> {
-                status.text = "Importing ZIP into private app storage…"
+                val cancelled = AtomicBoolean(false)
+                val progressDialog = ProgressDialog(this).apply {
+                    setTitle("Importing game ZIP")
+                    setMessage("Preparing safe import…")
+                    setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+                    setMax(100)
+                    setProgress(0)
+                    setCancelable(false)
+                    setButton(android.content.DialogInterface.BUTTON_NEGATIVE, "Cancel") { _, _ -> cancelled.set(true); setMessage("Cancelling safely…") }
+                }
+                progressDialog.show()
                 Thread({
                     val result = runCatching {
-                        GameZipImporter(this).importZip(uri, onProgress = { progress ->
+                        GameZipImporter(this).importZip(uri, cancelled = { cancelled.get() }, onProgress = { progress ->
                             runOnUiThread {
+                                progressDialog.setProgress(progress.percent)
                                 val mibDone = progress.bytesDone / (1024 * 1024)
                                 val mibTotal = progress.totalBytes / (1024 * 1024)
-                                status.text = "${progress.phase}: ${progress.percent}% (${progress.entriesDone}/${progress.totalEntries} files, ${mibDone}/${mibTotal} MiB)"
+                                progressDialog.setMessage("${progress.phase}: ${progress.percent}% (${progress.entriesDone}/${progress.totalEntries} entries, ${mibDone}/${mibTotal} MiB)")
                             }
                         })
                     }
                     runOnUiThread {
+                        progressDialog.dismiss()
                         status.text = result.fold({ imported ->
                             buildString {
                                 append("ZIP import successful. Files: ").append(imported.fileCount)
