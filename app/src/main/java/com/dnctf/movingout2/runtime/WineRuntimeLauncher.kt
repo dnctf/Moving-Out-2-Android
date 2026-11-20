@@ -4,7 +4,7 @@ import android.content.Context
 import com.dnctf.movingout2.input.RuntimeInputBridge
 import java.io.File
 import java.io.IOException
-import java.util.Properties
+import java.util.Properties\nimport org.json.JSONObject
 
 sealed class LaunchPreparationResult {
     data class MissingPayload(val blockers: List<String>) : LaunchPreparationResult()
@@ -45,8 +45,26 @@ class WineRuntimeLauncher(
         if (!report.isReady) return LaunchPreparationResult.MissingPayload(blockers)
         val root = report.root ?: return LaunchPreparationResult.MissingPayload(listOf("Runtime bundle root is unavailable."))
         val properties = Properties()
-        runCatching { File(root, "runtime.properties").inputStream().use(properties::load) }
-            .onFailure { return LaunchPreparationResult.MissingPayload(listOf("Runtime manifest cannot be read: ${it.message}")) }
+        val manifestFile = File(root, "runtime-manifest.json")
+        if (manifestFile.isFile) {
+            val parsed = RuntimeManifestParser().validate(root)
+            if (!parsed.valid) return LaunchPreparationResult.MissingPayload(parsed.errors)
+            val manifest = parsed.manifest ?: return LaunchPreparationResult.MissingPayload(listOf("Runtime manifest JSON unavailable."))
+            properties.setProperty("box64", parsed.componentFiles["box64"]?.relativeTo(root)?.path ?: "")
+            properties.setProperty("wine64", parsed.componentFiles["wine64"]?.relativeTo(root)?.path ?: "")
+            properties.setProperty("wineserver", parsed.componentFiles["wineserver"]?.relativeTo(root)?.path ?: "")
+            properties.setProperty("library_dir", parsed.componentFiles["wineLib"]?.relativeTo(root)?.path ?: "")
+            properties.setProperty("dxvk_dir", parsed.componentFiles["d3d11"]?.parentFile?.parentFile?.relativeTo(root)?.path ?: "")
+            properties.setProperty("turnip_dir", parsed.componentFiles["turnipSo"]?.parentFile?.relativeTo(root)?.path ?: "")
+            val profile = manifest.optJSONObject("defaultLaunchProfile")
+            if (profile != null) {
+                val envProfile = profile.optJSONObject("environment")
+                envProfile?.keys()?.forEach { key -> properties.setProperty("profile_env_$key", envProfile.optString(key)) }
+            }
+        } else {
+            runCatching { File(root, "runtime.properties").inputStream().use(properties::load) }
+                .onFailure { return LaunchPreparationResult.MissingPayload(listOf("Runtime manifest cannot be read: ${it.message}")) }
+        }
 
         val dxvkDir = resolve(root, properties.getProperty("dxvk_dir"), "DXVK")
         val turnipDir = resolve(root, properties.getProperty("turnip_dir"), "Turnip")
@@ -58,7 +76,9 @@ class WineRuntimeLauncher(
             if (dxvkDir == null) blockers += "DXVK directory is not configured."
             else for (name in listOf("d3d11.dll", "dxgi.dll")) if (!isValidX64Pe(File(dxvkDir, name))) blockers += "DXVK payload $name is missing or not x64 PE."
         }
-        val icd = turnipDir?.walkTopDown()?.maxDepth(8)?.firstOrNull { it.isFile && it.name.endsWith(".json", true) && runCatching { it.readText().contains("library_path") }.getOrDefault(false) }
+        val originalIcd = turnipDir?.walkTopDown()?.maxDepth(8)?.firstOrNull { it.isFile && it.name.endsWith(".json", true) && runCatching { it.readText().contains("library_path") }.getOrDefault(false) }
+        val turnipLibrary = turnipDir?.walkTopDown()?.maxDepth(8)?.firstOrNull { it.isFile && it.name == "libvulkan_freedreno.so" }
+        val icd = if (originalIcd != null && turnipLibrary != null && options.useTurnip) runCatching { rewriteTurnipIcd(originalIcd, turnipLibrary) }.getOrElse { blockers += "Unable to rewrite Turnip ICD: ${it.message}"; null } else originalIcd
         if (options.useTurnip && turnipDir == null) blockers += "Turnip directory is not configured."
         if (options.useTurnip && icd == null) blockers += "Turnip ICD JSON with library_path was not found."
         if (!gameExe.isFile || !isValidX64Pe(gameExe)) blockers += "Game executable is missing or not a valid x64 PE: ${gameExe.absolutePath}"
@@ -122,6 +142,15 @@ class WineRuntimeLauncher(
         neutralizeInputBridge()
         stopWineserver()
         diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "launcher", "Runtime process stopped; wineserver cleanup requested."))
+    }
+
+    internal fun rewriteTurnipIcd(source: File, library: File): File {
+        val json = JSONObject(source.readText())
+        json.put("library_path", library.absolutePath)
+        val sessionDir = File(context.filesDir, "runtime-session").apply { mkdirs() }
+        val out = File(sessionDir, "freedreno_icd.aarch64.json")
+        out.writeText(json.toString(2))
+        return out
     }
 
     internal fun toWineZPath(file: File): String {
