@@ -103,7 +103,11 @@ class WineRuntimeLauncher(
             if (!sharedInput.exists()) sharedInput.writeBytes(ByteArray(128))
             val zPath = toWineZPath(gameExe)
             val args = WineLaunchCommand.arguments(wine.absolutePath, zPath, options.width, options.height)
-            val env = WineLaunchCommand.environment(prefix, sharedInput, report.libraryDirectory!!, options.fpsCap, if (options.useTurnip) icd else null, dxvkDlls)
+            val env = WineLaunchCommand.environment(prefix, sharedInput, report.libraryDirectory!!, options.fpsCap, if (options.useTurnip && turnipDir != null) icd else null, dxvkDlls).toMutableMap()
+            properties.stringPropertyNames().filter { it.startsWith("profile_env_") }.forEach { property ->
+                val key = property.removePrefix("profile_env_")
+                if (key.startsWith("BOX64_DYNAREC") || key == "WINEDLLOVERRIDES") env[key] = properties.getProperty(property)
+            }
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "launcher", "Prepared Wine prefix and launch plan; execution compatibility remains unverified."))
             return LaunchPreparationResult.Prepared(WineLaunchPlan(box64, args, env, gameExe.parentFile ?: root, prefix, gameExe))
         } catch (e: Exception) {
