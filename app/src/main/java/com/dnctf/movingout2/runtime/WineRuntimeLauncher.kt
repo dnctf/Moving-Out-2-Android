@@ -81,21 +81,8 @@ class WineRuntimeLauncher(
             sharedInput.parentFile?.mkdirs()
             if (!sharedInput.exists()) sharedInput.writeBytes(ByteArray(128))
             val zPath = toWineZPath(gameExe)
-            val args = mutableListOf(wine.absolutePath, zPath, "-force-d3d11", "-screen-width", options.width.toString(), "-screen-height", options.height.toString(), "-screen-fullscreen", "1")
-            val env = linkedMapOf(
-                "WINEPREFIX" to prefix.absolutePath,
-                "WINEDLLOVERRIDES" to "d3d11,dxgi,xinput1_3,xinput1_4=n,b",
-                "MO2_XINPUT_SHM_PATH" to sharedInput.absolutePath,
-                "BOX64_DYNAREC" to "1",
-                "BOX64_DYNAREC_BIGBLOCK" to "1",
-                "BOX64_DYNAREC_STRONGMEM" to "1",
-                "BOX64_DYNAREC_SAFEFLAGS" to "1",
-                "DXVK_STATE_CACHE" to "1",
-                "DXVK_FRAME_RATE" to options.fpsCap.toString(),
-                "LD_LIBRARY_PATH" to report.libraryDirectory!!.absolutePath
-            )
-            if (options.useTurnip && icd != null) env["VK_ICD_FILENAMES"] = icd.absolutePath
-            if (dxvkDlls != null) env["DXVK_DLL_PATH"] = dxvkDlls.absolutePath
+            val args = WineLaunchCommand.arguments(wine.absolutePath, zPath, options.width, options.height)
+            val env = WineLaunchCommand.environment(prefix, sharedInput, report.libraryDirectory!!, options.fpsCap, if (options.useTurnip) icd else null, dxvkDlls)
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "launcher", "Prepared Wine prefix and launch plan; execution compatibility remains unverified."))
             return LaunchPreparationResult.Prepared(WineLaunchPlan(box64, args, env, gameExe.parentFile ?: root, prefix, gameExe))
         } catch (e: Exception) {
