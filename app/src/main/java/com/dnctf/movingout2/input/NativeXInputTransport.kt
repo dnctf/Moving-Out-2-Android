@@ -52,7 +52,7 @@ class NativeXInputTransport(forceFallbackForTesting: Boolean = false) : XInputTr
     private fun loadLibrary(): Boolean = try {
         System.loadLibrary("mo2_input_bridge")
         true
-    } catch (_: UnsatisfiedLinkError) { false }
+    } catch (_: LinkageError) { false } catch (_: SecurityException) { false }
     private external fun nativeInitSharedMemory(path: String): Boolean
     private external fun nativeWriteSerializedPacket(playerIndex: Int, connected: Boolean, packet: ByteBuffer): Boolean
     private external fun nativeDestroySharedMemory(): Boolean
