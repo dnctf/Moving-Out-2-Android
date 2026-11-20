@@ -100,7 +100,7 @@ class RuntimeBundleImporter(
             listOf("box64", "wine64", "wineserver").map { properties.getProperty(it)?.trim().orEmpty() }.filter { it.isNotBlank() }
         }
         for (relative in paths) {
-            if (relative.startsWith("/") || relative.split('/', '\\\\').any { it == ".." }) throw IOException("Executable path is unsafe.")
+            if (relative.startsWith("/") || relative.split('/', '\\').any { it == ".." }) throw IOException("Executable path is unsafe.")
             val file = File(root, relative).canonicalFile
             if (!file.toPath().startsWith(root.canonicalFile.toPath())) throw IOException("Executable path escapes bundle.")
             if (file.isFile && !file.setExecutable(true, false) && !file.canExecute()) throw IOException("Unable to set executable flag for $relative.")
