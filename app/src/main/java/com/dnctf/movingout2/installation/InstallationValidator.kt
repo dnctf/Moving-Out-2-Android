@@ -50,7 +50,7 @@ class InstallationValidator {
         stageResults += StageResult(ValidationStage.VERSION_ARCH, peOk,
             peChecks.map { (name, arch) -> "$name: ${arch ?: "invalid PE header"}" } +
                 "Unity version not detected (not parsed)" +
-                "Metadata version: ${files[required.last()]?.let(::inspectMetadataVersion) ?: "unknown"})
+                "Metadata version: ${files[required.last()]?.let(::inspectMetadataVersion) ?: "unknown"}")
         stageResults += StageResult(ValidationStage.COMPATIBILITY, hardwareBlockers.isEmpty(), hardwareBlockers.toList())
 
         val status = when {
