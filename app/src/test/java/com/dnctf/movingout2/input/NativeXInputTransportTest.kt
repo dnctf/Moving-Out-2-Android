@@ -47,7 +47,7 @@ class NativeXInputTransportTest {
     @Test fun destroyNeutralizesFallbackSlots() {
         val t = NativeXInputTransport(forceFallbackForTesting = true)
         assertTrue(t.init("/tmp/mo2x-test"))
-        val packet = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN).putShort(0x1234).array().let { it + ByteArray(10) }
+        val packet = ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN).putShort(0x1234).array()
         assertTrue(t.writePacket(2, true, packet))
         assertArrayEquals(packet, t.getFallbackSnapshot(2))
         t.destroy()
