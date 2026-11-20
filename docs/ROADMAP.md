@@ -18,6 +18,12 @@
 - [ ] DXVK feasibility/integration and Turnip assessment for Adreno
 - [ ] Real first-frame test gate (capture and evidence, not simulated)
 - [ ] Controller/touch input and audio routing
+- [ ] Controller Phase 2: virtual overlay behavior, layout, multi-touch, customization and persistence
+- [ ] Controller Phase 3: physical gamepad discovery, axis/key translation, hotplug and release safety
+- [ ] Controller Phase 4: shared runtime input bridge (SDL/native/Wine/Box64/Unity; integrations must be real)
+- [ ] Controller Phase 5: per-game mapping profiles, presets, remap UI, import/export and persistence
+- [ ] Inspect Flipendo and POP T2T Android controller research repos
+- [ ] Research game-specific native recompilation/native ports and capability registry
 - [ ] Suspend/resume, exit, crash recovery and thermal/performance behavior
 - [ ] Reproducible release APK and build report
 
