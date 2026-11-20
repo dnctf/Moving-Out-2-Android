@@ -28,7 +28,7 @@ object UnityGameProfileDetector {
     fun detectMetadataVersion(header: ByteArray): Int? {
         if (header.size < 8) return null
         val magic = header.take(4).map { it.toInt() and 0xff }
-        if (magic != listOf(0xfa, 0xb1, 0x1b, 0xaf)) return null
+        if (magic != listOf(0xaf, 0x1b, 0xb1, 0xfa)) return null
         return (header[4].toInt() and 0xff) or
             ((header[5].toInt() and 0xff) shl 8) or
             ((header[6].toInt() and 0xff) shl 16) or
@@ -41,7 +41,7 @@ object UnityGameProfileDetector {
             ((header[0x3d].toInt() and 0xff) shl 8) or
             ((header[0x3e].toInt() and 0xff) shl 16) or
             ((header[0x3f].toInt() and 0xff) shl 24)
-        if (offset < 0 || offset + 6 > header.size || header[offset] != 'P'.code.toByte() ||
+        if (offset < 0 || offset > header.size - 6 || header[offset] != 'P'.code.toByte() ||
             header[offset + 1] != 'E'.code.toByte() || header[offset + 2] != 0.toByte() ||
             header[offset + 3] != 0.toByte()) return null
         val machine = (header[offset + 4].toInt() and 0xff) or ((header[offset + 5].toInt() and 0xff) shl 8)
