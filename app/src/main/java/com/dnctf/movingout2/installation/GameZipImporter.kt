@@ -7,8 +7,11 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.Locale
-import java.util.zip.ZipInputStream
+import java.util.zip.ZipFile
 
+data class ImportProgress(val phase: String, val entriesDone: Int, val totalEntries: Int, val bytesDone: Long, val totalBytes: Long) {
+    val percent: Int get() = if (totalBytes > 0) ((bytesDone * 100L) / totalBytes).toInt().coerceIn(0, 100) else if (totalEntries > 0) ((entriesDone * 100) / totalEntries).coerceIn(0, 100) else 0
+}
 data class GameZipImportResult(val fileCount: Int, val bytesWritten: Long, val gameRoot: File)
 
 class GameZipImporter(
@@ -21,72 +24,152 @@ class GameZipImporter(
     private val root = File(context.filesDir, "game_import")
     private val staging = File(context.filesDir, "game_import_staging")
     private val backup = File(context.filesDir, "game_import_backup")
+    private val sourceZip = File(context.cacheDir, "game_import_preflight.zip")
 
-    fun importZip(uri: Uri): GameZipImportResult {
+    fun importZip(uri: Uri, cancelled: () -> Boolean = { false }, onProgress: (ImportProgress) -> Unit = {}): GameZipImportResult {
         val parent = root.parentFile ?: throw IOException("Private storage unavailable.")
         if (!parent.mkdirs() && !parent.isDirectory) throw IOException("Cannot create private app storage.")
-        if (!root.exists() && backup.exists() && !backup.renameTo(root)) throw IOException("Cannot recover previous game import.")
-        staging.deleteRecursively()
-        if (!staging.mkdirs()) throw IOException("Cannot create staging directory.")
-        var entries = 0
-        var bytes = 0L
-        val seen = HashSet<String>()
+        recoverPreviousImport()
         try {
-            val input = resolver.openInputStream(uri) ?: throw IOException("Unable to open selected ZIP.")
-            input.use { raw ->
-                ZipInputStream(raw.buffered()).use { zip ->
-                    while (true) {
-                        val entry = zip.nextEntry ?: break
-                        entries++
-                        if (entries > maxEntries) throw IOException("ZIP has too many entries.")
-                        val rawName = entry.name.replace('\\', '/')
-                        val name = rawName.trimEnd('/')
-                        if (name.isBlank() || name.startsWith('/') || Regex("^[A-Za-z]:").containsMatchIn(name) ||
-                            name.split('/').any { it == ".." || it.isBlank() || it == "." }) throw IOException("Unsafe ZIP path: $rawName")
-                        if (!seen.add(name.lowercase(Locale.ROOT))) throw IOException("Duplicate ZIP entry: $rawName")
-                        val out = File(staging, name).canonicalFile
-                        if (!out.toPath().startsWith(staging.canonicalFile.toPath())) throw IOException("ZIP path escapes staging storage.")
-                        if (entry.isDirectory) {
-                            if (!out.mkdirs() && !out.isDirectory) throw IOException("Cannot create directory.")
-                        } else {
-                            if (!out.parentFile.mkdirs() && !out.parentFile.isDirectory) throw IOException("Cannot create extraction path.")
+            copyUriToPreflight(uri, cancelled)
+            ZipFile(sourceZip).use { zip ->
+                val entries = zip.entries().asSequence().toList()
+                if (entries.isEmpty()) throw IOException("ZIP is empty.")
+                if (entries.size > maxEntries) throw IOException("ZIP has too many entries.")
+                val names = HashSet<String>()
+                var totalBytes = 0L
+                val normalized = entries.map { entry ->
+                    checkCancellation(cancelled)
+                    val name = safeEntryName(entry.name)
+                    if (!names.add(name.lowercase(Locale.ROOT))) throw IOException("Duplicate ZIP entry: $name")
+                    if (!entry.isDirectory) {
+                        if (entry.size < 0) throw IOException("ZIP entry has unknown size: $name")
+                        totalBytes = Math.addExact(totalBytes, entry.size)
+                        if (totalBytes > maxExpandedBytes) throw IOException("ZIP expansion exceeds configured limit.")
+                    }
+                    entry to name
+                }
+                val candidateRootPrefix = findRootPrefix(normalized.map { it.second })
+                    ?: throw IOException("ZIP central directory does not contain the required Unity game files.")
+                val stat = StatFs(parent.absolutePath)
+                if (stat.availableBytes - totalBytes < storageReserveBytes) throw IOException("Insufficient storage. Import requires approximately $totalBytes bytes plus 1.5 GiB free reserve.")
+                staging.deleteRecursively()
+                if (!staging.mkdirs()) throw IOException("Cannot create staging directory.")
+                var bytesWritten = 0L
+                var entriesDone = 0
+                onProgress(ImportProgress("Extracting", 0, normalized.size, 0, totalBytes))
+                for ((entry, name) in normalized) {
+                    checkCancellation(cancelled)
+                    val out = File(staging, name).canonicalFile
+                    if (!out.toPath().startsWith(staging.canonicalFile.toPath())) throw IOException("ZIP path escapes staging storage.")
+                    if (entry.isDirectory) {
+                        if (!out.mkdirs() && !out.isDirectory) throw IOException("Cannot create directory.")
+                    } else {
+                        val parentDir = out.parentFile ?: throw IOException("Invalid extraction path.")
+                        if (!parentDir.mkdirs() && !parentDir.isDirectory) throw IOException("Cannot create extraction path.")
+                        zip.getInputStream(entry).use { input ->
                             FileOutputStream(out).use { sink ->
                                 val buffer = ByteArray(64 * 1024)
                                 while (true) {
-                                    val n = zip.read(buffer)
+                                    checkCancellation(cancelled)
+                                    val n = input.read(buffer)
                                     if (n < 0) break
-                                    bytes = Math.addExact(bytes, n.toLong())
-                                    if (bytes > maxExpandedBytes) throw IOException("ZIP expansion exceeds configured limit.")
+                                    bytesWritten = Math.addExact(bytesWritten, n.toLong())
+                                    if (bytesWritten > maxExpandedBytes || bytesWritten > totalBytes) throw IOException("ZIP expansion exceeded preflight size.")
                                     sink.write(buffer, 0, n)
                                 }
                             }
                         }
-                        zip.closeEntry()
                     }
+                    entriesDone++
+                    onProgress(ImportProgress("Extracting", entriesDone, normalized.size, bytesWritten, totalBytes))
                 }
-            }
-            val stat = StatFs(parent.absolutePath)
-            if (stat.availableBytes - bytes < storageReserveBytes) throw IOException("Insufficient storage: keep at least 1.5 GiB free after import.")
-            val candidate = findGameRoot(staging) ?: throw IOException("ZIP does not contain a recognizable game root.")
-            val report = InstallationValidator().validate(candidate)
-            if (report.status != InstallationStatus.VALID) {
-                throw IOException("Staging validation failed: missing=${report.missingFiles.joinToString()}, errors=${report.accessErrors.joinToString()}")
-            }
-            if (root.exists()) {
+                val candidate = File(staging, candidateRootPrefix).canonicalFile
+                val validation = InstallationValidator().validate(candidate)
+                if (validation.status != InstallationStatus.VALID) throw IOException("Staging validation failed: missing=${validation.missingFiles.joinToString()}, errors=${validation.accessErrors.joinToString()}")
+                activateWithRollback(candidateRootPrefix)
+                val active = findGameRoot(root) ?: throw IOException("Activated game root could not be resolved.")
                 backup.deleteRecursively()
-                if (!root.renameTo(backup)) throw IOException("Unable to preserve previous imported game.")
+                onProgress(ImportProgress("Complete", normalized.size, normalized.size, bytesWritten, totalBytes))
+                return GameZipImportResult(entriesDone, bytesWritten, active)
             }
-            if (!staging.renameTo(root)) throw IOException("Unable to activate extracted game.")
-            val active = findGameRoot(root) ?: throw IOException("Activated game root could not be resolved.")
-            backup.deleteRecursively()
-            return GameZipImportResult(entries, bytes, active)
         } catch (e: Exception) {
             staging.deleteRecursively()
-            if (backup.exists()) {
-                if (root.exists()) root.deleteRecursively()
-                if (!backup.renameTo(root)) throw IOException("Import failed and automatic rollback could not restore previous installation.", e)
-            }
+            rollbackActivation()
             throw e
+        } finally {
+            sourceZip.delete()
+        }
+    }
+
+    private fun copyUriToPreflight(uri: Uri, cancelled: () -> Boolean) {
+        sourceZip.delete()
+        val input = resolver.openInputStream(uri) ?: throw IOException("Unable to open selected ZIP.")
+        input.use { raw ->
+            FileOutputStream(sourceZip).use { output ->
+                val buffer = ByteArray(128 * 1024)
+                while (true) {
+                    checkCancellation(cancelled)
+                    val n = raw.read(buffer)
+                    if (n < 0) break
+                    output.write(buffer, 0, n)
+                }
+            }
+        }
+    }
+
+    private fun safeEntryName(raw: String): String {
+        val normalized = raw.replace('\\\\', '/').trimEnd('/')
+        if (normalized.isBlank() || normalized.startsWith('/') || Regex("^[A-Za-z]:").containsMatchIn(normalized) ||
+            normalized.split('/').any { it == ".." || it.isBlank() || it == "." }) throw IOException("Unsafe ZIP path: $raw")
+        return normalized
+    }
+
+    private fun findRootPrefix(names: List<String>): String? {
+        val files = names.filterNot { it.endsWith('/') }.map { it.lowercase(Locale.ROOT) }.toSet()
+        val exe = names.filter { it.equals("mo2.exe", true) || it.lowercase(Locale.ROOT).endsWith("/mo2.exe") }
+        val required = listOf("gameassembly.dll", "unityplayer.dll", "baselib.dll", "movingout2_data/il2cpp_data/metadata/global-metadata.dat")
+        for (exePath in exe) {
+            val prefix = exePath.substringBeforeLast('/', "").let { if (it.isEmpty()) "" else "$it/" }
+            if (required.all { req -> files.contains((prefix + req).lowercase(Locale.ROOT)) }) return prefix
+        }
+        return null
+    }
+
+    private fun activateWithRollback(candidatePrefix: String) {
+        if (root.exists()) {
+            backup.deleteRecursively()
+            if (!root.renameTo(backup)) throw IOException("Unable to preserve previous imported game.")
+        }
+        if (!staging.renameTo(root)) {
+            rollbackActivation()
+            throw IOException("Unable to activate extracted game.")
+        }
+        val activeCandidate = File(root, candidatePrefix).canonicalFile
+        val report = InstallationValidator().validate(activeCandidate)
+        if (report.status != InstallationStatus.VALID) {
+            rollbackActivation()
+            throw IOException("Post-activation validation failed; previous installation restored.")
+        }
+    }
+
+    private fun recoverPreviousImport() {
+        if (backup.exists()) {
+            val activeRoot = findGameRoot(root)
+            val activeValid = activeRoot != null && runCatching { InstallationValidator().validate(activeRoot).status == InstallationStatus.VALID }.getOrDefault(false)
+            if (!activeValid) {
+                root.deleteRecursively()
+                if (!backup.renameTo(root)) throw IOException("Cannot recover previous game import.")
+            } else {
+                backup.deleteRecursively()
+            }
+        }
+    }
+
+    private fun rollbackActivation() {
+        if (backup.exists()) {
+            if (root.exists()) root.deleteRecursively()
+            if (!backup.renameTo(root)) throw IOException("Import failed and automatic rollback could not restore previous installation.")
         }
     }
 
@@ -101,4 +184,10 @@ class GameZipImporter(
         }
         return null
     }
+
+    private fun checkCancellation(cancelled: () -> Boolean) {
+        if (cancelled()) throw ImportCancelledException()
+    }
+
+    class ImportCancelledException : IOException("Import cancelled by user.")
 }
