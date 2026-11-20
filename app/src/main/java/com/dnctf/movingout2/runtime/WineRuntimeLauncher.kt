@@ -145,12 +145,8 @@ class WineRuntimeLauncher(
     }
 
     internal fun rewriteTurnipIcd(source: File, library: File): File {
-        val json = JSONObject(source.readText())
-        json.put("library_path", library.absolutePath)
         val sessionDir = File(context.filesDir, "runtime-session").apply { mkdirs() }
-        val out = File(sessionDir, "freedreno_icd.aarch64.json")
-        out.writeText(json.toString(2))
-        return out
+        return TurnipIcdConfig.rewrite(source, library, File(sessionDir, "freedreno_icd.aarch64.json"))
     }
 
     internal fun toWineZPath(file: File): String {
