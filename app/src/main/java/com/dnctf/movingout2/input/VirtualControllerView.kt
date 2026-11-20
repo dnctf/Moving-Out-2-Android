@@ -46,14 +46,14 @@ class VirtualControllerView(context: Context, private val onState: (ControllerSt
     }
     private fun drawStick(canvas:Canvas,r:RectF) {
         paint.color=0x447FFFFFF.toInt();canvas.drawOval(r,paint)
-        val knob=RectF(r.centerX()-r.width*0.22f+stickX*r.width*0.28f,r.centerY()-r.height*0.22f+stickY*r.height*0.28f,r.centerX()+r.width*0.22f+stickX*r.width*0.28f,r.centerY()+r.height*0.22f+stickY*r.height*0.28f)
+        val knob=RectF(r.centerX()-r.width()*0.22f+stickX*r.width()*0.28f,r.centerY()-r.height()*0.22f+stickY*r.height()*0.28f,r.centerX()+r.width()*0.22f+stickX*r.width()*0.28f,r.centerY()+r.height()*0.22f+stickY*r.height()*0.28f)
         paint.color=0xAAFFFFFF.toInt();canvas.drawOval(knob,paint)
     }
     private fun drawButton(canvas:Canvas,r:RectF,label:String,down:Boolean) {
         paint.color=if(down)0xCCFFFFFF.toInt() else (idleAlpha shl 24) or 0xFFFFFF
-        canvas.drawRoundRect(r,r.height*0.24f,r.height*0.24f,paint)
+        canvas.drawRoundRect(r,r.height()*0.24f,r.height()*0.24f,paint)
         paint.color=if(down)0xFF222222.toInt() else 0xCCFFFFFF.toInt()
-        paint.textSize=r.height*0.38f;paint.textAlign=Paint.Align.CENTER
+        paint.textSize=r.height()*0.38f;paint.textAlign=Paint.Align.CENTER
         canvas.drawText(label,r.centerX(),r.centerY()+paint.textSize*0.34f,paint)
     }
     override fun onTouchEvent(event:MotionEvent):Boolean {
