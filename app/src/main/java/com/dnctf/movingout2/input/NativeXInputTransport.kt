@@ -11,6 +11,8 @@ class NativeXInputTransport(forceFallbackForTesting: Boolean = false) : XInputTr
     @Volatile private var sharedPath: String? = null
 
     override fun init(shmFilePath: String): Boolean {
+        initialized = false
+        sharedPath = null
         if (shmFilePath.isBlank()) return false
         if (nativeAvailable) {
             val ok = runCatching { nativeInitSharedMemory(shmFilePath) }.getOrDefault(false)
