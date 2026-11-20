@@ -29,7 +29,7 @@ static void neutralize_slot(XInputShmSlot& s) {
     s.left_trigger = 0; s.right_trigger = 0;
     s.thumb_lx = 0; s.thumb_ly = 0; s.thumb_rx = 0; s.thumb_ry = 0;
     std::memset(s.padding, 0, sizeof(s.padding));
-    __atomic_add_fetch(&s.seq, 1u, __ATOMIC_RELEASE);
+    __atomic_add_fetch(&s.seq, 1u, __ATOMIC_SEQ_CST);
 }
 static bool release_mapping() {
     bool ok = true;
