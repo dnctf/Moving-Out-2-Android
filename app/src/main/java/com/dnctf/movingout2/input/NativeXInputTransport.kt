@@ -50,6 +50,16 @@ class NativeXInputTransport(forceFallbackForTesting: Boolean = false) : XInputTr
     fun getFallbackSnapshot(playerIndex: Int): ByteArray? = fallback[playerIndex]?.copyOf()
     fun sharedMemoryPath(): String? = sharedPath
 
+    /** Reads a stable native MO2X slot snapshot for diagnostics and protocol verification. */
+    fun readSnapshot(playerIndex: Int): ByteArray? {
+        if (!initialized || playerIndex !in 0 until XInputTransport.MAX_PLAYERS) return null
+        if (!nativeAvailable) return getFallbackSnapshot(playerIndex)
+        val path = sharedPath ?: return null
+        val buffer = ByteBuffer.allocateDirect(XInputTransport.PACKET_SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
+        val ok = runCatching { nativeReadSnapshot(path, playerIndex, buffer) }.getOrDefault(false)
+        if (!ok) return null
+        return ByteArray(XInputTransport.PACKET_SIZE_BYTES).also { buffer.position(0); buffer.get(it) }
+
     private fun neutralPacket() = ByteArray(XInputTransport.PACKET_SIZE_BYTES)
     private fun loadLibrary(): Boolean = try {
         System.loadLibrary("mo2_input_bridge")
@@ -58,4 +68,5 @@ class NativeXInputTransport(forceFallbackForTesting: Boolean = false) : XInputTr
     private external fun nativeInitSharedMemory(path: String): Boolean
     private external fun nativeWriteSerializedPacket(playerIndex: Int, connected: Boolean, packet: ByteBuffer): Boolean
     private external fun nativeDestroySharedMemory(): Boolean
+    private external fun nativeReadSnapshot(path: String, playerIndex: Int, buffer: ByteBuffer): Boolean
 }
