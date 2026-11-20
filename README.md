@@ -20,6 +20,8 @@ Users must supply legitimate game files. This repository does not distribute gam
 - Runtime state/process supervision foundation.
 - User-provided runtime bundle SAF import into app-private storage with streamed copy, bounds, staging, validation and rollback.
 - Runtime bundle manifest, canonical path confinement, executable flags, ELF64 little-endian AArch64 checks, and library directory validation.
+- Optional DXVK payload checks for x64 `d3d11.dll`/`dxgi.dll` and Turnip driver/ICD presence checks (explicitly presence-only, not load-tested).
+- Selected game-folder profile detection: Unity version string from bounded `globalgamemanagers` scan, IL2CPP metadata magic/version, and PE architecture.
 - Native JNI Vulkan diagnostics: loader API, physical device, vendor/device IDs, device API version and device extension names.
 - EGL/GLES renderer fallback and asynchronous graphics status in launcher UI.
 - CI debug APK build, Kotlin tests and native C++ compilation.
