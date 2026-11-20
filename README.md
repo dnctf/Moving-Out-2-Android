@@ -52,3 +52,11 @@ CI uses JDK 17, Android SDK 35, pinned NDK/CMake and Gradle 8.9 to build the ARM
 
 ## Legal
 Moving Out 2 is copyrighted commercial software. Game files stay user-provided. Runtime binaries must be built, sourced and redistributed in compliance with each project's license.
+
+
+## Game ZIP import and user settings
+
+- Use **Import game from ZIP** to select a user-owned ZIP. Extraction is performed into the app's private storage using a staging directory and backup/rollback flow; the ZIP must contain `mo2.exe` and `MovingOut2_Data` at a recognizable game root.
+- ZIP extraction rejects absolute/traversal paths, limits entries to 100,000, and caps expanded content at 16 GiB. This is an import/storage feature, not proof the game is compatible or launchable.
+- **Audio, graphics and resolution settings** stores master/music/SFX volume, resolution scale (50–100%), and FPS target (30/45/60). Recommended initial profile for Snapdragon 855-class devices is Low graphics and 70–75% resolution scaling with a 30 FPS cap. Settings are persisted locally, but cannot affect game execution until the native runtime is integrated.
+- Snapdragon 855 through newer devices are the intended device range. A 30 FPS minimum target is a performance goal, not a guarantee; sustained FPS depends on runtime integration, game scene, thermals, memory, drivers, and device-specific testing.
