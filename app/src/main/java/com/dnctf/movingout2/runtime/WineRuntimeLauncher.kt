@@ -80,8 +80,6 @@ class WineRuntimeLauncher(
         val originalIcd = turnipDir?.walkTopDown()?.maxDepth(8)?.firstOrNull { it.isFile && it.name.endsWith(".json", true) && runCatching { it.readText().contains("library_path") }.getOrDefault(false) }
         val turnipLibrary = turnipDir?.walkTopDown()?.maxDepth(8)?.firstOrNull { it.isFile && it.name == "libvulkan_freedreno.so" }
         val icd = if (originalIcd != null && turnipLibrary != null && options.useTurnip) runCatching { rewriteTurnipIcd(originalIcd, turnipLibrary) }.getOrElse { blockers += "Unable to rewrite Turnip ICD: ${it.message}"; null } else originalIcd
-        if (options.useTurnip && turnipDir == null) blockers += "Turnip directory is not configured."
-        if (options.useTurnip && icd == null) blockers += "Turnip ICD JSON with library_path was not found."
         if (!gameExe.isFile || !isValidX64Pe(gameExe)) blockers += "Game executable is missing or not a valid x64 PE: ${gameExe.absolutePath}"
         if (blockers.isNotEmpty()) return LaunchPreparationResult.MissingPayload(blockers.distinct())
 
@@ -104,6 +102,10 @@ class WineRuntimeLauncher(
             val zPath = toWineZPath(gameExe)
             val args = WineLaunchCommand.arguments(wine.absolutePath, zPath, options.width, options.height)
             val env = WineLaunchCommand.environment(prefix, sharedInput, report.libraryDirectory!!, options.fpsCap, if (options.useTurnip && turnipDir != null) icd else null, dxvkDlls).toMutableMap()
+            properties.stringPropertyNames().filter { it.startsWith("profile_env_") }.forEach { p ->
+                val envKey = p.removePrefix("profile_env_")
+                if (envKey.startsWith("BOX64_DYNAREC") || envKey == "WINEDLLOVERRIDES") env[envKey] = properties.getProperty(p)
+            }
             properties.stringPropertyNames().filter { it.startsWith("profile_env_") }.forEach { property ->
                 val key = property.removePrefix("profile_env_")
                 if (key.startsWith("BOX64_DYNAREC") || key == "WINEDLLOVERRIDES") env[key] = properties.getProperty(property)
