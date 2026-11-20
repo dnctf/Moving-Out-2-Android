@@ -13,7 +13,7 @@ object WineLaunchCommand {
         val result = linkedMapOf(
             "WINEPREFIX" to prefix.absolutePath,
             "WINEDLLOVERRIDES" to "d3d11,dxgi,xinput1_3,xinput1_4=n,b",
-            "MO2_XINPUT_SHM_PATH" to sharedInput.absolutePath,
+            "MO2_XINPUT_SHM_PATH" to toWineZPath(sharedInput.absolutePath),
             "BOX64_DYNAREC" to "1",
             "BOX64_DYNAREC_BIGBLOCK" to "1",
             "BOX64_DYNAREC_STRONGMEM" to "1",
