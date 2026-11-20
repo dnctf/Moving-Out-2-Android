@@ -19,13 +19,15 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_dnctf_movingout2_graphics_VulkanNativeProbe_probeNative(JNIEnv* env, jobject) {
     uint32_t loaderVersion = VK_API_VERSION_1_0;
     VkResult versionResult = vkEnumerateInstanceVersion(&loaderVersion);
-    VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
+    VkApplicationInfo app{};
+    app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     app.pApplicationName = "Moving Out 2 Android Diagnostics";
     app.applicationVersion = 1;
     app.pEngineName = "Diagnostics";
     app.engineVersion = 1;
     app.apiVersion = VK_API_VERSION_1_0;
-    VkInstanceCreateInfo create{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+    VkInstanceCreateInfo create{};
+    create.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     create.pApplicationInfo = &app;
     VkInstance instance = VK_NULL_HANDLE;
     VkResult created = vkCreateInstance(&create, nullptr, &instance);
