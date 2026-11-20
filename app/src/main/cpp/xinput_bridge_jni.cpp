@@ -91,3 +91,45 @@ Java_com_dnctf_movingout2_input_NativeXInputTransport_nativeDestroySharedMemory(
     std::lock_guard<std::mutex> lock(g_mutex);
     return release_mapping() ? JNI_TRUE : JNI_FALSE;
 }
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_dnctf_movingout2_input_NativeXInputTransport_nativeReadSnapshot(JNIEnv* env, jobject, jstring path, jint player, jobject buffer) {
+    if (!path || player < 0 || player >= static_cast<jint>(XINPUT_SHM_MAX_PLAYERS) || !buffer) return JNI_FALSE;
+    auto* out = static_cast<uint8_t*>(env->GetDirectBufferAddress(buffer));
+    const jlong capacity = env->GetDirectBufferCapacity(buffer);
+    if (!out || capacity < XINPUT_SHM_PACKET_BYTES) return JNI_FALSE;
+    const char* utf = env->GetStringUTFChars(path, nullptr);
+    if (!utf) return JNI_FALSE;
+    int fd = open(utf, O_RDONLY | O_CLOEXEC);
+    env->ReleaseStringUTFChars(path, utf);
+    if (fd < 0) return JNI_FALSE;
+    struct stat st{};
+    if (fstat(fd, &st) != 0 || st.st_size < static_cast<off_t>(kMapSize)) { close(fd); return JNI_FALSE; }
+    void* addr = mmap(nullptr, kMapSize, PROT_READ, MAP_SHARED, fd, 0);
+    close(fd);
+    if (addr == MAP_FAILED) return JNI_FALSE;
+    const auto* mapping = static_cast<const XInputShm*>(addr);
+    bool valid = mapping->header.magic == XINPUT_SHM_MAGIC && mapping->header.version == XINPUT_SHM_VERSION &&
+        mapping->header.total_size == kMapSize && mapping->header.max_players == XINPUT_SHM_MAX_PLAYERS;
+    bool stable = false;
+    uint8_t packet[XINPUT_SHM_PACKET_BYTES]{};
+    if (valid) {
+        const XInputShmSlot& slot = mapping->slots[static_cast<size_t>(player)];
+        for (int attempt = 0; attempt < 1000; ++attempt) {
+            const uint32_t before = __atomic_load_n(&slot.seq, __ATOMIC_ACQUIRE);
+            if (before & 1u) continue;
+            packet[0] = static_cast<uint8_t>(slot.buttons & 0xffu);
+            packet[1] = static_cast<uint8_t>((slot.buttons >> 8) & 0xffu);
+            packet[2] = slot.left_trigger; packet[3] = slot.right_trigger;
+            packet[4] = static_cast<uint8_t>(slot.thumb_lx & 0xff); packet[5] = static_cast<uint8_t>((slot.thumb_lx >> 8) & 0xff);
+            packet[6] = static_cast<uint8_t>(slot.thumb_ly & 0xff); packet[7] = static_cast<uint8_t>((slot.thumb_ly >> 8) & 0xff);
+            packet[8] = static_cast<uint8_t>(slot.thumb_rx & 0xff); packet[9] = static_cast<uint8_t>((slot.thumb_rx >> 8) & 0xff);
+            packet[10] = static_cast<uint8_t>(slot.thumb_ry & 0xff); packet[11] = static_cast<uint8_t>((slot.thumb_ry >> 8) & 0xff);
+            const uint32_t after = __atomic_load_n(&slot.seq, __ATOMIC_ACQUIRE);
+            if (before == after && !(after & 1u)) { stable = true; break; }
+        }
+    }
+    if (stable) std::memcpy(out, packet, sizeof(packet));
+    munmap(addr, kMapSize);
+    return stable ? JNI_TRUE : JNI_FALSE;
+}
