@@ -19,7 +19,7 @@ Expected files:
 - `wine/bin/wineserver` — Wine ARM64 server executable
 - `lib/` — runtime library directory (nonempty)
 
-Importer guardrails: rejects unsafe entry names, limits nesting to 24 levels, limits files to 20,000, and limits copied content to 6 GiB. Copy is streamed, not loaded whole into memory. Executable bits are set on the three manifest-declared runtime executables after import. Import occurs in a staging directory and is validated before activation; previous bundle is backed up and rollback attempted on failure.
+Importer guardrails: rejects unsafe entry names, limits nesting to 24 levels, limits total entries (files and directories) to 20,000, and limits copied content to 6 GiB. Copy is streamed, not loaded whole into memory. Executable bits are set on the three manifest-declared runtime executables after import. Import occurs in a staging directory and is validated before activation; previous bundle is backed up and rollback attempted on failure.
 
 Validator checks manifest version/ABI, canonical paths confined to bundle root, files are nonempty/readable/executable, ELF64 little-endian AArch64 executable headers, and a readable nonempty library directory.
 
