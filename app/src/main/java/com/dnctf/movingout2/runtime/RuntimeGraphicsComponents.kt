@@ -46,7 +46,7 @@ object RuntimeGraphicsComponents {
 
     private fun isX64Pe(file: File): Boolean = runCatching {
         if (!file.isFile || file.length() < 70) return@runCatching false
-        val b = file.inputStream().use { it.readNBytes(4096) }
+        val b = file.inputStream().use { stream -> val bytes = ByteArray(4096); var offset = 0; while (offset < bytes.size) { val n = stream.read(bytes, offset, bytes.size - offset); if (n <= 0) break; offset += n }; if (offset == bytes.size) bytes else bytes.copyOf(offset) }
         if (b.size < 64 || b[0] != 'M'.code.toByte() || b[1] != 'Z'.code.toByte()) return@runCatching false
         val offset = (b[0x3c].toInt() and 255) or ((b[0x3d].toInt() and 255) shl 8) or ((b[0x3e].toInt() and 255) shl 16) or ((b[0x3f].toInt() and 255) shl 24)
         offset >= 0 && offset <= b.size - 6 && b[offset] == 'P'.code.toByte() && b[offset+1] == 'E'.code.toByte() &&
@@ -55,7 +55,7 @@ object RuntimeGraphicsComponents {
 
     private fun isArm64Elf(file: File): Boolean = runCatching {
         if (!file.isFile || file.length() < 20) return@runCatching false
-        val b = file.inputStream().use { it.readNBytes(20) }
+        val b = file.inputStream().use { stream -> val bytes = ByteArray(20); var offset = 0; while (offset < bytes.size) { val n = stream.read(bytes, offset, bytes.size - offset); if (n <= 0) break; offset += n }; if (offset == bytes.size) bytes else bytes.copyOf(offset) }
         b[0] == 0x7f.toByte() && b[1] == 'E'.code.toByte() && b[2] == 'L'.code.toByte() && b[3] == 'F'.code.toByte() &&
             b[4] == 2.toByte() && b[5] == 1.toByte() && (b[18].toInt() and 255) == 183 && (b[19].toInt() and 255) == 0
     }.getOrDefault(false)
