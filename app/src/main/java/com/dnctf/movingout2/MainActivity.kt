@@ -80,10 +80,11 @@ class MainActivity : Activity() {
     private fun refreshRuntimeStatus() {
         val root = File(filesDir, "native_runtime/bundle")
         val report = RuntimeBundleValidator().validate(root)
+        val graphics = RuntimeGraphicsComponents.assess(root)
         runtimeStatus.text = if (report.isReady) {
-            "Runtime bundle: STRUCTURE_VALIDATED\nWine/Box64 launch integration is not implemented; game launch remains blocked."
+            "Runtime bundle: STRUCTURE_VALIDATED\nWine/Box64: payload present (execution not verified)\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${graphics.notes.joinToString("\n")}\nGame launch remains blocked pending native process/graphics integration and device tests."
         } else {
-            "Runtime bundle: ${report.status}\n${report.blockers.joinToString("\n")}"
+            "Runtime bundle: ${report.status}\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${report.blockers.joinToString("\n")}\n${graphics.notes.joinToString("\n")}"
         }
     }
 
@@ -106,7 +107,8 @@ class MainActivity : Activity() {
             try {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 val imported = RuntimeBundleImporter(this).importTree(uri)
-                runtimeStatus.text = "Runtime bundle: STRUCTURE_VALIDATED\nCopied ${imported.copiedFiles} files (${imported.copiedBytes} bytes).\nWine/Box64 launch integration is not implemented; game launch remains blocked."
+                val graphics = RuntimeGraphicsComponents.assess(File(filesDir, "native_runtime/bundle"))
+                runtimeStatus.text = "Runtime bundle: STRUCTURE_VALIDATED\nCopied ${imported.copiedFiles} files (${imported.copiedBytes} bytes).\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${graphics.notes.joinToString("\n")}\nExecution/driver loading not verified; game launch remains blocked."
             } catch (e: Exception) {
                 runtimeStatus.text = "Runtime bundle import failed: ${e.message ?: e.javaClass.simpleName}\nExisting runtime bundle is preserved when possible."
             }
