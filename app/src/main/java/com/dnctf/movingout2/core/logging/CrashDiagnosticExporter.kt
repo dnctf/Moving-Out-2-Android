@@ -25,13 +25,10 @@ class CrashDiagnosticExporter(private val outputDirectory: File) {
         val log = buildString {
             processDiagnostics.takeLast(2000).forEach { entry ->
                 append(Date(entry.timestampMillis)).append(" [").append(entry.severity).append("] ")
-                    .append(entry.component).append(": ").append(entry.message).append('
-')
+                    .append(entry.component).append(": ").append(entry.message).append('\n')
             }
-            append("\nProcess exit code: ").append(exitCode?.toString() ?: "unknown").append('
-')
-            if (!crashInfo.isNullOrBlank()) append("Crash info: ").append(crashInfo).append('
-')
+            append("\nProcess exit code: ").append(exitCode?.toString() ?: "unknown").append('\n')
+            if (!crashInfo.isNullOrBlank()) append("Crash info: ").append(crashInfo).append('\n')
         }
         ZipOutputStream(FileOutputStream(target)).use { zip ->
             fun put(name: String, text: String) {
