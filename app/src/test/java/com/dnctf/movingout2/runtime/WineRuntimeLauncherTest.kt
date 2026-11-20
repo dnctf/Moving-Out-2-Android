@@ -19,7 +19,7 @@ class WineRuntimeLauncherTest {
         val env = WineLaunchCommand.environment(File("/prefix"), File("/xinput_shm.bin"), File("/bundle/lib"), 45, File("/turnip/icd.json"), File("/dxvk"))
         assertEquals("/prefix", env["WINEPREFIX"])
         assertEquals("d3d11,dxgi,xinput1_3,xinput1_4=n,b", env["WINEDLLOVERRIDES"])
-        assertEquals("/xinput_shm.bin", env["MO2_XINPUT_SHM_PATH"])
+        assertEquals("Z:\\xinput_shm.bin", env["MO2_XINPUT_SHM_PATH"])
         assertEquals("1", env["BOX64_DYNAREC_STRONGMEM"])
         assertEquals("45", env["DXVK_FRAME_RATE"])
         assertEquals("/turnip/icd.json", env["VK_ICD_FILENAMES"])
