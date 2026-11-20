@@ -16,6 +16,7 @@ import android.widget.Spinner
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import com.dnctf.movingout2.input.GamepadTranslator
+import com.dnctf.movingout2.input.RuntimeInputBridge
 import com.dnctf.movingout2.input.VirtualControllerView
 import com.dnctf.movingout2.installation.GameInstallationManager
 import com.dnctf.movingout2.installation.GameZipImporter
@@ -35,6 +36,7 @@ class MainActivity : Activity() {
     private lateinit var graphicsStatus: TextView
     private lateinit var repository: InstallationRepository
     private val gamepadTranslator = GamepadTranslator()
+    private val inputBridge = RuntimeInputBridge()
     private val pickFolder = 1001
     private val pickRuntimeBundle = 1002
     private val pickGameZip = 1003
@@ -42,6 +44,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repository = InstallationRepository(this)
+        inputBridge.initialize(File(filesDir, "xinput_shm.bin").absolutePath)
         val views = LauncherHomeView.create(this, ::openFolderPicker, ::revalidateSavedFolder, ::openRuntimeBundlePicker, ::openGameZipPicker, ::showSettings, ::showControllerTest)
         status = views.status
         runtimeStatus = views.runtimeStatus
@@ -55,10 +58,11 @@ class MainActivity : Activity() {
     private fun showControllerTest() {
         val dialog = Dialog(this)
         val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 20, 24, 12) }
-        val info = TextView(this).apply { text = "Touch the controls or connect a controller.\nThis is a visual input test; runtime/game input injection is not connected yet."; textSize = 14f }
+        val info = TextView(this).apply { text = "Touch the controls or connect a controller.\nMO2X shared-memory transport initialized; Wine reader/runtime launch is pending."; textSize = 14f }
         val stateText = TextView(this).apply { text = "Input: idle"; textSize = 13f; setPadding(0, 8, 0, 8) }
         val pad = VirtualControllerView(this) { state ->
             stateText.text = "Input: buttons=" + state.buttons.joinToString() + " | left=(" + state.leftX.toInt() + ", " + state.leftY.toInt() + ")"
+            inputBridge.send(0, state, connected = true)
         }
         container.addView(info)
         container.addView(stateText)
@@ -71,14 +75,14 @@ class MainActivity : Activity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.source and (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK) != 0) {
-            if (gamepadTranslator.onKey(event) != null) return true
+            gamepadTranslator.onKey(event)?.let { inputBridge.send(0, it, connected = true); return true }
         }
         return super.dispatchKeyEvent(event)
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         if (event.source and (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK) != 0) {
-            if (gamepadTranslator.onMotion(event) != null) return true
+            gamepadTranslator.onMotion(event)?.let { inputBridge.send(0, it, connected = true); return true }
         }
         return super.dispatchGenericMotionEvent(event)
     }
