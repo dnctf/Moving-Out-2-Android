@@ -125,10 +125,12 @@ Java_com_dnctf_movingout2_input_NativeXInputTransport_nativeReadSnapshot(JNIEnv*
             const int16_t rx = __atomic_load_n(&slot.thumb_rx, __ATOMIC_RELAXED), ry = __atomic_load_n(&slot.thumb_ry, __ATOMIC_RELAXED);
             packet[0] = static_cast<uint8_t>(buttons & 0xffu); packet[1] = static_cast<uint8_t>((buttons >> 8) & 0xffu);
             packet[2] = leftTrigger; packet[3] = rightTrigger;
-            packet[4] = static_cast<uint8_t>(lx & 0xff); packet[5] = static_cast<uint8_t>((lx >> 8) & 0xff);
-            packet[6] = static_cast<uint8_t>(ly & 0xff); packet[7] = static_cast<uint8_t>((ly >> 8) & 0xff);
-            packet[8] = static_cast<uint8_t>(rx & 0xff); packet[9] = static_cast<uint8_t>((rx >> 8) & 0xff);
-            packet[10] = static_cast<uint8_t>(ry & 0xff); packet[11] = static_cast<uint8_t>((ry >> 8) & 0xff);
+            const uint16_t lxBits = static_cast<uint16_t>(lx), lyBits = static_cast<uint16_t>(ly);
+            const uint16_t rxBits = static_cast<uint16_t>(rx), ryBits = static_cast<uint16_t>(ry);
+            packet[4] = static_cast<uint8_t>(lxBits & 0xffu); packet[5] = static_cast<uint8_t>((lxBits >> 8) & 0xffu);
+            packet[6] = static_cast<uint8_t>(lyBits & 0xffu); packet[7] = static_cast<uint8_t>((lyBits >> 8) & 0xffu);
+            packet[8] = static_cast<uint8_t>(rxBits & 0xffu); packet[9] = static_cast<uint8_t>((rxBits >> 8) & 0xffu);
+            packet[10] = static_cast<uint8_t>(ryBits & 0xffu); packet[11] = static_cast<uint8_t>((ryBits >> 8) & 0xffu);
             const uint32_t after = __atomic_load_n(&slot.seq, __ATOMIC_ACQUIRE);
             if (before == after && !(after & 1u)) { stable = true; break; }
         }
