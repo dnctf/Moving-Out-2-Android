@@ -3,6 +3,7 @@ package com.dnctf.movingout2.runtime
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
+import java.nio.file.Files
 
 class RuntimeBundleValidatorTest {
     private fun fakeArm64Elf(file: File) {
@@ -13,7 +14,7 @@ class RuntimeBundleValidatorTest {
         file.writeBytes(bytes); file.setExecutable(true, false)
     }
     private fun bundle(): File {
-        val root = createTempDir(prefix = "runtime-bundle-test-")
+        val root = Files.createTempDirectory("runtime-bundle-test-").toFile()
         File(root, "runtime.properties").writeText("format_version=1\ntarget_abi=arm64-v8a\nbox64=bin/box64\nwine64=wine/bin/wine64\nwineserver=wine/bin/wineserver\nlibrary_dir=lib\n")
         fakeArm64Elf(File(root, "bin/box64"))
         fakeArm64Elf(File(root, "wine/bin/wine64"))
@@ -29,7 +30,7 @@ class RuntimeBundleValidatorTest {
         root.deleteRecursively()
     }
     @Test fun rejectsMissingManifest() {
-        val root = createTempDir(prefix = "runtime-missing-")
+        val root = Files.createTempDirectory("runtime-missing-").toFile()
         assertEquals(RuntimeBundleStatus.INVALID_MANIFEST, RuntimeBundleValidator().validate(root).status)
         root.deleteRecursively()
     }
