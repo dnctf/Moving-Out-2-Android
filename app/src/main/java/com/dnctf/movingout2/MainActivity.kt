@@ -126,7 +126,7 @@ class MainActivity : Activity() {
         val pad = VirtualControllerView(this) { state ->
             touchControllerState = state
             sendCombinedInput()
-            val readback = inputBridge.readSnapshot(0)?.joinToString(" ") { byte -> "%02X".format(byte.toInt() and 0xFF) } ?: "unavailable"
+            val readback = inputBridge.packet(state, physicalControllerState).serializeLittleEndian().joinToString(" ") { byte -> "%02X".format(byte.toInt() and 0xFF) }
             stateText.text = "Input: buttons=" + state.buttons.joinToString() + " | left=(" + state.leftX.toInt() + ", " + state.leftY.toInt() + ")\nMO2X packet: " + readback
         }
         container.addView(info)
