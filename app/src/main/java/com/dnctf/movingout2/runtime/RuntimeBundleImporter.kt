@@ -93,14 +93,17 @@ class RuntimeBundleImporter(
     }
 
     private fun grantExecutableFlags(root: File) {
-        val properties = Properties()
-        File(root, "runtime.properties").inputStream().use { properties.load(it) }
-        for (key in listOf("box64", "wine64", "wineserver")) {
-            val relative = properties.getProperty(key)?.trim().orEmpty()
-            if (relative.isBlank()) continue
+        val manifest = File(root, "runtime-manifest.json")
+        val paths = if (manifest.isFile) listOf("box64/bin/box64", "wine/bin/wine64", "wine/bin/wineserver") else {
+            val properties = Properties()
+            File(root, "runtime.properties").inputStream().use { properties.load(it) }
+            listOf("box64", "wine64", "wineserver").map { properties.getProperty(it)?.trim().orEmpty() }.filter { it.isNotBlank() }
+        }
+        for (relative in paths) {
+            if (relative.startsWith("/") || relative.split('/', '\\\\').any { it == ".." }) throw IOException("Executable path is unsafe.")
             val file = File(root, relative).canonicalFile
             if (!file.toPath().startsWith(root.canonicalFile.toPath())) throw IOException("Executable path escapes bundle.")
-            if (file.isFile && !file.setExecutable(true, false) && !file.canExecute()) throw IOException("Unable to set executable permission for $key.")
+            if (file.isFile && !file.setExecutable(true, false) && !file.canExecute()) throw IOException("Unable to set executable flag for $relative.")
         }
     }
 }
