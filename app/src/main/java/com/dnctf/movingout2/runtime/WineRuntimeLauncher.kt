@@ -79,7 +79,7 @@ class WineRuntimeLauncher(
         }
         val originalIcd = turnipDir?.walkTopDown()?.maxDepth(8)?.firstOrNull { it.isFile && it.name.endsWith(".json", true) && runCatching { it.readText().contains("library_path") }.getOrDefault(false) }
         val turnipLibrary = turnipDir?.walkTopDown()?.maxDepth(8)?.firstOrNull { it.isFile && it.name == "libvulkan_freedreno.so" }
-        val icd = if (originalIcd != null && turnipLibrary != null && options.useTurnip) runCatching { rewriteTurnipIcd(originalIcd, turnipLibrary) }.getOrElse { blockers += "Unable to rewrite Turnip ICD: ${it.message}"; null } else originalIcd
+        val icd = if (originalIcd != null && turnipLibrary != null && options.useTurnip) runCatching { rewriteTurnipIcd(originalIcd!!, turnipLibrary!!) }.getOrElse { blockers += "Unable to rewrite Turnip ICD: ${it.message}"; null } else originalIcd
         if (!gameExe.isFile || !isValidX64Pe(gameExe)) blockers += "Game executable is missing or not a valid x64 PE: ${gameExe.absolutePath}"
         if (blockers.isNotEmpty()) return LaunchPreparationResult.MissingPayload(blockers.distinct())
 
