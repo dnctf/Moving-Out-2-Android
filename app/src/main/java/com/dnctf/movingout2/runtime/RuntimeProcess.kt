@@ -1,22 +1,61 @@
 package com.dnctf.movingout2.runtime
 
 import java.io.File
+import java.util.concurrent.TimeUnit
 
-data class ProcessResult(val process: Process, val stdoutThread: Thread, val stderrThread: Thread)
+data class ExitResult(val exitCode: Int?, val pid: Long?, val timedOut: Boolean, val terminatedByUser: Boolean, val durationMs: Long)
+data class ProcessResult(val process: Process, val pid: Long?, val stdoutThread: Thread, val stderrThread: Thread, private val startedNanos: Long) {
+    fun waitFor(timeoutMs: Long? = null): ExitResult {
+        require(timeoutMs == null || timeoutMs >= 0)
+        val timedOut = timeoutMs != null && !process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
+        if (timedOut) terminate(250)
+        else if (timeoutMs == null) process.waitFor()
+        return ExitResult(process.exitValue(), pid, timedOut, false, elapsed())
+    }
+    fun stop(gracePeriodMs: Long = 1000): ExitResult {
+        require(gracePeriodMs >= 0)
+        if (process.isAlive) {
+            process.destroy()
+            if (!process.waitFor(gracePeriodMs, TimeUnit.MILLISECONDS)) {
+                process.destroyForcibly()
+                process.waitFor()
+            }
+        }
+        return ExitResult(if (process.isAlive) null else process.exitValue(), pid, false, true, elapsed())
+    }
+    private fun terminate(grace: Long) {
+        if (process.isAlive) {
+            process.destroy()
+            if (!process.waitFor(grace, TimeUnit.MILLISECONDS)) {
+                process.destroyForcibly()
+                process.waitFor()
+            }
+        }
+    }
+    private fun elapsed() = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos)
+}
 
-/** Generic process supervision primitive. RuntimeManager must gate game launch until native runtime is verified. */
 class RuntimeProcess(private val diagnostics: RuntimeDiagnostics) {
     fun start(executable: File, args: List<String> = emptyList(), environment: Map<String, String> = emptyMap(), workingDirectory: File? = executable.parentFile): ProcessResult {
         require(executable.exists() && executable.isFile && executable.canExecute()) { "Executable missing or not executable: $executable" }
         val builder = ProcessBuilder(listOf(executable.absolutePath) + args)
-        if (workingDirectory != null) builder.directory(workingDirectory)
+        workingDirectory?.let { builder.directory(it) }
         builder.environment().putAll(environment)
         val process = builder.start()
-        val stdout = Thread({ process.inputStream.bufferedReader().useLines { lines -> lines.forEach { diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "stdout", it)) } } }, "runtime-stdout")
-        val stderr = Thread({ process.errorStream.bufferedReader().useLines { lines -> lines.forEach { diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "stderr", it)) } } }, "runtime-stderr")
-        stdout.isDaemon = true; stderr.isDaemon = true
+        val pid = parsePidSafely(process.toString())
+        val started = System.nanoTime()
+        val stdout = reader(process.inputStream, "runtime-stdout", RuntimeDiagnostic.Severity.INFO, "stdout")
+        val stderr = reader(process.errorStream, "runtime-stderr", RuntimeDiagnostic.Severity.ERROR, "stderr")
         stdout.start(); stderr.start()
-        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "process", "Process started: ${executable.name}, process started"))
-        return ProcessResult(process, stdout, stderr)
+        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "process", "Started ${executable.name}; PID=${pid ?: "unknown"}"))
+        return ProcessResult(process, pid, stdout, stderr, started)
+    }
+    private fun reader(stream: java.io.InputStream, threadName: String, severity: RuntimeDiagnostic.Severity, component: String) =
+        Thread({
+            runCatching { stream.bufferedReader().useLines { it.forEach { line -> diagnostics.record(RuntimeDiagnostic(severity, component, line)) } } }
+                .onFailure { diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, component, "Reader error: ${it.message}")) }
+        }, threadName).apply { isDaemon = true }
+    companion object {
+        fun parsePidSafely(description: String?): Long? = description?.let { Regex("pid=(\\d+)").find(it)?.groupValues?.getOrNull(1)?.toLongOrNull() }
     }
 }
