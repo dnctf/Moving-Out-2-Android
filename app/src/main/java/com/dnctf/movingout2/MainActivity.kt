@@ -164,7 +164,15 @@ class MainActivity : Activity() {
             pickGameZip -> {
                 status.text = "Importing ZIP into private app storage…"
                 Thread({
-                    val result = runCatching { GameZipImporter(this).importZip(uri) }
+                    val result = runCatching {
+                        GameZipImporter(this).importZip(uri, onProgress = { progress ->
+                            runOnUiThread {
+                                val mibDone = progress.bytesDone / (1024 * 1024)
+                                val mibTotal = progress.totalBytes / (1024 * 1024)
+                                status.text = "${progress.phase}: ${progress.percent}% (${progress.entriesDone}/${progress.totalEntries} files, ${mibDone}/${mibTotal} MiB)"
+                            }
+                        })
+                    }
                     runOnUiThread {
                         status.text = result.fold({ imported ->
                             buildString {
