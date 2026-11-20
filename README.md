@@ -24,6 +24,9 @@ Users must supply legitimate game files. This repository does not distribute gam
 - EGL/GLES renderer fallback and asynchronous graphics status in launcher UI.
 - CI debug APK build, Kotlin tests and native C++ compilation.
 
+## Runtime integration research
+See [Runtime integration gates](docs/RUNTIME_INTEGRATION_PLAN.md) for upstream source baselines, Android executable restrictions, component provenance requirements and staged Wine/Box64 integration gates.
+
 ## Runtime bundle
 Import a folder through **Import runtime bundle (SAF)**. See [Runtime bundle format](docs/RUNTIME_BUNDLE.md). The import is validation-only; the bundle is not launched.
 
