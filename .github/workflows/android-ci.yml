@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/android/sdk}}"
           SDKMANAGER="${SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
           if [[ ! -x "$SDKMANAGER" ]]; then
             SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -maxdepth 5 -type f -name sdkmanager | sort | tail -n1)"
@@ -41,6 +41,18 @@ jobs:
           echo "Using sdkmanager: $SDKMANAGER"
           yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
           "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+      - name: Install MinGW-w64
+        run: sudo apt-get update && sudo apt-get install -y mingw-w64
+      - name: Verify MO2X protocol layout
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -Wall -Wextra -Werror native/wine-xinput/layout_test.cpp -I native/wine-xinput -o /tmp/mo2x-layout-test
+          /tmp/mo2x-layout-test
+      - name: Build Wine XInput DLLs
+        run: |
+          set -euo pipefail
+          chmod +x native/wine-xinput/build_wine_xinput.sh
+          native/wine-xinput/build_wine_xinput.sh native/wine-xinput/out
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -57,10 +69,12 @@ jobs:
           test -f "$APK_PATH"
           unzip -l "$APK_PATH" | grep -F "lib/arm64-v8a/libvulkan_probe.so"
           unzip -l "$APK_PATH" | grep -F "lib/arm64-v8a/libmo2_input_bridge.so"
-      - name: Upload APK
+      - name: Upload APK and XInput DLLs
         uses: actions/upload-artifact@v4
         if: success()
         with:
           name: moving-out-2-android-debug
-          path: app/build/outputs/apk/debug/*.apk
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            native/wine-xinput/out/*.dll
           retention-days: 14
