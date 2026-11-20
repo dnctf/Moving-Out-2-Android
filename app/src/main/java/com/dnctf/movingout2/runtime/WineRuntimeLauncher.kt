@@ -100,18 +100,15 @@ class WineRuntimeLauncher(
             sharedInput.parentFile?.mkdirs()
             if (!sharedInput.exists()) sharedInput.writeBytes(ByteArray(128))
             val zPath = toWineZPath(gameExe)
-            val args = WineLaunchCommand.arguments(wine.absolutePath, zPath, options.width, options.height)
-            val env = WineLaunchCommand.environment(prefix, sharedInput, report.libraryDirectory!!, options.fpsCap, if (options.useTurnip && turnipDir != null) icd else null, dxvkDlls).toMutableMap().toMutableMap()
+            val args = WineLaunchCommand.arguments(wine!!.absolutePath, zPath, options.width, options.height)
+            val env = WineLaunchCommand.environment(prefix, sharedInput, report.libraryDirectory!!, options.fpsCap, if (options.useTurnip && turnipDir != null) icd else null, dxvkDlls).toMutableMap()
             properties.stringPropertyNames().filter { it.startsWith("profile_env_") }.forEach { p ->
                 val envKey = p.removePrefix("profile_env_")
                 if (envKey.startsWith("BOX64_DYNAREC") || envKey == "WINEDLLOVERRIDES") env[envKey] = properties.getProperty(p)
             }
-            properties.stringPropertyNames().filter { it.startsWith("profile_env_") }.forEach { property ->
-                val key = property.removePrefix("profile_env_")
-                if (key.startsWith("BOX64_DYNAREC") || key == "WINEDLLOVERRIDES") env[key] = properties.getProperty(property)
-            }
+
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "launcher", "Prepared Wine prefix and launch plan; execution compatibility remains unverified."))
-            return LaunchPreparationResult.Prepared(WineLaunchPlan(box64, args, env, gameExe.parentFile ?: root, prefix, gameExe))
+            return LaunchPreparationResult.Prepared(WineLaunchPlan(box64!!, args, env, gameExe.parentFile ?: root, prefix, gameExe))
         } catch (e: Exception) {
             return LaunchPreparationResult.MissingPayload(listOf("Wine prefix preparation failed: ${e.message ?: e.javaClass.simpleName}"))
         }
@@ -176,9 +173,12 @@ class WineRuntimeLauncher(
     private fun isValidX64Pe(file: File): Boolean = runCatching {
         if (!file.isFile || file.length() < 70) return@runCatching false
         val bytes = file.inputStream().use { stream ->
-            val buffer = ByteArray(65536)\n            var offset = 0\n            while (offset < buffer.size) { val read = stream.read(buffer, offset, buffer.size - offset); if (read <= 0) break; offset += read }\n            if (offset == buffer.size) buffer else buffer.copyOf(offset)\n        }
-        if (bytes.size < 64 || bytes[0] != 'M'.code.toByte() || bytes[1] != 'Z'.code.toByte()) return@runCatching false
-        val pe = (bytes[0x3c].toInt() and 255) or ((bytes[0x3d].toInt() and 255) shl 8) or ((bytes[0x3e].toInt() and 255) shl 16) or ((bytes[0x3f].toInt() and 255) shl 24)
-        pe >= 0 && pe <= bytes.size - 6 && bytes[pe] == 'P'.code.toByte() && bytes[pe+1] == 'E'.code.toByte() && bytes[pe+2] == 0.toByte() && bytes[pe+3] == 0.toByte() && bytes[pe+4] == 0x64.toByte() && bytes[pe+5] == 0x86.toByte()
-    }.getOrDefault(false)
-}
+            val buffer = ByteArray(65536)
+            var offset = 0
+            while (offset < buffer.size) {
+                val read = stream.read(buffer, offset, buffer.size - offset)
+                if (read <= 0) break
+                offset += read
+            }
+            if (offset == buffer.size) buffer else buffer.copyOf(offset)
+        }
