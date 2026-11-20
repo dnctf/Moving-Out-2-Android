@@ -130,15 +130,28 @@ class WineRuntimeLauncher(
         for (player in 0 until 4) runCatching { inputBridge.disconnectPlayer(player) }
     }
 
+    /** Works with both legacy runtime.properties and the current hash-validated JSON manifest. */
     fun stopWineserver(): Boolean {
-        val props = Properties()
+        val server = WineServerResolver.resolve(bundleRoot)
+        if (server == null) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "wineserver", "Cleanup blocked: wineserver path missing, invalid, or outside bundle."))
+            return false
+        }
+        val validated = validator.validate(bundleRoot)
+        val libraryPath = validated.libraryDirectory?.absolutePath.orEmpty()
+        val environment = buildMap {
+            put("WINEPREFIX", prefix.absolutePath)
+            if (libraryPath.isNotBlank()) put("LD_LIBRARY_PATH", libraryPath)
+        }
         return runCatching {
-            File(bundleRoot, "runtime.properties").inputStream().use(props::load)
-            val rel = props.getProperty("wineserver") ?: return false
-            val server = File(bundleRoot, rel).canonicalFile
-            if (!server.isFile || !server.canExecute()) return false
-            RuntimeProcess(diagnostics).start(server, listOf("-k"), mapOf("WINEPREFIX" to prefix.absolutePath), prefix).waitFor(5000).exitCode == 0
-        }.getOrDefault(false)
+            val result = RuntimeProcess(diagnostics).start(server, listOf("-k"), environment, prefix).waitFor(5000)
+            val success = !result.timedOut && result.exitCode == 0
+            diagnostics.record(RuntimeDiagnostic(if (success) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.WARNING, "wineserver", "Cleanup command exit=${result.exitCode}, timedOut=${result.timedOut}."))
+            success
+        }.getOrElse {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "wineserver", "Cleanup failed: ${it.message}"))
+            false
+        }
     }
 
     fun stop(result: ProcessResult, graceMs: Long = 1200) {
