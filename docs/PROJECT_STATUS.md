@@ -9,6 +9,8 @@ Phase 2 runtime bundle import/validation foundation plus Phase 3 native Vulkan d
 - Runtime state/process/diagnostic foundation.
 - User-provided runtime bundle import through SAF, streamed into private staging storage, bounded by entry/depth/size limits, manifest path confinement, validation before activation, and rollback path.
 - Runtime bundle structural validation: required manifest keys/version/ABI, nonempty executable files, ELF64 little-endian AArch64 headers and library directory.
+- Optional graphics payload inventory: DXVK x64 DLL header checks and Turnip ARM64 driver + ICD JSON presence checks; does not load either.
+- Game import profile detection: bounded Unity version scan, IL2CPP metadata magic/version and game PE architecture.
 - Native JNI Vulkan probe: loader API version, physical device enumeration, first device properties/API/vendor/device ID and device extension list.
 - Async launcher display of graphics probe summary.
 
