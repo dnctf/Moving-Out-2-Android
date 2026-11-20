@@ -19,7 +19,6 @@ import android.widget.Toast
 import org.json.JSONObject
 import com.dnctf.movingout2.core.logging.CrashDiagnosticExporter
 import com.dnctf.movingout2.runtime.RuntimeDiagnostics
-import java.io.File
 import com.dnctf.movingout2.input.GamepadTranslator
 import com.dnctf.movingout2.input.RuntimeInputBridge
 import com.dnctf.movingout2.input.VirtualControllerView
@@ -103,6 +102,7 @@ class MainActivity : Activity() {
                 .put("libraryDirectory",runtime.libraryDirectory?.absolutePath).put("blockers",runtime.blockers)
             val manifest=File(runtimeRoot,"runtime-manifest.json")
             if(manifest.isFile) runCatching { runtimeJson.put("manifest",JSONObject(manifest.readText())) }
+            diagnosticLog.record(com.dnctf.movingout2.runtime.RuntimeDiagnostic(com.dnctf.movingout2.runtime.RuntimeDiagnostic.Severity.INFO,"diagnostics","Diagnostic ZIP export requested"))
             val zip=runCatching { CrashDiagnosticExporter(File(cacheDir,"diagnostics")).export(deviceJson.toString(2),gameJson.toString(2),runtimeJson.toString(2),diagnosticLog.snapshot()) }
             runOnUiThread { zip.onSuccess { file ->
                 pendingDiagnosticZip=file
