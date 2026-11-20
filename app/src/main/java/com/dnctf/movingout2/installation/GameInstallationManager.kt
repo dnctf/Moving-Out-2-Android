@@ -33,7 +33,7 @@ class GameInstallationManager(private val context: Context) {
         val metadataDir = find(root, "MovingOut2_Data/il2cpp_data/Metadata")
         val structural = metadataDir?.isDirectory == true
         return SafInstallationReport(missing.distinct(), errors.distinct(), listOf(
-            "Folder access: ${if (errors.none { it.contains("cannot be opened") }) "PASS" else "FAIL"}",
+            "Folder access: ${if (persisted && root.canRead()) "PASS" else "FAIL"}",
             "Core file detection: ${if (missing.isEmpty() && errors.isEmpty()) "PASS" else "INCOMPLETE"}",
             "Structural validation: ${if (structural) "PASS" else "FAIL"}",
             "Version/architecture: NOT YET INSPECTED",
