@@ -49,9 +49,15 @@ class RuntimeBundleImporter(
         } catch (error: Exception) {
             staging.deleteRecursively()
             if (backup.exists()) {
-                if (activated) target.deleteRecursively()
-                backup.renameTo(target)
-            } else if (activated) target.deleteRecursively()
+                if (activated && target.exists() && !target.deleteRecursively()) {
+                    throw IOException("Import failed and the activated bundle could not be removed; previous bundle remains in backup.", error)
+                }
+                if (!backup.renameTo(target)) {
+                    throw IOException("Import failed and rollback could not restore the previous bundle; backup remains at ${backup.absolutePath}.", error)
+                }
+            } else if (activated && target.exists() && !target.deleteRecursively()) {
+                throw IOException("Import failed and the activated bundle could not be removed.", error)
+            }
             throw error
         }
     }
