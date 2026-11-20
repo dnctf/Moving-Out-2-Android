@@ -7,6 +7,7 @@ import android.widget.TextView
 import com.dnctf.movingout2.installation.GameInstallationManager
 import com.dnctf.movingout2.installation.InstallationRepository
 import com.dnctf.movingout2.runtime.RuntimeBundleImporter
+import com.dnctf.movingout2.graphics.VulkanCapabilities
 import com.dnctf.movingout2.runtime.RuntimeBundleValidator
 import com.dnctf.movingout2.ui.home.LauncherHomeView
 import java.io.File
@@ -14,6 +15,7 @@ import java.io.File
 class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var runtimeStatus: TextView
+    private lateinit var graphicsStatus: TextView
     private lateinit var repository: InstallationRepository
     private val pickFolder = 1001
     private val pickRuntimeBundle = 1002
@@ -24,6 +26,7 @@ class MainActivity : Activity() {
         val views = LauncherHomeView.create(this, ::openFolderPicker, ::revalidateSavedFolder, ::openRuntimeBundlePicker)
         status = views.status
         runtimeStatus = views.runtimeStatus
+        graphicsStatus = views.graphicsStatus
         setContentView(views.root)
         status.text = if (repository.savedUri() != null) {
             "Saved installation folder found. Tap Revalidate to check current access."
@@ -31,6 +34,7 @@ class MainActivity : Activity() {
             "Installation folder not configured. Runtime: RUNTIME_NOT_INSTALLED."
         }
         refreshRuntimeStatus()
+        probeGraphicsAsync()
     }
 
     private fun openFolderPicker() {
@@ -52,6 +56,25 @@ class MainActivity : Activity() {
         status.text = if (uri == null) "No installation folder saved." else runCatching {
             formatReport(GameInstallationManager(this).validate(uri))
         }.getOrElse { "Folder access error: ${it.message ?: "permission unavailable"}" }
+    }
+
+
+    private fun probeGraphicsAsync() {
+        graphicsStatus.text = "Probing Vulkan loader and physical device..."
+        Thread({
+            val result = runCatching { VulkanCapabilities.probe(this) }
+            runOnUiThread {
+                graphicsStatus.text = result.fold({ probe ->
+                    buildString {
+                        append("Native Vulkan: ").append(probe.nativeProbeStatus ?: "unavailable")
+                        append("\nAPI: ").append(probe.apiVersion ?: "unknown")
+                        append("\nGPU: ").append(probe.gpuVendor ?: "unknown").append(" / ").append(probe.gpuName ?: "unknown")
+                        append("\nExtensions: ").append(probe.extensions.size)
+                        if (probe.blockers.isNotEmpty()) append("\n\nNotes:\n- ").append(probe.blockers.joinToString("\n- "))
+                    }
+                }, { "Graphics probe failed: ${it.message ?: it.javaClass.simpleName}" })
+            }
+        }, "graphics-probe").apply { isDaemon = true; start() }
     }
 
     private fun refreshRuntimeStatus() {
