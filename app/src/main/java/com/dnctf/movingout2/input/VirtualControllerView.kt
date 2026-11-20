@@ -8,55 +8,77 @@ import android.view.MotionEvent
 import android.view.View
 import kotlin.math.min
 
-/** Lightweight touch controller with a clean, low-clutter layout and multi-touch support. */
+/** Compact touch controller. Pointer IDs are tracked independently to avoid stuck inputs. */
 class VirtualControllerView(context: Context, private val onState: (ControllerState) -> Unit) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val activePointers = mutableMapOf<Int, ControllerButton>()
+    private val pointerButtons = mutableMapOf<Int, ControllerButton>()
     private val pressed = mutableSetOf<ControllerButton>()
-    private val hitRects = mutableMapOf<ControllerButton, RectF>()
     private var stickPointer: Int? = null
-    private var stickX = 0f; private var stickY = 0f
-    private val alphaIdle = 115
-    init { isFocusable = true; isFocusableInTouchMode = true }
+    private var stickX = 0f
+    private var stickY = 0f
+    private val rects = mutableMapOf<ControllerButton, RectF>()
+    private val idleAlpha = 112
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        hitRects.clear()
-        val s = min(width, height).toFloat()
-        val size = s * 0.115f
-        val leftBase = RectF(width*0.13f, height*0.73f, width*0.13f+size*1.5f, height*0.73f+size*1.5f)
-        val rightBase = RectF(width*0.72f, height*0.68f, width*0.72f+size*2f, height*0.68f+size*2f)
-        drawStick(canvas, leftBase, "STICK")
-        val buttons = listOf(ControllerButton.Y to "Y", ControllerButton.X to "X", ControllerButton.B to "B", ControllerButton.A to "A")
-        buttons.forEach { (b,label) ->
-            val rect = when(b) {
-                ControllerButton.Y -> RectF(rightBase.centerX(), rightBase.top-size*0.65f, rightBase.centerX()+size, rightBase.top+size*0.35f)
-                ControllerButton.X -> RectF(rightBase.left-size*0.55f, rightBase.centerY()-size*0.5f, rightBase.left+size*0.45f, rightBase.centerY()+size*0.5f)
-                ControllerButton.B -> RectF(rightBase.left+size*1.15f, rightBase.centerY()-size*0.5f, rightBase.left+size*2.15f, rightBase.centerY()+size*0.5f)
-                else -> RectF(rightBase.centerX()-size*0.5f, rightBase.bottom-size*0.35f, rightBase.centerX()+size*0.5f, rightBase.bottom+size*0.65f)
-            }
-            hitRects[b]=rect; drawButton(canvas,rect,label,b in pressed)
+        rects.clear()
+        val unit = min(this.width, this.height) * 0.12f
+        val dpadCenterX = this.width * 0.22f
+        val dpadCenterY = this.height * 0.67f
+        val d = unit * 0.55f
+        val dpad = listOf(
+            ControllerButton.UP to RectF(dpadCenterX-d,dpadCenterY-d*2,dpadCenterX+d,dpadCenterY),
+            ControllerButton.DOWN to RectF(dpadCenterX-d,dpadCenterY,dpadCenterX+d,dpadCenterY+d*2),
+            ControllerButton.LEFT to RectF(dpadCenterX-d*2,dpadCenterY-d,dpadCenterX,dpadCenterY+d),
+            ControllerButton.RIGHT to RectF(dpadCenterX,dpadCenterY-d,dpadCenterX+d*2,dpadCenterY+d)
+        )
+        dpad.forEach { (button, rect) -> rects[button]=rect; drawButton(canvas,rect,button.name.take(1),button in pressed) }
+        val stick = RectF(this.width*0.08f,this.height*0.73f,this.width*0.08f+unit*1.65f,this.height*0.73f+unit*1.65f)
+        drawStick(canvas,stick)
+        val cx=this.width*0.78f; val cy=this.height*0.69f; val r=unit*0.5f
+        val face=listOf(ControllerButton.Y to RectF(cx-r,cy-r*2.2f,cx+r,cy-r*0.2f),ControllerButton.X to RectF(cx-r*2.1f,cy-r,cx-r*0.1f,cy+r),ControllerButton.B to RectF(cx+r*0.1f,cy-r,cx+r*2.1f,cy+r),ControllerButton.A to RectF(cx-r,cy+r*0.2f,cx+r,cy+r*2.2f))
+        face.forEach { (b,rect) -> rects[b]=rect; drawButton(canvas,rect,b.name,b in pressed) }
+        val centerY=this.height*0.88f
+        listOf(ControllerButton.BACK to "BACK",ControllerButton.START to "START").forEachIndexed { i,(b,label) ->
+            val rect=RectF(this.width*0.46f+i*unit*1.1f,centerY,this.width*0.46f+i*unit*1.1f+unit*0.85f,centerY+unit*0.45f)
+            rects[b]=rect; drawButton(canvas,rect,label,b in pressed)
         }
-        val centerSize=size*0.75f
-        listOf(ControllerButton.START to "START", ControllerButton.BACK to "BACK").forEachIndexed { i,(b,label) ->
-            val rect=RectF(width*0.48f+i*(centerSize+size*0.2f),height*0.82f,width*0.48f+i*(centerSize+size*0.2f)+centerSize,height*0.82f+centerSize*0.45f)
-            hitRects[b]=rect; drawButton(canvas,rect,label,b in pressed)
-        }
-        val d=size*0.58f
-        val cx=width*0.27f; val cy=height*0.65f
-        listOf(ControllerButton.UP to RectF(cx-d,cy-d*2,cx+d,cy), ControllerButton.DOWN to RectF(cx-d,cy,cx+d,cy+d*2), ControllerButton.LEFT to RectF(cx-d*2,cy-d,cx,cy+d), ControllerButton.RIGHT to RectF(cx,cy-d,cx+d*2,cy+d)).forEach { (b,r) -> hitRects[b]=r; drawButton(canvas,r,when(b){ControllerButton.UP->"↑";ControllerButton.DOWN->"↓";ControllerButton.LEFT->"←";else->"→"},b in pressed) }
     }
-    private fun drawStick(canvas:Canvas,r:RectF,label:String) { paint.color=0x447FFFFFF.toInt(); canvas.drawOval(r,paint); val knob=RectF(r.centerX()-r.width*0.23f+stickX*r.width*0.25f,r.centerY()-r.height*0.23f+stickY*r.height*0.25f,r.centerX()+r.width*0.23f+stickX*r.width*0.25f,r.centerY()+r.height*0.23f+stickY*r.height*0.25f); paint.color=0xAAFFFFFF.toInt();canvas.drawOval(knob,paint);paint.color=0xBBFFFFFF.toInt();paint.textSize=r.width*0.16f;paint.textAlign=Paint.Align.CENTER;canvas.drawText(label,r.centerX(),r.bottom+r.height*0.18f,paint) }
-    private fun drawButton(canvas:Canvas,r:RectF,label:String,down:Boolean){paint.color=if(down)0xCCFFFFFF.toInt() else (alphaIdle shl 24) or 0xFFFFFF;canvas.drawRoundRect(r,r.height*0.25f,r.height*0.25f,paint);paint.color=if(down)0xFF202020.toInt() else 0xCCFFFFFF.toInt();paint.textSize=r.height*0.45f;paint.textAlign=Paint.Align.CENTER;canvas.drawText(label,r.centerX(),r.centerY()+paint.textSize*0.35f,paint)}
+    private fun drawStick(canvas:Canvas,r:RectF) {
+        paint.color=0x447FFFFFF.toInt();canvas.drawOval(r,paint)
+        val knob=RectF(r.centerX()-r.width*0.22f+stickX*r.width*0.28f,r.centerY()-r.height*0.22f+stickY*r.height*0.28f,r.centerX()+r.width*0.22f+stickX*r.width*0.28f,r.centerY()+r.height*0.22f+stickY*r.height*0.28f)
+        paint.color=0xAAFFFFFF.toInt();canvas.drawOval(knob,paint)
+    }
+    private fun drawButton(canvas:Canvas,r:RectF,label:String,down:Boolean) {
+        paint.color=if(down)0xCCFFFFFF.toInt() else (idleAlpha shl 24) or 0xFFFFFF
+        canvas.drawRoundRect(r,r.height*0.24f,r.height*0.24f,paint)
+        paint.color=if(down)0xFF222222.toInt() else 0xCCFFFFFF.toInt()
+        paint.textSize=r.height*0.38f;paint.textAlign=Paint.Align.CENTER
+        canvas.drawText(label,r.centerX(),r.centerY()+paint.textSize*0.34f,paint)
+    }
     override fun onTouchEvent(event:MotionEvent):Boolean {
         when(event.actionMasked) {
-            MotionEvent.ACTION_DOWN,MotionEvent.ACTION_POINTER_DOWN -> { val idx=event.actionIndex; val id=event.getPointerId(idx); val x=event.getX(idx);val y=event.getY(idx); val button=hitRects.entries.firstOrNull{it.value.contains(x,y)}?.key; if(button!=null){pressed.add(button);activePointers[id]=button}else if(x<width*0.45f){stickPointer=id;updateStick(x,y)}; emit(); invalidate() }
-            MotionEvent.ACTION_MOVE -> { for(i in 0 until event.pointerCount){val id=event.getPointerId(i);if(activePointers.containsKey(id)){val b=activePointers[id]; val x=event.getX(i);val y=event.getY(i); if(hitRects[b]?.contains(x,y)!=true){pressed.remove(b!!);activePointers.remove(id)} } else if(stickPointer==id){updateStick(event.getX(i),event.getY(i))} };emit();invalidate() }
-            MotionEvent.ACTION_UP,MotionEvent.ACTION_POINTER_UP -> {val id=event.getPointerId(event.actionIndex);activePointers.remove(id)?.let{pressed.remove(it)};if(stickPointer==id){stickPointer=null;stickX=0f;stickY=0f};emit();invalidate() }
-            MotionEvent.ACTION_CANCEL -> {activePointers.clear();pressed.clear();stickPointer=null;stickX=0f;stickY=0f;emit();invalidate() }
+            MotionEvent.ACTION_DOWN,MotionEvent.ACTION_POINTER_DOWN -> {
+                val index=event.actionIndex;val id=event.getPointerId(index);val x=event.getX(index);val y=event.getY(index)
+                val button=rects.entries.firstOrNull{it.value.contains(x,y)}?.key
+                if(button!=null){pointerButtons[id]=button;pressed.add(button)} else if(x<this.width*0.43f){stickPointer=id;updateStick(x,y)}
+                emit();invalidate()
+            }
+            MotionEvent.ACTION_MOVE -> for(i in 0 until event.pointerCount){val id=event.getPointerId(i);if(stickPointer==id)updateStick(event.getX(i),event.getY(i))}
+            MotionEvent.ACTION_UP,MotionEvent.ACTION_POINTER_UP -> {
+                val id=event.getPointerId(event.actionIndex)
+                pointerButtons.remove(id)?.let{button->if(pointerButtons.values.none{it==button})pressed.remove(button)}
+                if(stickPointer==id){stickPointer=null;stickX=0f;stickY=0f}
+                emit();invalidate()
+            }
+            MotionEvent.ACTION_CANCEL -> {pointerButtons.clear();pressed.clear();stickPointer=null;stickX=0f;stickY=0f;emit();invalidate()}
         }
+        if(event.actionMasked==MotionEvent.ACTION_MOVE){emit();invalidate()}
         return true
     }
-    private fun updateStick(x:Float,y:Float){stickX=((x-width*0.13f)/(width*0.13f)-1f).coerceIn(-1f,1f);stickY=((y-height*0.73f)/(height*0.13f)-1f).coerceIn(-1f,1f)}
-    private fun emit(){onState(ControllerState(pressed.toSet(),stickX,stickY))}
+    private fun updateStick(x:Float,y:Float) {
+        val cx=this.width*0.16f;val cy=this.height*0.81f;val radius=this.width*0.11f
+        stickX=((x-cx)/radius).coerceIn(-1f,1f);stickY=((y-cy)/radius).coerceIn(-1f,1f)
+    }
+    private fun emit(){onState(ControllerState(buttons=pressed.toSet(),leftX=stickX,leftY=stickY))}
 }
