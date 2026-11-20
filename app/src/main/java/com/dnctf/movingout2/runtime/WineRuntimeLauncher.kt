@@ -101,7 +101,7 @@ class WineRuntimeLauncher(
             if (!sharedInput.exists()) sharedInput.writeBytes(ByteArray(128))
             val zPath = toWineZPath(gameExe)
             val args = WineLaunchCommand.arguments(wine.absolutePath, zPath, options.width, options.height)
-            val env = WineLaunchCommand.environment(prefix, sharedInput, report.libraryDirectory!!, options.fpsCap, if (options.useTurnip && turnipDir != null) icd else null, dxvkDlls).toMutableMap()
+            val env = WineLaunchCommand.environment(prefix, sharedInput, report.libraryDirectory!!, options.fpsCap, if (options.useTurnip && turnipDir != null) icd else null, dxvkDlls).toMutableMap().toMutableMap()
             properties.stringPropertyNames().filter { it.startsWith("profile_env_") }.forEach { p ->
                 val envKey = p.removePrefix("profile_env_")
                 if (envKey.startsWith("BOX64_DYNAREC") || envKey == "WINEDLLOVERRIDES") env[envKey] = properties.getProperty(p)
