@@ -3,6 +3,10 @@ package com.dnctf.movingout2
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.ProgressDialog
+import android.app.Dialog
+import android.view.InputDevice
+import android.view.KeyEvent
+import android.view.MotionEvent
 import android.os.Bundle
 import android.content.Intent
 import android.widget.TextView
@@ -11,6 +15,8 @@ import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.ArrayAdapter
 import android.widget.Toast
+import com.dnctf.movingout2.input.GamepadTranslator
+import com.dnctf.movingout2.input.VirtualControllerView
 import com.dnctf.movingout2.installation.GameInstallationManager
 import com.dnctf.movingout2.installation.GameZipImporter
 import com.dnctf.movingout2.installation.InstallationRepository
@@ -28,6 +34,7 @@ class MainActivity : Activity() {
     private lateinit var runtimeStatus: TextView
     private lateinit var graphicsStatus: TextView
     private lateinit var repository: InstallationRepository
+    private val gamepadTranslator = GamepadTranslator()
     private val pickFolder = 1001
     private val pickRuntimeBundle = 1002
     private val pickGameZip = 1003
@@ -35,7 +42,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repository = InstallationRepository(this)
-        val views = LauncherHomeView.create(this, ::openFolderPicker, ::revalidateSavedFolder, ::openRuntimeBundlePicker, ::openGameZipPicker, ::showSettings)
+        val views = LauncherHomeView.create(this, ::openFolderPicker, ::revalidateSavedFolder, ::openRuntimeBundlePicker, ::openGameZipPicker, ::showSettings, ::showControllerTest)
         status = views.status
         runtimeStatus = views.runtimeStatus
         graphicsStatus = views.graphicsStatus
