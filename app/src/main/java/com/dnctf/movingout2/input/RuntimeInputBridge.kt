@@ -43,7 +43,7 @@ class RuntimeInputBridge(private val transport: XInputTransport = NativeXInputTr
             ControllerButton.A to 0x1000, ControllerButton.B to 0x2000, ControllerButton.X to 0x4000, ControllerButton.Y to 0x8000)
         var bits = 0
         s.buttons.forEach { bits = bits or (map[it] ?: 0) }
-        return XInputPacket(bits.toShort(), triggerByte(s.leftTrigger), triggerByte(s.rightTrigger),
+        return XInputPacket(bits.toShort(), triggerByte(if (ControllerButton.LT in s.buttons) 1f else s.leftTrigger), triggerByte(if (ControllerButton.RT in s.buttons) 1f else s.rightTrigger),
             axisShort(s.leftX), axisShort(-s.leftY), axisShort(s.rightX), axisShort(-s.rightY))
     }
 
