@@ -23,6 +23,7 @@ import com.dnctf.movingout2.installation.GameInstallationManager
 import com.dnctf.movingout2.installation.GameZipImporter
 import com.dnctf.movingout2.installation.InstallationRepository
 import com.dnctf.movingout2.runtime.RuntimeBundleImporter
+import com.dnctf.movingout2.runtime.RuntimeLaunchConfig
 import com.dnctf.movingout2.graphics.VulkanCapabilities
 import com.dnctf.movingout2.runtime.RuntimeBundleValidator
 import com.dnctf.movingout2.runtime.RuntimeGraphicsComponents
@@ -55,7 +56,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repository = InstallationRepository(this)
-        inputBridge.initialize(File(filesDir, "xinput_shm.bin").absolutePath)
+        inputBridge.initialize(RuntimeLaunchConfig(filesDir).sharedMemoryFile.absolutePath)
         val views = LauncherHomeView.create(this, ::openFolderPicker, ::revalidateSavedFolder, ::openRuntimeBundlePicker, ::openGameZipPicker, ::showSettings, ::showControllerTest)
         status = views.status
         runtimeStatus = views.runtimeStatus
