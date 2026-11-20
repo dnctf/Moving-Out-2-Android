@@ -15,7 +15,8 @@ object LauncherHomeView {
         onRevalidate: () -> Unit,
         onImportRuntime: () -> Unit,
         onImportGameZip: () -> Unit,
-        onOpenSettings: () -> Unit
+        onOpenSettings: () -> Unit,
+        onControllerTest: () -> Unit
     ): LauncherHomeViews {
         val content = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 24, 24, 24) }
         val title = TextView(context).apply { text = "Moving Out 2 Android"; textSize = 26f }
@@ -24,7 +25,7 @@ object LauncherHomeView {
         val importZip = Button(context).apply { text = "Import game from ZIP"; setOnClickListener { onImportGameZip() } }
         val select = Button(context).apply { text = "Select game folder"; setOnClickListener { onSelectFolder() } }
         val revalidate = Button(context).apply { text = "Revalidate saved folder"; setOnClickListener { onRevalidate() } }
-        val settings = Button(context).apply { text = "Audio, graphics and resolution settings"; setOnClickListener { onOpenSettings() } }
+        val settings = Button(context).apply { text = "Audio, graphics and resolution settings"; setOnClickListener { onOpenSettings() } }\n        val controller = Button(context).apply { text = "Virtual controller test"; setOnClickListener { onControllerTest() } }
         val graphicsTitle = TextView(context).apply { text = "Vulkan / GPU Diagnostics"; textSize = 20f; setPadding(0, 32, 0, 12) }
         val graphicsStatus = TextView(context).apply { textSize = 14f; setPadding(0, 8, 0, 12); text = "Probe pending." }
         val runtimeTitle = TextView(context).apply { text = "Native Runtime Bundle"; textSize = 20f; setPadding(0, 32, 0, 12) }
@@ -39,7 +40,7 @@ object LauncherHomeView {
             textSize = 13f; setPadding(0, 24, 0, 0)
         }
         content.addView(title); content.addView(subtitle); content.addView(status)
-        content.addView(importZip); content.addView(select); content.addView(revalidate); content.addView(settings)
+        content.addView(importZip); content.addView(select); content.addView(revalidate); content.addView(settings); content.addView(controller)
         content.addView(graphicsTitle); content.addView(graphicsStatus)
         content.addView(runtimeTitle); content.addView(runtimeStatus); content.addView(importRuntime); content.addView(runtimeInfo); content.addView(disclaimer)
         val scroll = ScrollView(context).apply { addView(content) }
