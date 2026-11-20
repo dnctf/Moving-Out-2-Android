@@ -39,7 +39,7 @@ class RuntimeManager(
                         synchronized(this) {
                             activeProcess = null
                             state = if (result?.exitCode == 0) RuntimeState.STOPPED else RuntimeState.FAILED
-                            launcher.stopWineserver()
+                            launcher.stop(running, 0)
                             diagnostics.record(RuntimeDiagnostic(if (result?.exitCode == 0) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.WARNING, "runtime", "Game process exited with code ${result?.exitCode ?: "unknown"}"))
                         }
                     }, "mo2-runtime-watchdog").apply { isDaemon = true; start() }
@@ -59,7 +59,7 @@ class RuntimeManager(
         state = RuntimeState.STOPPING
         val launcher = wineLauncher
         runCatching { process.stop(1000) }
-        runCatching { launcher?.stopWineserver() }
+        runCatching { launcher?.stop(process, 1000) }
         activeProcess = null
         state = RuntimeState.STOPPED
         diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "runtime", "Runtime stopped by user."))
