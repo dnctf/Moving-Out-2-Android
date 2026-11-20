@@ -1,15 +1,23 @@
 package com.dnctf.movingout2
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.os.Bundle
 import android.content.Intent
 import android.widget.TextView
+import android.widget.LinearLayout
+import android.widget.SeekBar
+import android.widget.Spinner
+import android.widget.ArrayAdapter
+import android.widget.Toast
 import com.dnctf.movingout2.installation.GameInstallationManager
+import com.dnctf.movingout2.installation.GameZipImporter
 import com.dnctf.movingout2.installation.InstallationRepository
 import com.dnctf.movingout2.runtime.RuntimeBundleImporter
 import com.dnctf.movingout2.graphics.VulkanCapabilities
 import com.dnctf.movingout2.runtime.RuntimeBundleValidator
 import com.dnctf.movingout2.runtime.RuntimeGraphicsComponents
+import com.dnctf.movingout2.settings.LauncherSettings
 import com.dnctf.movingout2.ui.home.LauncherHomeView
 import java.io.File
 
@@ -20,36 +28,39 @@ class MainActivity : Activity() {
     private lateinit var repository: InstallationRepository
     private val pickFolder = 1001
     private val pickRuntimeBundle = 1002
+    private val pickGameZip = 1003
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repository = InstallationRepository(this)
-        val views = LauncherHomeView.create(this, ::openFolderPicker, ::revalidateSavedFolder, ::openRuntimeBundlePicker)
+        val views = LauncherHomeView.create(this, ::openFolderPicker, ::revalidateSavedFolder, ::openRuntimeBundlePicker, ::openGameZipPicker, ::showSettings)
         status = views.status
         runtimeStatus = views.runtimeStatus
         graphicsStatus = views.graphicsStatus
         setContentView(views.root)
-        status.text = if (repository.savedUri() != null) {
-            "Saved installation folder found. Tap Revalidate to check current access."
-        } else {
-            "Installation folder not configured. Runtime: RUNTIME_NOT_INSTALLED."
-        }
+        status.text = if (repository.savedUri() != null) "Saved installation folder found. Tap Revalidate to check current access." else "Import the game ZIP or select an existing game folder. Runtime: RUNTIME_NOT_INSTALLED."
         refreshRuntimeStatus()
         probeGraphicsAsync()
     }
 
     private fun openFolderPicker() {
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-        }
-        startActivityForResult(intent, pickFolder)
+        }, pickFolder)
     }
 
     private fun openRuntimeBundlePicker() {
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-        }
-        startActivityForResult(intent, pickRuntimeBundle)
+        }, pickRuntimeBundle)
+    }
+
+    private fun openGameZipPicker() {
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/zip"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }, pickGameZip)
     }
 
     private fun revalidateSavedFolder() {
@@ -59,6 +70,43 @@ class MainActivity : Activity() {
         }.getOrElse { "Folder access error: ${it.message ?: "permission unavailable"}" }
     }
 
+    private fun showSettings() {
+        val current = LauncherSettings.load(this)
+        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(36, 12, 36, 8) }
+        fun slider(label: String, value: Int): SeekBar {
+            panel.addView(TextView(this).apply { text = "$label: $value%"; textSize = 16f })
+            val bar = SeekBar(this).apply { max = 100; progress = value }
+            panel.addView(bar)
+            bar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                    (panel.getChildAt(panel.childCount - 2) as TextView).text = "$label: $progress%"
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar) {}
+            })
+            return bar
+        }
+        val resolution = slider("Resolution scale", current.resolutionScale)
+        val master = slider("Master volume", current.masterVolume)
+        val music = slider("Music volume", current.musicVolume)
+        val sfx = slider("SFX volume", current.sfxVolume)
+        panel.addView(TextView(this).apply { text = "FPS cap target"; textSize = 16f })
+        val fps = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("30 FPS (recommended minimum)", "45 FPS", "60 FPS")); setSelection(listOf(30,45,60).indexOf(current.fpsTarget).coerceAtLeast(0) }
+        panel.addView(fps)
+        panel.addView(TextView(this).apply { text = "Graphics preset"; textSize = 16f })
+        val preset = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Low / Snapdragon 855", "Balanced", "High / newer Snapdragon")); setSelection(listOf("Low / Snapdragon 855","Balanced","High / newer Snapdragon").indexOf(current.graphicsPreset).coerceAtLeast(0) }
+        panel.addView(preset)
+        AlertDialog.Builder(this).setTitle("Performance & audio")
+            .setMessage("Recommended baseline: Snapdragon 855+, low graphics, 70–75% resolution scale, 30 FPS cap. These preferences are saved for the runtime; they do not affect game performance until runtime settings are wired in.")
+            .setView(panel)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                val selectedFps = listOf(30,45,60)[fps.selectedItemPosition.coerceIn(0,2)]
+                val selectedPreset = listOf("Low / Snapdragon 855","Balanced","High / newer Snapdragon")[preset.selectedItemPosition.coerceIn(0,2)]
+                LauncherSettings.save(this, LauncherSettings(resolution.progress.coerceIn(50,100), selectedFps, selectedPreset, master.progress, music.progress, sfx.progress))
+                Toast.makeText(this, "Settings saved. Runtime application pending.", Toast.LENGTH_SHORT).show()
+            }.show()
+    }
 
     private fun probeGraphicsAsync() {
         graphicsStatus.text = "Probing Vulkan loader and physical device..."
@@ -94,24 +142,26 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK) return
         val uri = data?.data ?: return
-        if (requestCode == pickFolder) {
-            try {
+        when (requestCode) {
+            pickFolder -> try {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 repository.saveUri(uri)
                 status.text = formatReport(GameInstallationManager(this).validate(uri))
-            } catch (e: SecurityException) {
-                status.text = "Folder permission error: ${e.message ?: "SAF read permission denied"}"
-            } catch (e: Exception) {
-                status.text = "Installation check failed safely: ${e.message ?: e.javaClass.simpleName}"
-            }
-        } else if (requestCode == pickRuntimeBundle) {
-            try {
+            } catch (e: Exception) { status.text = "Folder import failed safely: ${e.message ?: e.javaClass.simpleName}" }
+            pickRuntimeBundle -> try {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 val imported = RuntimeBundleImporter(this).importTree(uri)
                 val graphics = RuntimeGraphicsComponents.assess(File(filesDir, "native_runtime/bundle"))
-                runtimeStatus.text = "Runtime bundle: STRUCTURE_VALIDATED\nCopied ${imported.copiedFiles} files (${imported.copiedBytes} bytes).\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${graphics.notes.joinToString("\n")}\nExecution/driver loading not verified; game launch remains blocked."
-            } catch (e: Exception) {
-                runtimeStatus.text = "Runtime bundle import failed: ${e.message ?: e.javaClass.simpleName}\nExisting runtime bundle is preserved when possible."
+                runtimeStatus.text = "Runtime bundle: STRUCTURE_VALIDATED\nCopied ${imported.copiedFiles} files (${imported.copiedBytes} bytes).\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${graphics.notes.joinToString("\n")}\nExecution/driver loading not verified; launch remains blocked."
+            } catch (e: Exception) { runtimeStatus.text = "Runtime bundle import failed: ${e.message ?: e.javaClass.simpleName}\nExisting bundle is preserved when possible." }
+            pickGameZip -> {
+                status.text = "Importing ZIP into private app storage…"
+                Thread({
+                    val result = runCatching { GameZipImporter(this).importZip(uri) }
+                    runOnUiThread {
+                        status.text = result.fold({ "Game ZIP import successful.\nFiles: ${it.fileCount}\nExpanded: ${it.bytesWritten / (1024 * 1024)} MiB\nPrivate storage root: ${it.gameRoot.absolutePath}\nNext: validate the imported installation. Runtime is not yet installed." }, { "ZIP import failed safely: ${it.message ?: it.javaClass.simpleName}" })
+                    }
+                }, "game-zip-import").apply { isDaemon = true; start() }
             }
         }
     }
