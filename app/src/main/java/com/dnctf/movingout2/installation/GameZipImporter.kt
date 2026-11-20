@@ -39,7 +39,7 @@ class GameZipImporter(
                         val entry = zip.nextEntry ?: break
                         entries++
                         if (entries > maxEntries) throw IOException("ZIP has too many entries.")
-                        val rawName = entry.name.replace('\\\\', '/')
+                        val rawName = entry.name.replace('\\', '/')
                         val name = rawName.trimEnd('/')
                         if (name.isBlank() || name.startsWith('/') || Regex("^[A-Za-z]:").containsMatchIn(name) ||
                             name.split('/').any { it == ".." || it.isBlank() || it == "." }) throw IOException("Unsafe ZIP path: $rawName")
