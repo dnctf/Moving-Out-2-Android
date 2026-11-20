@@ -91,10 +91,10 @@ class MainActivity : Activity() {
         val music = slider("Music volume", current.musicVolume)
         val sfx = slider("SFX volume", current.sfxVolume)
         panel.addView(TextView(this).apply { text = "FPS cap target"; textSize = 16f })
-        val fps = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("30 FPS (recommended minimum)", "45 FPS", "60 FPS")); setSelection(listOf(30,45,60).indexOf(current.fpsTarget).coerceAtLeast(0) }
+        val fps = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("30 FPS (recommended minimum)", "45 FPS", "60 FPS")); setSelection(listOf(30,45,60).indexOf(current.fpsTarget).coerceAtLeast(0)) }
         panel.addView(fps)
         panel.addView(TextView(this).apply { text = "Graphics preset"; textSize = 16f })
-        val preset = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Low / Snapdragon 855", "Balanced", "High / newer Snapdragon")); setSelection(listOf("Low / Snapdragon 855","Balanced","High / newer Snapdragon").indexOf(current.graphicsPreset).coerceAtLeast(0) }
+        val preset = Spinner(this).apply { adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("Low / Snapdragon 855", "Balanced", "High / newer Snapdragon")); setSelection(listOf("Low / Snapdragon 855","Balanced","High / newer Snapdragon").indexOf(current.graphicsPreset).coerceAtLeast(0)) }
         panel.addView(preset)
         AlertDialog.Builder(this).setTitle("Performance & audio")
             .setMessage("Recommended baseline: Snapdragon 855+, low graphics, 70–75% resolution scale, 30 FPS cap. These preferences are saved for the runtime; they do not affect game performance until runtime settings are wired in.")
