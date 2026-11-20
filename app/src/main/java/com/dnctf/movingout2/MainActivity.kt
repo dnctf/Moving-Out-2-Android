@@ -80,14 +80,18 @@ class MainActivity : Activity() {
         Thread({
             val device = runCatching { com.dnctf.movingout2.compatibility.DeviceDiagnosticsProvider.collect(this) }
             val vulkan = runCatching { com.dnctf.movingout2.graphics.VulkanCapabilities.probe(this) }
-            val deviceJson = JSONObject().put("device", device.getOrNull()?.let { d -> JSONObject()
+            val deviceObject = device.getOrNull()?.let { d -> JSONObject()
                 .put("manufacturer",d.manufacturer).put("model",d.model).put("soc",d.soc)
                 .put("abi",d.abi).put("ramBytes",d.ramBytes).put("availableRamBytes",d.availableRamBytes)
                 .put("gpuVendorHint",d.gpuVendorHint).put("availableProcessors",d.availableProcessors)
-                .put("lowMemory",d.lowMemory).put("vulkanFeatures",d.vulkanFeatures).put("blockers",d.blockers) ?: JSONObject().put("error",device.exceptionOrNull()?.message))
-                .put("vulkan",vulkan.getOrNull()?.let { v -> JSONObject().put("available",v.available).put("apiVersion",v.apiVersion)
-                    .put("gpuVendor",v.gpuVendor).put("gpuName",v.gpuName).put("extensions",v.extensions)
-                    .put("nativeProbeStatus",v.nativeProbeStatus).put("blockers",v.blockers) ?: JSONObject().put("error",vulkan.exceptionOrNull()?.message))
+                .put("lowMemory",d.lowMemory).put("vulkanFeatures",d.vulkanFeatures).put("blockers",d.blockers)
+            } ?: JSONObject().put("error",device.exceptionOrNull()?.message)
+            val vulkanObject = vulkan.getOrNull()?.let { v -> JSONObject()
+                .put("available",v.available).put("apiVersion",v.apiVersion)
+                .put("gpuVendor",v.gpuVendor).put("gpuName",v.gpuName).put("extensions",v.extensions)
+                .put("nativeProbeStatus",v.nativeProbeStatus).put("blockers",v.blockers)
+            } ?: JSONObject().put("error",vulkan.exceptionOrNull()?.message)
+            val deviceJson = JSONObject().put("device",deviceObject).put("vulkan",vulkanObject)
             val gameJson = JSONObject().put("status","not_selected")
             repository.savedUri()?.let { uri -> runCatching { GameInstallationManager(this).validate(uri) }.onSuccess { report ->
                 gameJson.put("missing",report.missing).put("accessErrors",report.accessErrors).put("stageSummary",report.stageSummary)
