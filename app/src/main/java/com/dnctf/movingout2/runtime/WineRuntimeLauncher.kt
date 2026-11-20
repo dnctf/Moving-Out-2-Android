@@ -4,7 +4,8 @@ import android.content.Context
 import com.dnctf.movingout2.input.RuntimeInputBridge
 import java.io.File
 import java.io.IOException
-import java.util.Properties\nimport org.json.JSONObject
+import java.util.Properties
+
 
 sealed class LaunchPreparationResult {
     data class MissingPayload(val blockers: List<String>) : LaunchPreparationResult()
