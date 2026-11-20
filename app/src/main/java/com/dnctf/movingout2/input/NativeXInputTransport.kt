@@ -67,6 +67,7 @@ class NativeXInputTransport(forceFallbackForTesting: Boolean = false) : XInputTr
         val ok = runCatching { nativeReadSnapshot(path, playerIndex, buffer) }.getOrDefault(false)
         if (!ok) return null
         return ByteArray(XInputTransport.PACKET_SIZE_BYTES).also { buffer.position(0); buffer.get(it) }
+    }
 
     private fun neutralPacket() = ByteArray(XInputTransport.PACKET_SIZE_BYTES)
     private fun loadLibrary(): Boolean = try {
