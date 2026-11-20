@@ -27,7 +27,7 @@ class MainActivity : Activity() {
             textSize = 26f
         }
         val subtitle = TextView(this).apply {
-            text = "Dedicated Windows-game compatibility research launcher"
+            text = "Dedicated Windows-game compatibility launcher"
             textSize = 15f
         }
         status = TextView(this).apply {
@@ -77,7 +77,7 @@ class MainActivity : Activity() {
         val requiredDirs = listOf("MovingOut2_Data")
         val missing = mutableListOf<String>()
         requiredFiles.forEach { name ->
-            if (!root.findFile(name)?.isFile == true) missing += name
+            if (root.findFile(name)?.isFile != true) missing += name
         }
         requiredDirs.forEach { name ->
             if (root.findFile(name)?.isDirectory != true) missing += "$name/"
