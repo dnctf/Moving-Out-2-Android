@@ -83,7 +83,7 @@ class InstallationValidator {
 
     private fun inspectPeArchitecture(file: File): String? = runCatching {
         file.inputStream().use { input ->
-            val bytes = input.readNBytes(4096)
+            val bytes = readUpTo(input, 4096)
             if (bytes.size < 64 || bytes[0] != 0x4d.toByte() || bytes[1] != 0x5a.toByte()) return@runCatching null
             val peOffset = (bytes[0x3c].toInt() and 0xff) or ((bytes[0x3d].toInt() and 0xff) shl 8) or
                 ((bytes[0x3e].toInt() and 0xff) shl 16) or ((bytes[0x3f].toInt() and 0xff) shl 24)
@@ -95,9 +95,20 @@ class InstallationValidator {
         }
     }.getOrNull()
 
+    private fun readUpTo(input: java.io.InputStream, size: Int): ByteArray {
+        val output = java.io.ByteArray(size)
+        var offset = 0
+        while (offset < size) {
+            val count = input.read(output, offset, size - offset)
+            if (count <= 0) break
+            offset += count
+        }
+        return if (offset == size) output else output.copyOf(offset)
+    }
+
     private fun inspectMetadataVersion(file: File): Int? = runCatching {
         file.inputStream().use { input ->
-            val bytes = input.readNBytes(8)
+            val bytes = readUpTo(input, 8)
             if (bytes.size < 8) null else (bytes[4].toInt() and 0xff) or ((bytes[5].toInt() and 0xff) shl 8) or
                 ((bytes[6].toInt() and 0xff) shl 16) or ((bytes[7].toInt() and 0xff) shl 24)
         }
