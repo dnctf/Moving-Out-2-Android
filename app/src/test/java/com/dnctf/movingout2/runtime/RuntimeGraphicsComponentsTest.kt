@@ -7,7 +7,6 @@ import java.nio.file.Files
 
 class RuntimeGraphicsComponentsTest {
     private fun root(): File = Files.createTempDirectory("graphics-bundle").toFile().apply {
-        writeText("unused")
         File(this, "runtime.properties").writeText("format_version=1\ntarget_abi=arm64-v8a\nbox64=bin/box64\nwine64=wine/bin/wine64\nwineserver=wine/bin/wineserver\nlibrary_dir=lib\n")
     }
     private fun pe(file: File) {
