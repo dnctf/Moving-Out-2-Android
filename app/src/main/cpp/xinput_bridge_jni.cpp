@@ -24,7 +24,7 @@ static uint64_t monotonic_ns() {
     return static_cast<uint64_t>(ts.tv_sec) * 1000000000ULL + static_cast<uint64_t>(ts.tv_nsec);
 }
 static void neutralize_slot(XInputShmSlot& s) {
-    __atomic_add_fetch(&s.seq, 1u, __ATOMIC_RELEASE);
+    __atomic_add_fetch(&s.seq, 1u, __ATOMIC_SEQ_CST);
     s.connected = 0; s.reserved = 0; s.buttons = 0;
     s.left_trigger = 0; s.right_trigger = 0;
     s.thumb_lx = 0; s.thumb_ly = 0; s.thumb_rx = 0; s.thumb_ry = 0;
