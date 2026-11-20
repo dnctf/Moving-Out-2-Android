@@ -34,8 +34,9 @@ class GameZipImporter(
                         val entry = zip.nextEntry ?: break
                         entries++
                         if (entries > maxEntries) throw IOException("ZIP has too many entries.")
-                        val name = entry.name.replace('\\\\', '/')
-                        if (name.isBlank() || name.startsWith('/') || name.split('/').any { it == ".." || it.isBlank() }) throw IOException("Unsafe ZIP path: $name")
+                        val rawName = entry.name.replace('\\\\', '/')
+                        val name = rawName.trimEnd('/')
+                        if (name.isBlank() || name.startsWith('/') || name.split('/').any { it == ".." || it.isBlank() }) throw IOException("Unsafe ZIP path: $rawName")
                         val out = File(staging, name).canonicalFile
                         if (!out.toPath().startsWith(staging.canonicalFile.toPath())) throw IOException("ZIP path escapes staging storage.")
                         if (entry.isDirectory) {
@@ -57,10 +58,14 @@ class GameZipImporter(
                     }
                 }
             }
-            val candidates = listOf(staging, *staging.listFiles().orEmpty().filter { it.isDirectory }.toTypedArray())
-            val found = candidates.any { dir ->
-                File(dir, "mo2.exe").isFile && File(dir, "MovingOut2_Data").isDirectory
+            val candidates = mutableListOf<File>()
+            fun scan(dir: File, depth: Int) {
+                if (depth > 4) return
+                candidates += dir
+                dir.listFiles()?.filter { it.isDirectory }?.forEach { scan(it, depth + 1) }
             }
+            scan(staging, 0)
+            val found = candidates.any { dir -> File(dir, "mo2.exe").isFile && File(dir, "MovingOut2_Data").isDirectory }
             if (!found) throw IOException("ZIP does not contain mo2.exe and MovingOut2_Data at a recognizable game root.")
             if (root.exists()) {
                 backup.deleteRecursively()
@@ -68,8 +73,14 @@ class GameZipImporter(
             }
             if (!staging.renameTo(root)) throw IOException("Unable to activate extracted game.")
             backup.deleteRecursively()
-            val activeRoot = listOf(root, *root.listFiles().orEmpty().filter { it.isDirectory }.toTypedArray())
-                .first { File(it, "mo2.exe").isFile && File(it, "MovingOut2_Data").isDirectory }
+            val activeCandidates = mutableListOf<File>()
+            fun findRoots(dir: File, depth: Int) {
+                if (depth > 4) return
+                activeCandidates += dir
+                dir.listFiles()?.filter { it.isDirectory }?.forEach { findRoots(it, depth + 1) }
+            }
+            findRoots(root, 0)
+            val activeRoot = activeCandidates.first { File(it, "mo2.exe").isFile && File(it, "MovingOut2_Data").isDirectory }
             return GameZipImportResult(entries, bytes, activeRoot)
         } catch (e: Exception) {
             staging.deleteRecursively()
