@@ -84,7 +84,7 @@ class InstallationValidator {
     private fun inspectPeArchitecture(file: File): String? = runCatching {
         file.inputStream().use { input ->
             val bytes = input.readNBytes(4096)
-            if (bytes.size < 64 || bytes[0] != 0x4d.toByte() || bytes[1] != 0x5a.toByte() then return@runCatching null
+            if (bytes.size < 64 || bytes[0] != 0x4d.toByte() || bytes[1] != 0x5a.toByte()) return@runCatching null
             val peOffset = (bytes[0x3c].toInt() and 0xff) or ((bytes[0x3d].toInt() and 0xff) shl 8) or
                 ((bytes[0x3e].toInt() and 0xff) shl 16) or ((bytes[0x3f].toInt() and 0xff) shl 24)
             if (peOffset < 0 || peOffset + 6 > bytes.size) return@runCatching null
