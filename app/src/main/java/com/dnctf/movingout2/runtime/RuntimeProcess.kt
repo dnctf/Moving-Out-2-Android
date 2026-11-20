@@ -35,12 +35,12 @@ data class ProcessResult(val process: Process, val pid: Long?, val stdoutThread:
     private fun elapsed() = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos)
 }
 
-class RuntimeProcess(private val diagnostics: RuntimeDiagnostics) {
+class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xinputConfig: RuntimeLaunchConfig? = null) {
     fun start(executable: File, args: List<String> = emptyList(), environment: Map<String, String> = emptyMap(), workingDirectory: File? = executable.parentFile): ProcessResult {
         require(executable.exists() && executable.isFile && executable.canExecute()) { "Executable missing or not executable: $executable" }
         val builder = ProcessBuilder(listOf(executable.absolutePath) + args)
         workingDirectory?.let { builder.directory(it) }
-        builder.environment().putAll(environment)
+        builder.environment().putAll(xinputConfig?.environment(environment) ?: environment)
         val process = builder.start()
         val pid = parsePidSafely(process.toString())
         val started = System.nanoTime()
