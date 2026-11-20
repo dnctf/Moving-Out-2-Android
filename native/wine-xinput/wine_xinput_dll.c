@@ -17,9 +17,10 @@ _Static_assert(sizeof(Slot)==24,"MO2X slot layout");
 _Static_assert(sizeof(Mapping)==128,"MO2X mapping layout");
 typedef struct { WORD wButtons; BYTE bLeftTrigger,bRightTrigger; SHORT sThumbLX,sThumbLY,sThumbRX,sThumbRY; } XINPUT_GAMEPAD;
 typedef struct { DWORD dwPacketNumber; XINPUT_GAMEPAD Gamepad; } XINPUT_STATE;
-typedef struct { BYTE bType,bSubType; WORD wFlags; XINPUT_GAMEPAD Gamepad; DWORD dwFFSamplePeriod,DwReserved; } XINPUT_CAPABILITIES;
+typedef struct { WORD wLeftMotorSpeed,wRightMotorSpeed; } XINPUT_VIBRATION;
+typedef struct { BYTE bType,bSubType; WORD wFlags; XINPUT_GAMEPAD Gamepad; XINPUT_VIBRATION Vibration; } XINPUT_CAPABILITIES;
 typedef struct { BYTE BatteryType,BatteryLevel; } XINPUT_BATTERY_INFORMATION;
-typedef struct { BYTE Reserved; WORD Flags; BYTE VirtualKey; WCHAR Unicode; WORD UserIndex; BYTE HidCode; } XINPUT_KEYSTROKE;
+typedef struct { DWORD dwFlags; BYTE bReserved; BYTE bVirtualKey; WCHAR Unicode; DWORD dwUserIndex; BYTE bHidCode; } XINPUT_KEYSTROKE;
 #define ERROR_DEVICE_NOT_CONNECTED 1167
 #define ERROR_EMPTY 4306
 #define XINPUT_DEVTYPE_GAMEPAD 1
