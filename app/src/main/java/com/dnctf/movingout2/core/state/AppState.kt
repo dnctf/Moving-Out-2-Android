@@ -1,0 +1,3 @@
+package com.dnctf.movingout2.core.state
+
+enum class LauncherStatus { NO_FOLDER, CHECKING, FILES_PRESENT, INCOMPLETE, ACCESS_ERROR, RUNTIME_NOT_INSTALLED, MISSING_NATIVE_COMPONENTS }
