@@ -49,7 +49,7 @@ class RuntimeInputBridge(private val transport: XInputTransport = NativeXInputTr
 
     fun send(playerIndex: Int, state: ControllerState, connected: Boolean = true): Boolean =
         transport.writePacket(playerIndex, connected, packet(state, merge = false).serializeLittleEndian())
-    fun disconnectPlayer(playerIndex: Int): Boolean = transport.writePacket(playerIndex, false, ByteArray(XInputTransport.PACKET_SIZE_BYTES))
+    fun sendCombined(playerIndex: Int, virtualState: ControllerState, physicalState: ControllerState, connected: Boolean = true): Boolean =\n        transport.writePacket(playerIndex, connected, packet(virtualState, physicalState, merge = true).serializeLittleEndian())\n    fun disconnectPlayer(playerIndex: Int): Boolean = transport.writePacket(playerIndex, false, ByteArray(XInputTransport.PACKET_SIZE_BYTES))
     fun destroy() { transport.destroy(); status = InputBridgeStatus.WAITING_FOR_NATIVE_RUNTIME }
     fun isNativeAvailable() = transport.isNativeAvailable()
     fun isInitialized() = transport.isInitialized()
