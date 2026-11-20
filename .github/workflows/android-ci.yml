@@ -43,7 +43,7 @@ jobs:
           "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
       - name: Install MinGW-w64
         run: sudo apt-get update && sudo apt-get install -y mingw-w64
-      - name: Verify MO2X protocol layout
+      - name: Validate runtime bundle packager syntax\n        run: bash -n scripts/package_runtime_bundle.sh\n      - name: Verify MO2X protocol layout
         run: |
           set -euo pipefail
           g++ -std=c++17 -Wall -Wextra -Werror native/wine-xinput/layout_test.cpp -I native/wine-xinput -o /tmp/mo2x-layout-test
