@@ -193,6 +193,7 @@ class MainActivity : Activity() {
                                 append("ZIP import successful. Files: ").append(imported.fileCount)
                                 append("\nExpanded: ").append(imported.bytesWritten / (1024 * 1024)).append(" MiB")
                                 append("\nImported game root: ").append(imported.gameRoot.absolutePath)
+                                repository.registerImported(imported.gameRoot.absolutePath)
                                 val report = com.dnctf.movingout2.installation.InstallationValidator().validate(imported.gameRoot)
                                 append("\n\nGame validation: ").append(report.status)
                                 report.stages.forEach { stage -> append("\n").append(stage.stage).append(": ").append(if (stage.passed) "PASS" else "FAIL") }
