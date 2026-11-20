@@ -1,0 +1,10 @@
+package com.dnctf.movingout2.input
+data class ControllerProfile(val schemaVersion:Int=1,val name:String,val buttonMap:Map<String,String> = emptyMap(),val sensitivity:Float=1f,val deadzone:Float=.12f){
+ fun exportToJson():String {validate();val map=buttonMap.entries.sortedBy{it.key}.joinToString(","){ "\"" + escape(it.key)+"\":\""+escape(it.value)+"\"" };return "{\"schemaVersion\":1,\"name\":\""+escape(name)+"\",\"sensitivity\":"+sensitivity+",\"deadzone\":"+deadzone+",\"buttonMap\":{"+map+"}}"}
+ fun validate(){require(schemaVersion==1);require(name.isNotBlank());require(sensitivity in .1f..3f);require(deadzone in 0f.. .5f);require(buttonMap.keys.all{it.matches(Regex("[A-Z0-9_]{1,16}"))&&buttonMap.values.all{v->v.matches(Regex("[A-Z0-9_]{1,16}"))})}
+ companion object {
+ val presets=listOf(ControllerProfile(name="Default Co-Op"),ControllerProfile(name="Touch Trigger-Swap",buttonMap=mapOf("LT" to "RT","RT" to "LT")),ControllerProfile(name="Standard XInput Gamepad"))
+ fun importFromJson(json:String):ControllerProfile {require(json.length<65536&&json.trim().startsWith("{")&&json.trim().endsWith("}"));val version=Regex("\"schemaVersion\"\\s*:\\s*(\\d+)").find(json)?.groupValues?.get(1)?.toInt()?:error("schemaVersion missing");require(version==1);val name=Regex("\"name\"\\s*:\\s*\"([^\"]*)\"").find(json)?.groupValues?.get(1)?:error("name missing");val sens=Regex("\"sensitivity\"\\s*:\\s*([0-9.]+)").find(json)?.groupValues?.get(1)?.toFloatOrNull()?:1f;val dz=Regex("\"deadzone\"\\s*:\\s*([0-9.]+)").find(json)?.groupValues?.get(1)?.toFloatOrNull()?: .12f;val mapBody=Regex("\"buttonMap\"\\s*:\\s*\\{([^}]*)\\}").find(json)?.groupValues?.get(1)?: "";val map=linkedMapOf<String,String>();Regex("\"([A-Z0-9_]+)\"\\s*:\\s*\"([A-Z0-9_]+)\"").findAll(mapBody).forEach{map[it.groupValues[1]]=it.groupValues[2]};val p=ControllerProfile(version,name,map,sens,dz);p.validate();return p}
+ private fun escape(s:String)=s.replace("\\","\\\\").replace("\"","\\\"")
+ }
+}
