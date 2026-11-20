@@ -77,7 +77,7 @@ class MainActivity : Activity() {
             touchControllerState = state
             sendCombinedInput()
             val readback = inputBridge.readSnapshot(0)?.joinToString(" ") { byte -> "%02X".format(byte.toInt() and 0xFF) } ?: "unavailable"
-            stateText.text = "Input: buttons=" + state.buttons.joinToString() + " | left=(" + state.leftX.toInt() + ", " + state.leftY.toInt() + ")\\nMO2X packet: " + readback
+            stateText.text = "Input: buttons=" + state.buttons.joinToString() + " | left=(" + state.leftX.toInt() + ", " + state.leftY.toInt() + ")\nMO2X packet: " + readback
         }
         container.addView(info)
         container.addView(stateText)
