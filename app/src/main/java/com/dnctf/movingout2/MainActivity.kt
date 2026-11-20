@@ -45,6 +45,37 @@ class MainActivity : Activity() {
         probeGraphicsAsync()
     }
 
+    private fun showControllerTest() {
+        val dialog = Dialog(this)
+        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 20, 24, 12) }
+        val info = TextView(this).apply { text = "Touch the controls or connect a controller.\nThis is a visual input test; runtime/game input injection is not connected yet."; textSize = 14f }
+        val stateText = TextView(this).apply { text = "Input: idle"; textSize = 13f; setPadding(0, 8, 0, 8) }
+        val pad = VirtualControllerView(this) { state ->
+            stateText.text = "Input: buttons=" + state.buttons.joinToString() + " | left=(" + state.leftX.toInt() + ", " + state.leftY.toInt() + ")"
+        }
+        container.addView(info)
+        container.addView(stateText)
+        container.addView(pad, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 460))
+        dialog.setContentView(container)
+        dialog.setTitle("Controller test")
+        dialog.show()
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.96f).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.source and (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK) != 0) {
+            if (gamepadTranslator.onKey(event) != null) return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        if (event.source and (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK) != 0) {
+            if (gamepadTranslator.onMotion(event) != null) return true
+        }
+        return super.dispatchGenericMotionEvent(event)
+    }
+
     private fun openFolderPicker() {
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
