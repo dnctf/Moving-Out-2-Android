@@ -3,6 +3,7 @@ package com.dnctf.movingout2.installation
 import android.content.Context
 import android.net.Uri
 import android.os.StatFs
+import android.provider.OpenableColumns
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -52,7 +53,9 @@ class GameZipImporter(
                 val candidateRootPrefix = findRootPrefix(normalized.map { it.second })
                     ?: throw IOException("ZIP central directory does not contain the required Unity game files.")
                 val stat = StatFs(parent.absolutePath)
-                if (stat.availableBytes - totalBytes < storageReserveBytes) throw IOException("Insufficient storage. Import requires approximately $totalBytes bytes plus 1.5 GiB free reserve.")
+                val archiveBytes = sourceZip.length()
+                val requiredSpace = Math.addExact(Math.addExact(totalBytes, archiveBytes), storageReserveBytes)
+                if (stat.availableBytes < requiredSpace) throw IOException("Insufficient storage. ZIP copy, extraction ($totalBytes bytes), and 1.5 GiB reserve require approximately $requiredSpace bytes.")
                 staging.deleteRecursively()
                 if (!staging.mkdirs()) throw IOException("Cannot create staging directory.")
                 var bytesWritten = 0L
@@ -104,16 +107,29 @@ class GameZipImporter(
 
     private fun copyUriToPreflight(uri: Uri, cancelled: () -> Boolean) {
         sourceZip.delete()
+        val advertisedSize = resolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0).takeIf { it >= 0 } else null
+        }
+        val stat = StatFs(root.parentFile?.absolutePath ?: throw IOException("Private storage unavailable."))
+        if (advertisedSize != null && stat.availableBytes < advertisedSize + storageReserveBytes) {
+            throw IOException("Not enough free space to stage the ZIP safely.")
+        }
         val input = resolver.openInputStream(uri) ?: throw IOException("Unable to open selected ZIP.")
         input.use { raw ->
             FileOutputStream(sourceZip).use { output ->
                 val buffer = ByteArray(128 * 1024)
+                var copied = 0L
                 while (true) {
                     checkCancellation(cancelled)
                     val n = raw.read(buffer)
                     if (n < 0) break
+                    copied = Math.addExact(copied, n.toLong())
+                    if (copied > maxExpandedBytes || (advertisedSize != null && copied > advertisedSize)) {
+                        throw IOException("ZIP source exceeds safe staging limit or advertised size.")
+                    }
                     output.write(buffer, 0, n)
                 }
+                if (advertisedSize != null && copied != advertisedSize) throw IOException("ZIP source size changed or was truncated during staging.")
             }
         }
     }
