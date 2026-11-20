@@ -46,6 +46,7 @@ class InstallationValidatorTest {
         File(root, "baselib.dll").writeBytes(byteArrayOf())
         val report = InstallationValidator().validate(root)
         assertTrue(report.accessErrors.any { it.contains("0 bytes") })
+        assertEquals(InstallationStatus.INCOMPLETE, report.status)
         root.deleteRecursively()
     }
 
@@ -63,6 +64,15 @@ class InstallationValidatorTest {
         val report = InstallationValidator().validate(root, persistablePermission = false)
         assertEquals(InstallationStatus.ACCESS_ERROR, report.status)
         assertTrue(report.accessErrors.any { it.contains("SAF") })
+        root.deleteRecursively()
+    }
+
+    @Test fun invalidPeHeaderIsRejectedAsUnknownArchitecture() {
+        val root = fixture()
+        File(root, "mo2.exe").writeBytes(byteArrayOf(0, 1, 2, 3))
+        val report = InstallationValidator().validate(root)
+        assertEquals(null, report.detectedArchitecture)
+        assertEquals(InstallationStatus.INVALID_STRUCTURE, report.status)
         root.deleteRecursively()
     }
 
