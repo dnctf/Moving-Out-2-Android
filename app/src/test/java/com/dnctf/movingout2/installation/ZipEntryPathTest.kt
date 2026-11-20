@@ -8,6 +8,12 @@ class ZipEntryPathTest {
     @Test fun normalizesWindowsSeparators() {
         assertEquals("Game/Data/file.bin", ZipEntryPath.normalize("Game\\Data\\file.bin"))
     }
+    @Test fun rejectsDuplicatesCaseInsensitively() {
+        val registry = ZipEntryPathRegistry()
+        registry.register("Game/File.dat")
+        try { registry.register("game/file.dat"); fail("Expected duplicate rejection") }
+        catch (e: java.io.IOException) { /* expected */ }
+    }
     @Test fun rejectsTraversal() {
         reject("../escape.txt")
         reject("Game/../../escape.txt")

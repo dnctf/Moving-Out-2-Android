@@ -37,12 +37,11 @@ class GameZipImporter(
                 val entries = zip.entries().asSequence().toList()
                 if (entries.isEmpty()) throw IOException("ZIP is empty.")
                 if (entries.size > maxEntries) throw IOException("ZIP has too many entries.")
-                val names = HashSet<String>()
+                val names = ZipEntryPathRegistry()
                 var totalBytes = 0L
                 val normalized = entries.map { entry ->
                     checkCancellation(cancelled)
-                    val name = safeEntryName(entry.name)
-                    if (!names.add(name.lowercase(Locale.ROOT))) throw IOException("Duplicate ZIP entry: $name")
+                    val name = names.register(entry.name)
                     if (!entry.isDirectory) {
                         if (entry.size < 0) throw IOException("ZIP entry has unknown size: $name")
                         totalBytes = Math.addExact(totalBytes, entry.size)
@@ -133,8 +132,6 @@ class GameZipImporter(
             }
         }
     }
-
-    private fun safeEntryName(raw: String): String = ZipEntryPath.normalize(raw)
 
     private fun findRootPrefix(names: List<String>): String? {
         val files = names.filterNot { it.endsWith('/') }.map { it.lowercase(Locale.ROOT) }.toSet()
