@@ -6,7 +6,7 @@ import org.junit.Test
 
 class ZipEntryPathTest {
     @Test fun normalizesWindowsSeparators() {
-        assertEquals("Game/Data/file.bin", ZipEntryPath.normalize("Game\\\\Data\\\\file.bin"))
+        assertEquals("Game/Data/file.bin", ZipEntryPath.normalize("Game\\Data\\file.bin"))
     }
     @Test fun rejectsTraversal() {
         reject("../escape.txt")
@@ -14,7 +14,7 @@ class ZipEntryPathTest {
     }
     @Test fun rejectsAbsoluteAndDrivePaths() {
         reject("/root/file")
-        reject("C:\\\\Windows\\\\file")
+        reject("C:\\Windows\\file")
     }
     @Test fun rejectsEmptySegmentsAndDotSegments() {
         reject("Game//file")
