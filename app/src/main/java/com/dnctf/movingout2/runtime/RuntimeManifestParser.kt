@@ -8,7 +8,7 @@ class RuntimeManifestParser {
  fun validate(root:File):RuntimeManifestValidation {
   val errors=mutableListOf<String>(); val files=linkedMapOf<String,File>()
   val mf=File(root,"runtime-manifest.json")
-  if(!mf.isFile||mf.length()==0||!mf.canRead()) return RuntimeManifestValidation(false,listOf("runtime-manifest.json missing/empty/unreadable"),null,files)
+  if(!mf.isFile||mf.length()==0L||!mf.canRead()) return RuntimeManifestValidation(false,listOf("runtime-manifest.json missing/empty/unreadable"),null,files)
   val json=try{JSONObject(mf.readText())}catch(e:Exception){return RuntimeManifestValidation(false,listOf("Manifest JSON parse failed: ${e.message}"),null,files)}
   if(json.optInt("schemaVersion",-1)!=1) errors+="schemaVersion must be 1"
   if(json.optString("targetAbi")!="arm64-v8a") errors+="targetAbi must be arm64-v8a"
