@@ -31,23 +31,25 @@ class RuntimeBundleImporter(
         backup.deleteRecursively()
         if (!staging.mkdirs()) throw IOException("Unable to create runtime staging directory.")
         val counter = Counter()
+        var activated = false
         try {
             copyDirectory(source, staging, 0, counter)
             grantExecutableFlags(staging)
             val validation = validator.validate(staging)
             if (!validation.isReady) throw IOException("Runtime bundle failed validation: " + validation.blockers.joinToString("; "))
             if (target.exists() && !target.renameTo(backup)) throw IOException("Unable to preserve existing runtime bundle.")
-            if (!staging.renameTo(target)) {
-                if (backup.exists()) backup.renameTo(target)
-                throw IOException("Unable to activate staged runtime bundle; previous bundle restored where possible.")
-            }
-            backup.deleteRecursively()
+            if (!staging.renameTo(target)) throw IOException("Unable to activate staged runtime bundle.")
+            activated = true
             val active = validator.validate(target)
             if (!active.isReady) throw IOException("Installed bundle revalidation failed: " + active.blockers.joinToString("; "))
+            backup.deleteRecursively()
             return RuntimeImportResult(active, counter.files, counter.bytes)
         } catch (error: Exception) {
             staging.deleteRecursively()
-            if (!target.exists() && backup.exists()) backup.renameTo(target)
+            if (backup.exists()) {
+                if (activated) target.deleteRecursively()
+                backup.renameTo(target)
+            } else if (activated) target.deleteRecursively()
             throw error
         }
     }
@@ -79,7 +81,7 @@ class RuntimeBundleImporter(
                         while (true) {
                             val read = stream.read(buffer)
                             if (read < 0) break
-                            counter.bytes += read
+                            counter.bytes += read.toLong()
                             if (counter.bytes > maxBytes) throw IOException("Runtime bundle exceeds configured import size limit.")
                             out.write(buffer, 0, read)
                         }
