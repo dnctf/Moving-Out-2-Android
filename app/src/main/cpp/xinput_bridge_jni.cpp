@@ -9,6 +9,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <time.h>
 #include "xinput_shm_protocol.h"
 
 #define LOG_TAG "MO2XInput"
