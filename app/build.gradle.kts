@@ -12,7 +12,9 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.2.0"
+        ndkVersion = "27.2.12479018"
+        externalNativeBuild { cmake { abiFilters += listOf("arm64-v8a") } }
     }
 
     buildTypes {
@@ -27,6 +29,9 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+    }
+    externalNativeBuild {
+        cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" }
     }
 }
 
