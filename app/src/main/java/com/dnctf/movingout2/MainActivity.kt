@@ -37,7 +37,18 @@ class MainActivity : Activity() {
     private lateinit var graphicsStatus: TextView
     private lateinit var repository: InstallationRepository
     private val gamepadTranslator = GamepadTranslator()
-    private val inputBridge = RuntimeInputBridge()\n    private var touchControllerState = com.dnctf.movingout2.input.ControllerState()\n    private var physicalControllerState = com.dnctf.movingout2.input.ControllerState()\n    private val inputDeviceListener = object : InputManager.InputDeviceListener {\n        override fun onInputDeviceAdded(deviceId: Int) {}\n        override fun onInputDeviceChanged(deviceId: Int) {}\n        override fun onInputDeviceRemoved(deviceId: Int) {\n            physicalControllerState = com.dnctf.movingout2.input.ControllerState()\n            sendCombinedInput()\n        }\n    }\n    private val pickFolder = 1001
+    private val inputBridge = RuntimeInputBridge()
+    private var touchControllerState = com.dnctf.movingout2.input.ControllerState()
+    private var physicalControllerState = com.dnctf.movingout2.input.ControllerState()
+    private val inputDeviceListener = object : InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(deviceId: Int) {}
+        override fun onInputDeviceChanged(deviceId: Int) {}
+        override fun onInputDeviceRemoved(deviceId: Int) {
+            physicalControllerState = com.dnctf.movingout2.input.ControllerState()
+            sendCombinedInput()
+        }
+    }
+    private val pickFolder = 1001
     private val pickRuntimeBundle = 1002
     private val pickGameZip = 1003
 
@@ -87,7 +98,29 @@ class MainActivity : Activity() {
         return super.dispatchGenericMotionEvent(event)
     }
 
-    override fun onResume() {\n        super.onResume()\n        (getSystemService(INPUT_SERVICE) as? InputManager)?.registerInputDeviceListener(inputDeviceListener, null)\n    }\n\n    override fun onPause() {\n        (getSystemService(INPUT_SERVICE) as? InputManager)?.unregisterInputDeviceListener(inputDeviceListener)\n        touchControllerState = com.dnctf.movingout2.input.ControllerState()\n        physicalControllerState = com.dnctf.movingout2.input.ControllerState()\n        inputBridge.disconnectPlayer(0)\n        super.onPause()\n    }\n\n    override fun onDestroy() {\n        inputBridge.destroy()\n        super.onDestroy()\n    }\n\n    private fun sendCombinedInput() {\n        inputBridge.sendCombined(0, touchControllerState, physicalControllerState, connected = true)\n    }\n\n    private fun openFolderPicker() {
+    override fun onResume() {
+        super.onResume()
+        (getSystemService(INPUT_SERVICE) as? InputManager)?.registerInputDeviceListener(inputDeviceListener, null)
+    }
+
+    override fun onPause() {
+        (getSystemService(INPUT_SERVICE) as? InputManager)?.unregisterInputDeviceListener(inputDeviceListener)
+        touchControllerState = com.dnctf.movingout2.input.ControllerState()
+        physicalControllerState = com.dnctf.movingout2.input.ControllerState()
+        inputBridge.disconnectPlayer(0)
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        inputBridge.destroy()
+        super.onDestroy()
+    }
+
+    private fun sendCombinedInput() {
+        inputBridge.sendCombined(0, touchControllerState, physicalControllerState, connected = true)
+    }
+
+    private fun openFolderPicker() {
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }, pickFolder)
