@@ -62,7 +62,7 @@ class InstallationValidator {
         val hasErrors = errors.isNotEmpty()
         val status = when {
             !persistablePermission || !root.canRead() -> InstallationStatus.ACCESS_ERROR
-            missing.isNotEmpty() -> InstallationStatus.INCOMPLETE
+            missing.isNotEmpty() || errors.isNotEmpty() -> InstallationStatus.INCOMPLETE
             arch != "x86_64" -> InstallationStatus.INVALID_STRUCTURE
             hardwareBlockers.isNotEmpty() -> InstallationStatus.INCOMPATIBLE
             else -> InstallationStatus.VALID
