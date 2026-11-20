@@ -87,7 +87,7 @@ class MainActivity : Activity() {
         return super.dispatchGenericMotionEvent(event)
     }
 
-    private fun openFolderPicker() {
+    override fun onDestroy() {\n        inputBridge.destroy()\n        super.onDestroy()\n    }\n\n    override fun onInputDeviceRemoved(deviceId: Int) {\n        gamepadTranslator.releaseAll()\n        inputBridge.disconnectPlayer(0)\n        super.onInputDeviceRemoved(deviceId)\n    }\n\n    private fun openFolderPicker() {
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }, pickFolder)
