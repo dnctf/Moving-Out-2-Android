@@ -6,7 +6,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 
-data class LauncherHomeViews(val root: ScrollView, val status: TextView, val runtimeStatus: TextView)
+data class LauncherHomeViews(val root: ScrollView, val status: TextView, val runtimeStatus: TextView, val graphicsStatus: TextView)
 
 object LauncherHomeView {
     fun create(
@@ -21,6 +21,8 @@ object LauncherHomeView {
         val status = TextView(context).apply { textSize = 16f; setPadding(0, 28, 0, 24) }
         val select = Button(context).apply { text = "Select game folder"; setOnClickListener { onSelectFolder() } }
         val revalidate = Button(context).apply { text = "Revalidate saved folder"; setOnClickListener { onRevalidate() } }
+        val graphicsTitle = TextView(context).apply { text = "Vulkan / GPU Diagnostics"; textSize = 20f; setPadding(0, 32, 0, 12) }
+        val graphicsStatus = TextView(context).apply { textSize = 14f; setPadding(0, 8, 0, 12); text = "Probe pending." }
         val runtimeTitle = TextView(context).apply { text = "Native Runtime Bundle"; textSize = 20f; setPadding(0, 32, 0, 12) }
         val runtimeStatus = TextView(context).apply { textSize = 14f; setPadding(0, 8, 0, 12) }
         val importRuntime = Button(context).apply { text = "Import runtime bundle (SAF)"; setOnClickListener { onImportRuntime() } }
@@ -34,8 +36,9 @@ object LauncherHomeView {
         }
         content.addView(title); content.addView(subtitle); content.addView(status)
         content.addView(select); content.addView(revalidate)
+        content.addView(graphicsTitle); content.addView(graphicsStatus)
         content.addView(runtimeTitle); content.addView(runtimeStatus); content.addView(importRuntime); content.addView(runtimeInfo); content.addView(disclaimer)
         val scroll = ScrollView(context).apply { addView(content) }
-        return LauncherHomeViews(scroll, status, runtimeStatus)
+        return LauncherHomeViews(scroll, status, runtimeStatus, graphicsStatus)
     }
 }
