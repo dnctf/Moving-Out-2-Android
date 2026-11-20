@@ -113,7 +113,7 @@ class MainActivity : Activity() {
     override fun onPause() {
         (getSystemService(INPUT_SERVICE) as? InputManager)?.unregisterInputDeviceListener(inputDeviceListener)
         touchControllerState = com.dnctf.movingout2.input.ControllerState()
-        physicalControllerState = com.dnctf.movingout2.input.ControllerState()
+        physicalControllerState = gamepadTranslator.releaseAll()
         inputBridge.disconnectPlayer(0)
         super.onPause()
     }
