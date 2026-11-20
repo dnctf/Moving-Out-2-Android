@@ -74,7 +74,7 @@ Java_com_dnctf_movingout2_input_NativeXInputTransport_nativeWriteSerializedPacke
     if (!g_mapping) return JNI_FALSE;
     const size_t i = static_cast<size_t>(player);
     XInputShmSlot& s = g_mapping->slots[i];
-    __atomic_add_fetch(&s.seq, 1u, __ATOMIC_RELEASE);
+    __atomic_add_fetch(&s.seq, 1u, __ATOMIC_SEQ_CST);
     s.connected = connected ? 1 : 0;
     s.reserved = 0;
     s.buttons = static_cast<uint16_t>(bytes[0]) | (static_cast<uint16_t>(bytes[1]) << 8);
@@ -82,7 +82,7 @@ Java_com_dnctf_movingout2_input_NativeXInputTransport_nativeWriteSerializedPacke
     auto read_i16 = [&](size_t offset) { return static_cast<int16_t>(static_cast<uint16_t>(bytes[offset]) | (static_cast<uint16_t>(bytes[offset+1]) << 8)); };
     s.thumb_lx = read_i16(4); s.thumb_ly = read_i16(6); s.thumb_rx = read_i16(8); s.thumb_ry = read_i16(10);
     std::memset(s.padding, 0, sizeof(s.padding));
-    __atomic_add_fetch(&s.seq, 1u, __ATOMIC_RELEASE);
+    __atomic_add_fetch(&s.seq, 1u, __ATOMIC_SEQ_CST);
     g_mapping->header.last_update_ns = monotonic_ns();
     return JNI_TRUE;
 }
