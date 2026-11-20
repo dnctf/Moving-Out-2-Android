@@ -13,10 +13,18 @@ class NativeXInputTransport(forceFallbackForTesting: Boolean = false) : XInputTr
     override fun init(shmFilePath: String): Boolean {
         initialized = false
         sharedPath = null
-        if (shmFilePath.isBlank()) return false
+        if (shmFilePath.isBlank()) {
+            if (nativeAvailable) runCatching { nativeDestroySharedMemory() }
+            for (i in 0 until XInputTransport.MAX_PLAYERS) fallback[i] = neutralPacket()
+            return false
+        }
         if (nativeAvailable) {
             val ok = runCatching { nativeInitSharedMemory(shmFilePath) }.getOrDefault(false)
-            if (!ok) return false
+            if (!ok) {
+                runCatching { nativeDestroySharedMemory() }
+                for (i in 0 until XInputTransport.MAX_PLAYERS) fallback[i] = neutralPacket()
+                return false
+            }
         } else {
             for (i in 0 until XInputTransport.MAX_PLAYERS) fallback[i] = neutralPacket()
         }
