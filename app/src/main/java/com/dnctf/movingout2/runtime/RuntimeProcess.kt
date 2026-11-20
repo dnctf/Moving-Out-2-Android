@@ -16,7 +16,7 @@ class RuntimeProcess(private val diagnostics: RuntimeDiagnostics) {
         val stderr = Thread({ process.errorStream.bufferedReader().useLines { lines -> lines.forEach { diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "stderr", it)) } } }, "runtime-stderr")
         stdout.isDaemon = true; stderr.isDaemon = true
         stdout.start(); stderr.start()
-        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "process", "Process started: ${executable.name}, pid=${process.pid()}"))
+        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "process", "Process started: ${executable.name}, process started"))
         return ProcessResult(process, stdout, stderr)
     }
 }
