@@ -16,7 +16,11 @@ class RuntimeManager(
     fun bundleReport(): RuntimeBundleReport? = bundleRoot?.let(bundleValidator::validate)
     fun availability(): String {
         val report = bundleReport()
-        return if (report?.isReady == true && wineLauncher != null) "LAUNCH_PREPARATION_AVAILABLE" else "MISSING_NATIVE_COMPONENTS"
+        return when {
+            report?.isReady != true -> "MISSING_NATIVE_COMPONENTS"
+            wineLauncher == null -> "BUNDLE_VALIDATION_ONLY"
+            else -> "LAUNCH_PREPARATION_AVAILABLE"
+        }
     }
 
     @Synchronized fun start(gameExe: File, options: WineLaunchOptions = WineLaunchOptions()): LaunchPreparationResult {
@@ -72,6 +76,6 @@ class RuntimeManager(
         val report = bundleReport()
         if (report?.isReady == true && wineLauncher != null) diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "runtime", "Bundle validates; game executable is required to start."))
         else diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime", "Launch blocked: native runtime bundle is missing or launcher unavailable."))
-        throw UnsupportedOperationException("RUNTIME_NOT_READY: game executable and configured WineRuntimeLauncher are required.")
+        throw UnsupportedOperationException(if (report?.isReady != true) "RUNTIME_NOT_INSTALLED: native runtime bundle is missing or invalid." else "RUNTIME_NOT_READY: game executable and configured WineRuntimeLauncher are required.")
     }
 }
