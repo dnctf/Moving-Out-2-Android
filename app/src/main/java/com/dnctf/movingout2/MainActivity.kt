@@ -9,6 +9,7 @@ import com.dnctf.movingout2.installation.InstallationRepository
 import com.dnctf.movingout2.runtime.RuntimeBundleImporter
 import com.dnctf.movingout2.graphics.VulkanCapabilities
 import com.dnctf.movingout2.runtime.RuntimeBundleValidator
+import com.dnctf.movingout2.runtime.RuntimeGraphicsComponents
 import com.dnctf.movingout2.ui.home.LauncherHomeView
 import java.io.File
 
