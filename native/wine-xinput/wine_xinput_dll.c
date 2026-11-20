@@ -21,8 +21,12 @@ typedef struct { WORD wLeftMotorSpeed,wRightMotorSpeed; } XINPUT_VIBRATION;
 typedef struct { BYTE bType,bSubType; WORD wFlags; XINPUT_GAMEPAD Gamepad; XINPUT_VIBRATION Vibration; } XINPUT_CAPABILITIES;
 typedef struct { BYTE BatteryType,BatteryLevel; } XINPUT_BATTERY_INFORMATION;
 typedef struct { DWORD dwFlags; BYTE bReserved; BYTE bVirtualKey; WCHAR Unicode; DWORD dwUserIndex; BYTE bHidCode; } XINPUT_KEYSTROKE;
+#ifndef ERROR_DEVICE_NOT_CONNECTED
 #define ERROR_DEVICE_NOT_CONNECTED 1167
+#endif
+#ifndef ERROR_EMPTY
 #define ERROR_EMPTY 4306
+#endif
 #define XINPUT_DEVTYPE_GAMEPAD 1
 #define XINPUT_DEVSUBTYPE_GAMEPAD 1
 #define XINPUT_CAPABILITIES_FLAG_GAMEPAD 1
