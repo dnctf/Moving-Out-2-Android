@@ -42,11 +42,11 @@ class GameInstallationManager(private val context: Context) {
         ))
     }
 
-    private fun find(root: DocumentFile, path: String): DocumentFile? {
+    private fun find(root: DocumentFile, path: String): DocumentFile? = runCatching {
         var current = root
         path.split('/').filter(String::isNotBlank).forEach { segment ->
-            current = current.listFiles().firstOrNull { it.name.equals(segment, ignoreCase = true) } ?: return null
+            current = current.listFiles().firstOrNull { it.name.equals(segment, ignoreCase = true) } ?: return@runCatching null
         }
-        return current
-    }
+        current
+    }.getOrNull()
 }
