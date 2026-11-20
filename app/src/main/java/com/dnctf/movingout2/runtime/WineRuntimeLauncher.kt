@@ -91,6 +91,7 @@ class WineRuntimeLauncher(
     }
 
     fun launch(plan: WineLaunchPlan): ProcessResult {
+        if (!inputBridge.isNativeAvailable()) throw IOException("Native MO2X bridge is unavailable; refusing to launch with non-shared fallback input.")
         if (!inputBridge.initialize(sharedInput.absolutePath)) throw IOException("MO2X input bridge initialization failed.")
         return try {
             RuntimeProcess(diagnostics).start(plan.executable, plan.arguments, plan.environment, plan.workingDirectory)
