@@ -47,17 +47,7 @@ class RuntimeBundleImporter(
             backup.deleteRecursively()
             return RuntimeImportResult(active, counter.files, counter.bytes)
         } catch (error: Exception) {
-            staging.deleteRecursively()
-            if (backup.exists()) {
-                if (activated && target.exists() && !target.deleteRecursively()) {
-                    throw IOException("Import failed and the activated bundle could not be removed; previous bundle remains in backup.", error)
-                }
-                if (!backup.renameTo(target)) {
-                    throw IOException("Import failed and rollback could not restore the previous bundle; backup remains at ${backup.absolutePath}.", error)
-                }
-            } else if (activated && target.exists() && !target.deleteRecursively()) {
-                throw IOException("Import failed and the activated bundle could not be removed.", error)
-            }
+            rollbackImport(staging, backup, target, activated, error)
             throw error
         }
     }
@@ -112,5 +102,20 @@ class RuntimeBundleImporter(
             if (!file.toPath().startsWith(root.canonicalFile.toPath())) throw IOException("Executable path escapes bundle.")
             if (file.isFile && !file.setExecutable(true, false) && !file.canExecute()) throw IOException("Unable to set executable permission for $key.")
         }
+    }
+}
+
+/** Rollback is intentionally loud: never silently hide failure to preserve or restore the previous bundle. */
+internal fun rollbackImport(staging: File, backup: File, target: File, activated: Boolean, cause: Exception) {
+    staging.deleteRecursively()
+    if (backup.exists()) {
+        if (activated && target.exists() && !target.deleteRecursively()) {
+            throw IOException("Import failed and the activated bundle could not be removed; previous bundle remains in backup.", cause)
+        }
+        if (!backup.renameTo(target)) {
+            throw IOException("Import failed and rollback could not restore the previous bundle; backup remains at ${backup.absolutePath}.", cause)
+        }
+    } else if (activated && target.exists() && !target.deleteRecursively()) {
+        throw IOException("Import failed and the activated bundle could not be removed.", cause)
     }
 }
