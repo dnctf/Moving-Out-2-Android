@@ -18,7 +18,10 @@ class RuntimeManagerTest {
         File(root, "runtime.properties").writeText("format_version=1\ntarget_abi=arm64-v8a\nbox64=b\nwine64=w\nwineserver=s\nlibrary_dir=lib\n")
         listOf("b","w","s").forEach { name ->
             File(root, name).apply {
-                writeBytes(byteArrayOf(0x7f,69,76,70,0,0,0,0,0,0,0,0,0,0,0,0,0,183.toByte(),0))
+                val elf = ByteArray(64)
+                elf[0] = 0x7f; elf[1] = 'E'.code.toByte(); elf[2] = 'L'.code.toByte(); elf[3] = 'F'.code.toByte()
+                elf[4] = 2; elf[5] = 1; elf[18] = 183.toByte(); elf[19] = 0
+                writeBytes(elf)
                 setExecutable(true)
             }
         }
