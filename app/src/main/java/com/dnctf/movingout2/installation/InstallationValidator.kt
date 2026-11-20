@@ -95,8 +95,8 @@ class InstallationValidator {
         }
     }.getOrNull()
 
-    private fun readUpTo(input: java.io.InputStream, size: Int): kotlin.ByteArray {
-        val output = java.io.kotlin.ByteArray(size)
+    private fun readUpTo(input: java.io.InputStream, size: Int): ByteArray {
+        val output = ByteArray(size)
         var offset = 0
         while (offset < size) {
             val count = input.read(output, offset, size - offset)
