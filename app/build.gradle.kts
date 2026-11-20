@@ -6,6 +6,7 @@ plugins {
 android {
     namespace = "com.dnctf.movingout2"
     compileSdk = 35
+    ndkVersion = "27.2.12479018"
 
     defaultConfig {
         applicationId = "com.dnctf.movingout2"
@@ -13,8 +14,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.2.0"
-        ndkVersion = "27.2.12479018"
-        externalNativeBuild { cmake { abiFilters += listOf("arm64-v8a") } }
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     buildTypes {
