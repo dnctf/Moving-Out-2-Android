@@ -1,6 +1,7 @@
 package com.dnctf.movingout2.runtime
 
 import android.content.Context
+import com.dnctf.movingout2.input.RuntimeInputBridge
 import java.io.File
 import java.io.IOException
 import java.util.Properties
@@ -36,6 +37,7 @@ class WineRuntimeLauncher(
     private val prefix = File(context.filesDir, "runtime/wineprefix")
     private val sharedInput = File(context.filesDir, "xinput_shm.bin")
     private val validator = RuntimeBundleValidator()
+    private val inputBridge = RuntimeInputBridge()
 
     fun prepare(gameExe: File, options: WineLaunchOptions = WineLaunchOptions()): LaunchPreparationResult {
         val report = validator.validate(bundleRoot)
@@ -102,8 +104,19 @@ class WineRuntimeLauncher(
     }
 
     fun launch(plan: WineLaunchPlan): ProcessResult {
-        val process = RuntimeProcess(diagnostics).start(plan.executable, plan.arguments, plan.environment, plan.workingDirectory)
-        return process
+        if (!inputBridge.initialize(sharedInput.absolutePath)) throw IOException("MO2X input bridge initialization failed.")
+        return try {
+            RuntimeProcess(diagnostics).start(plan.executable, plan.arguments, plan.environment, plan.workingDirectory)
+        } catch (error: Exception) {
+            neutralizeInputBridge()
+            throw error
+        }
+    }
+
+
+    fun neutralizeInputBridge() {
+        for (player in 0 until 4) runCatching { inputBridge.disconnectPlayer(player) }
+        runCatching { inputBridge.destroy() }
     }
 
     fun stopWineserver(): Boolean {
@@ -119,6 +132,7 @@ class WineRuntimeLauncher(
 
     fun stop(result: ProcessResult, graceMs: Long = 1200) {
         runCatching { result.stop(graceMs) }
+        neutralizeInputBridge()
         stopWineserver()
         diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "launcher", "Runtime process stopped; wineserver cleanup requested."))
     }
