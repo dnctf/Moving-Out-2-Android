@@ -74,9 +74,10 @@ class MainActivity : Activity() {
         val info = TextView(this).apply { text = "Touch the controls or connect a controller.\nMO2X: " + if (inputBridge.isNativeAvailable() && inputBridge.isInitialized()) "native shared memory ready; Wine reader pending" else if (inputBridge.isInitialized()) "JVM fallback active; native shared memory unavailable" else "transport initialization failed"; textSize = 14f }
         val stateText = TextView(this).apply { text = "Input: idle"; textSize = 13f; setPadding(0, 8, 0, 8) }
         val pad = VirtualControllerView(this) { state ->
-            stateText.text = "Input: buttons=" + state.buttons.joinToString() + " | left=(" + state.leftX.toInt() + ", " + state.leftY.toInt() + ")"
             touchControllerState = state
             sendCombinedInput()
+            val readback = inputBridge.readSnapshot(0)?.joinToString(" ") { byte -> "%02X".format(byte.toInt() and 0xFF) } ?: "unavailable"
+            stateText.text = "Input: buttons=" + state.buttons.joinToString() + " | left=(" + state.leftX.toInt() + ", " + state.leftY.toInt() + ")\\nMO2X packet: " + readback
         }
         container.addView(info)
         container.addView(stateText)
