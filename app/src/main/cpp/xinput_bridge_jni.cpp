@@ -25,9 +25,9 @@ static uint64_t monotonic_ns() {
 }
 static void neutralize_slot(XInputShmSlot& s) {
     __atomic_add_fetch(&s.seq, 1u, __ATOMIC_SEQ_CST);
-    s.connected = 0; s.reserved = 0; s.buttons = 0;
-    s.left_trigger = 0; s.right_trigger = 0;
-    s.thumb_lx = 0; s.thumb_ly = 0; s.thumb_rx = 0; s.thumb_ry = 0;
+    __atomic_store_n(&s.connected, 0, __ATOMIC_RELAXED); __atomic_store_n(&s.reserved, 0, __ATOMIC_RELAXED); __atomic_store_n(&s.buttons, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&s.left_trigger, 0, __ATOMIC_RELAXED); __atomic_store_n(&s.right_trigger, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&s.thumb_lx, 0, __ATOMIC_RELAXED); __atomic_store_n(&s.thumb_ly, 0, __ATOMIC_RELAXED); __atomic_store_n(&s.thumb_rx, 0, __ATOMIC_RELAXED); __atomic_store_n(&s.thumb_ry, 0, __ATOMIC_RELAXED);
     std::memset(s.padding, 0, sizeof(s.padding));
     __atomic_add_fetch(&s.seq, 1u, __ATOMIC_SEQ_CST);
 }
@@ -75,12 +75,12 @@ Java_com_dnctf_movingout2_input_NativeXInputTransport_nativeWriteSerializedPacke
     const size_t i = static_cast<size_t>(player);
     XInputShmSlot& s = g_mapping->slots[i];
     __atomic_add_fetch(&s.seq, 1u, __ATOMIC_SEQ_CST);
-    s.connected = connected ? 1 : 0;
-    s.reserved = 0;
-    s.buttons = static_cast<uint16_t>(bytes[0]) | (static_cast<uint16_t>(bytes[1]) << 8);
-    s.left_trigger = bytes[2]; s.right_trigger = bytes[3];
+    __atomic_store_n(&s.connected, connected ? 1 : 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&s.reserved, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&s.buttons, static_cast<uint16_t>(bytes[0]) | (static_cast<uint16_t>(bytes[1]) << 8), __ATOMIC_RELAXED);
+    __atomic_store_n(&s.left_trigger, bytes[2], __ATOMIC_RELAXED); __atomic_store_n(&s.right_trigger, bytes[3], __ATOMIC_RELAXED);
     auto read_i16 = [&](size_t offset) { return static_cast<int16_t>(static_cast<uint16_t>(bytes[offset]) | (static_cast<uint16_t>(bytes[offset+1]) << 8)); };
-    s.thumb_lx = read_i16(4); s.thumb_ly = read_i16(6); s.thumb_rx = read_i16(8); s.thumb_ry = read_i16(10);
+    __atomic_store_n(&s.thumb_lx, read_i16(4), __ATOMIC_RELAXED); __atomic_store_n(&s.thumb_ly, read_i16(6), __ATOMIC_RELAXED); __atomic_store_n(&s.thumb_rx, read_i16(8), __ATOMIC_RELAXED); __atomic_store_n(&s.thumb_ry, read_i16(10), __ATOMIC_RELAXED);
     std::memset(s.padding, 0, sizeof(s.padding));
     __atomic_add_fetch(&s.seq, 1u, __ATOMIC_SEQ_CST);
     g_mapping->header.last_update_ns = monotonic_ns();
@@ -118,13 +118,17 @@ Java_com_dnctf_movingout2_input_NativeXInputTransport_nativeReadSnapshot(JNIEnv*
         for (int attempt = 0; attempt < 1000; ++attempt) {
             const uint32_t before = __atomic_load_n(&slot.seq, __ATOMIC_ACQUIRE);
             if (before & 1u) continue;
-            packet[0] = static_cast<uint8_t>(slot.buttons & 0xffu);
-            packet[1] = static_cast<uint8_t>((slot.buttons >> 8) & 0xffu);
-            packet[2] = slot.left_trigger; packet[3] = slot.right_trigger;
-            packet[4] = static_cast<uint8_t>(slot.thumb_lx & 0xff); packet[5] = static_cast<uint8_t>((slot.thumb_lx >> 8) & 0xff);
-            packet[6] = static_cast<uint8_t>(slot.thumb_ly & 0xff); packet[7] = static_cast<uint8_t>((slot.thumb_ly >> 8) & 0xff);
-            packet[8] = static_cast<uint8_t>(slot.thumb_rx & 0xff); packet[9] = static_cast<uint8_t>((slot.thumb_rx >> 8) & 0xff);
-            packet[10] = static_cast<uint8_t>(slot.thumb_ry & 0xff); packet[11] = static_cast<uint8_t>((slot.thumb_ry >> 8) & 0xff);
+            const uint16_t buttons = __atomic_load_n(&slot.buttons, __ATOMIC_RELAXED);
+            const uint8_t leftTrigger = __atomic_load_n(&slot.left_trigger, __ATOMIC_RELAXED);
+            const uint8_t rightTrigger = __atomic_load_n(&slot.right_trigger, __ATOMIC_RELAXED);
+            const int16_t lx = __atomic_load_n(&slot.thumb_lx, __ATOMIC_RELAXED), ly = __atomic_load_n(&slot.thumb_ly, __ATOMIC_RELAXED);
+            const int16_t rx = __atomic_load_n(&slot.thumb_rx, __ATOMIC_RELAXED), ry = __atomic_load_n(&slot.thumb_ry, __ATOMIC_RELAXED);
+            packet[0] = static_cast<uint8_t>(buttons & 0xffu); packet[1] = static_cast<uint8_t>((buttons >> 8) & 0xffu);
+            packet[2] = leftTrigger; packet[3] = rightTrigger;
+            packet[4] = static_cast<uint8_t>(lx & 0xff); packet[5] = static_cast<uint8_t>((lx >> 8) & 0xff);
+            packet[6] = static_cast<uint8_t>(ly & 0xff); packet[7] = static_cast<uint8_t>((ly >> 8) & 0xff);
+            packet[8] = static_cast<uint8_t>(rx & 0xff); packet[9] = static_cast<uint8_t>((rx >> 8) & 0xff);
+            packet[10] = static_cast<uint8_t>(ry & 0xff); packet[11] = static_cast<uint8_t>((ry >> 8) & 0xff);
             const uint32_t after = __atomic_load_n(&slot.seq, __ATOMIC_ACQUIRE);
             if (before == after && !(after & 1u)) { stable = true; break; }
         }
