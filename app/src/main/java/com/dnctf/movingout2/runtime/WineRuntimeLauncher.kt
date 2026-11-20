@@ -169,7 +169,8 @@ class WineRuntimeLauncher(
 
     private fun isValidX64Pe(file: File): Boolean = runCatching {
         if (!file.isFile || file.length() < 70) return@runCatching false
-        val bytes = file.inputStream().use { stream ->\n            val buffer = ByteArray(65536)\n            var offset = 0\n            while (offset < buffer.size) { val read = stream.read(buffer, offset, buffer.size - offset); if (read <= 0) break; offset += read }\n            if (offset == buffer.size) buffer else buffer.copyOf(offset)\n        }
+        val bytes = file.inputStream().use { stream ->
+            val buffer = ByteArray(65536)\n            var offset = 0\n            while (offset < buffer.size) { val read = stream.read(buffer, offset, buffer.size - offset); if (read <= 0) break; offset += read }\n            if (offset == buffer.size) buffer else buffer.copyOf(offset)\n        }
         if (bytes.size < 64 || bytes[0] != 'M'.code.toByte() || bytes[1] != 'Z'.code.toByte()) return@runCatching false
         val pe = (bytes[0x3c].toInt() and 255) or ((bytes[0x3d].toInt() and 255) shl 8) or ((bytes[0x3e].toInt() and 255) shl 16) or ((bytes[0x3f].toInt() and 255) shl 24)
         pe >= 0 && pe <= bytes.size - 6 && bytes[pe] == 'P'.code.toByte() && bytes[pe+1] == 'E'.code.toByte() && bytes[pe+2] == 0.toByte() && bytes[pe+3] == 0.toByte() && bytes[pe+4] == 0x64.toByte() && bytes[pe+5] == 0x86.toByte()
