@@ -60,7 +60,10 @@ static BOOL read_slot(DWORD user,Slot*out){
   LONG a=InterlockedCompareExchange((volatile LONG*)p,0,0); if(a&1)continue;
   BYTE b[24]; for(int i=4;i<24;i++)b[i]=p[i]; MemoryBarrier();
   LONG z=InterlockedCompareExchange((volatile LONG*)p,0,0);
-  if(a!=z||(z&1))continue; memcpy(out,b,24);out->seq=(uint32_t)z;return out->connected!=0;
+  if(a!=z||(z&1)) continue;
+  memcpy(out,b,24);
+  out->seq=(uint32_t)z;
+  return out->connected!=0;
  }
  return FALSE;
 }
