@@ -9,13 +9,13 @@ import org.junit.Test
 class InstallationValidatorTest {
     private fun fixture(): File {
         val root = createTempDir(prefix = "mo2-fixture")
-        listOf("GameAssembly.dll", "UnityPlayer.dll", "baselib.dll").forEach { File(root, it).writeBytes(byteArrayOf(1, 2, 3)) }
-        val exe = File(root, "mo2.exe")
         val pe = ByteArray(512)
         pe[0] = 0x4d; pe[1] = 0x5a
         pe[0x3c] = 64
         pe[64] = 0x50; pe[65] = 0x45
         pe[68] = 0x64.toByte(); pe[69] = 0x86.toByte()
+        listOf("GameAssembly.dll", "UnityPlayer.dll", "baselib.dll").forEach { File(root, it).writeBytes(pe) }
+        val exe = File(root, "mo2.exe")
         exe.writeBytes(pe)
         val metadata = File(root, "MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat")
         metadata.parentFile.mkdirs()
@@ -83,3 +83,11 @@ class InstallationValidatorTest {
         root.deleteRecursively()
     }
 }
+    @Test fun corruptPeDllIsRejected() {
+        val root = fixture()
+        File(root, "baselib.dll").writeBytes(byteArrayOf(1, 2, 3, 4))
+        val report = InstallationValidator().validate(root)
+        assertEquals(InstallationStatus.INVALID_STRUCTURE, report.status)
+        assertFalse(report.stages.first { it.stage.name == "VERSION_ARCH" }.passed)
+        root.deleteRecursively()
+    }
