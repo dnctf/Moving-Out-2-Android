@@ -14,7 +14,7 @@ class RuntimeBundleImporter(
     context: Context,
     private val validator: RuntimeBundleValidator = RuntimeBundleValidator(),
     private val maxBytes: Long = 6L * 1024L*1024L*1024L,
-    private val maxFiles: Int = 20_000,
+    private val maxEntries: Int = 20_000,
     private val maxDepth: Int = 24
 ) {
     private val resolver = context.contentResolver
@@ -58,11 +58,13 @@ class RuntimeBundleImporter(
 
     private val contextHolder: Context = context
 
-    private class Counter(var files: Int = 0, var bytes: Long = 0)
+    private class Counter(var files: Int = 0, var entries: Int = 0, var bytes: Long = 0)
 
     private fun copyDirectory(source: DocumentFile, destination: File, depth: Int, counter: Counter) {
         if (depth > maxDepth) throw IOException("Runtime bundle directory depth exceeds limit.")
         for (child in source.listFiles()) {
+            counter.entries++
+            if (counter.entries > maxEntries) throw IOException("Runtime bundle contains too many entries.")
             val name = child.name ?: throw IOException("SAF entry has no name.")
             if (name.isBlank() || name == "." || name == ".." || name.contains('/') || name.contains('\\') || name.any { it.code < 32 }) {
                 throw IOException("Unsafe runtime bundle entry name.")
@@ -73,7 +75,6 @@ class RuntimeBundleImporter(
                 copyDirectory(child, output, depth + 1, counter)
             } else if (child.isFile) {
                 counter.files++
-                if (counter.files > maxFiles) throw IOException("Runtime bundle contains too many files.")
                 val input = resolver.openInputStream(child.uri) ?: throw IOException("Unable to open runtime file: $name")
                 input.use { stream ->
                     FileOutputStream(output).use { out ->
