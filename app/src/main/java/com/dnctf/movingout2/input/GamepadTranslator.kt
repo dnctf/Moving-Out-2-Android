@@ -25,7 +25,7 @@ class GamepadTranslator(private val deadzone: Float = 0.18f) {
         lx = normalizeAxis(event.getAxisValue(MotionEvent.AXIS_X))
         ly = normalizeAxis(event.getAxisValue(MotionEvent.AXIS_Y))
         rx = normalizeAxis(firstNonZero(event, MotionEvent.AXIS_Z, MotionEvent.AXIS_RX))
-        ry = normalizeAxis(firstNonZero(event, MotionEvent.AXIS_RZ, MotionEvent.AXIS_RY))
+        ry = normalizeAxis(firstNonZero(event, MotionEvent.AXIS_RZ, MotionEvent.AXIS_RY)))
         lt = normalizeTrigger(firstNonZero(event, MotionEvent.AXIS_LTRIGGER, MotionEvent.AXIS_BRAKE))
         rt = normalizeTrigger(firstNonZero(event, MotionEvent.AXIS_RTRIGGER, MotionEvent.AXIS_GAS))
         updateHat(event.getAxisValue(MotionEvent.AXIS_HAT_X), event.getAxisValue(MotionEvent.AXIS_HAT_Y))
