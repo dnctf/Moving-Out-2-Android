@@ -15,7 +15,7 @@ class RuntimeManifestParser {
   val components=json.optJSONObject("components")?:run{errors+="components object missing";JSONObject()}
   fun verify(key:String,fallback:String,required:Boolean,dir:Boolean=false){
    val c=components.optJSONObject(key)
-   if(c==null||(!required&&!c.optBoolean("included",false))){if(required)errors+="Required component $key missing";return}
+   if(c==null||!c.optBoolean("included",false)){if(required)errors+="Required component $key missing or marked excluded";return}
    val path=c.optString("path",fallback);val hash=c.optString("sha256").lowercase()
    if(path.isBlank()||path.startsWith("/")||path.startsWith("\\")||path.contains(':')||path.split('/', '\\').any{it==".."}){errors+="Unsafe path for $key";return}
    if(!hash.matches(Regex("[a-f0-9]{64}"))){errors+="Invalid SHA-256 for $key";return}
