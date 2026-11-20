@@ -3,12 +3,11 @@ package com.dnctf.movingout2
 import android.app.Activity
 import android.os.Bundle
 import android.content.Intent
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.ScrollView
+import android.view.View
 import android.widget.TextView
 import com.dnctf.movingout2.installation.GameInstallationManager
 import com.dnctf.movingout2.installation.InstallationRepository
+import com.dnctf.movingout2.ui.home.LauncherHomeView
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
@@ -18,35 +17,28 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repository = InstallationRepository(this)
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(40, 48, 40, 32)
+        val views = LauncherHomeView.create(this, ::openFolderPicker, ::revalidateSavedFolder)
+        status = views.status
+        setContentView(views.root)
+        status.text = if (repository.savedUri() != null) {
+            "Saved installation folder found. Tap Revalidate to check current access."
+        } else {
+            "Installation folder not configured. Runtime: RUNTIME_NOT_INSTALLED."
         }
-        val scroll = ScrollView(this)
-        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val title = TextView(this).apply { text = "Moving Out 2 Android"; textSize = 26f }
-        val subtitle = TextView(this).apply { text = "Dedicated Windows-game compatibility launcher"; textSize = 15f }
-        status = TextView(this).apply { textSize = 16f; setPadding(0, 28, 0, 24) }
-        val select = Button(this).apply {
-            text = "Select game folder"
-            setOnClickListener {
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-                }
-                startActivityForResult(intent, pickFolder)
-            }
+    }
+
+    private fun openFolderPicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }
-        val validateSaved = Button(this).apply {
-            text = "Revalidate saved folder"
-            setOnClickListener { repository.savedUri()?.let { status.text = formatReport(GameInstallationManager(this@MainActivity).validate(it)) } ?: run { status.text = "No installation folder saved." } }
-        }
-        val disclaimer = TextView(this).apply {
-            text = "This app validates game files only. Wine/Box64 execution, graphics, audio and controller support are not implemented. Use legally obtained game files."
-            textSize = 13f; setPadding(0, 24, 0, 0)
-        }
-        content.addView(title); content.addView(subtitle); content.addView(status); content.addView(select); content.addView(validateSaved); content.addView(disclaimer)
-        scroll.addView(content); root.addView(scroll); setContentView(root)
-        repository.savedUri()?.let { status.text = "Saved installation folder found. Tap Revalidate to check current access." } ?: run { status.text = "Installation folder not configured. Runtime: RUNTIME_NOT_INSTALLED." }
+        startActivityForResult(intent, pickFolder)
+    }
+
+    private fun revalidateSavedFolder() {
+        val uri = repository.savedUri()
+        status.text = if (uri == null) "No installation folder saved." else runCatching {
+            formatReport(GameInstallationManager(this).validate(uri))
+        }.getOrElse { "Folder access error: ${it.message ?: "permission unavailable"}" }
     }
 
     @Deprecated("Use Activity Result API in a later refactor")
@@ -60,6 +52,8 @@ class MainActivity : Activity() {
             status.text = formatReport(GameInstallationManager(this).validate(uri))
         } catch (e: SecurityException) {
             status.text = "Folder permission error: ${e.message ?: "SAF read permission denied"}"
+        } catch (e: Exception) {
+            status.text = "Installation check failed safely: ${e.message ?: e.javaClass.simpleName}"
         }
     }
 
