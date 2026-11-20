@@ -41,5 +41,13 @@ struct alignas(8) XInputShm {
 };
 static_assert(sizeof(XInputShmHeader) == 32, "MO2X header must be 32 bytes");
 static_assert(sizeof(XInputShmSlot) == 24, "MO2X slot must be 24 bytes");
+static_assert(offsetof(XInputShmSlot, seq) == 0, "slot seq offset");
+static_assert(offsetof(XInputShmSlot, connected) == 4, "slot connected offset");
+static_assert(offsetof(XInputShmSlot, buttons) == 6, "slot buttons offset");
+static_assert(offsetof(XInputShmSlot, left_trigger) == 8, "slot left trigger offset");
+static_assert(offsetof(XInputShmSlot, thumb_lx) == 10, "slot LX offset");
+static_assert(offsetof(XInputShmSlot, thumb_ly) == 12, "slot LY offset");
+static_assert(offsetof(XInputShmSlot, thumb_rx) == 14, "slot RX offset");
+static_assert(offsetof(XInputShmSlot, thumb_ry) == 16, "slot RY offset");
 static_assert(offsetof(XInputShm, slots) == 32, "MO2X slots offset must be 32");
 static_assert(sizeof(XInputShm) == 128, "MO2X mapping must be 128 bytes");
