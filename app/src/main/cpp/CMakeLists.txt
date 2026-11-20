@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(vulkan_probe LANGUAGES CXX)
+add_library(vulkan_probe SHARED vulkan_probe.cpp)
+find_library(vulkan-lib vulkan REQUIRED)
+find_library(log-lib log)
+target_compile_features(vulkan_probe PRIVATE cxx_std_17)
+target_compile_options(vulkan_probe PRIVATE -Wall -Wextra -Werror)
+target_link_libraries(vulkan_probe PRIVATE ${vulkan-lib} ${log-lib})
