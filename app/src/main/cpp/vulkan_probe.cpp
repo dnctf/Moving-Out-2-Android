@@ -18,7 +18,8 @@ static std::string join(const std::vector<std::string>& values) {
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_dnctf_movingout2_graphics_VulkanNativeProbe_probeNative(JNIEnv* env, jobject) {
     uint32_t loaderVersion = VK_API_VERSION_1_0;
-    VkResult versionResult = vkEnumerateInstanceVersion(&loaderVersion);
+    auto enumerateVersion = reinterpret_cast<PFN_vkEnumerateInstanceVersion>(vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkEnumerateInstanceVersion"));
+    VkResult versionResult = enumerateVersion ? enumerateVersion(&loaderVersion) : VK_ERROR_EXTENSION_NOT_PRESENT;
     VkApplicationInfo app{};
     app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     app.pApplicationName = "Moving Out 2 Android Diagnostics";
