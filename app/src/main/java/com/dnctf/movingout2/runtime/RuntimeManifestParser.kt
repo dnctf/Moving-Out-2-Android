@@ -31,6 +31,6 @@ class RuntimeManifestParser {
   if(components.optJSONObject("turnip")?.optBoolean("included",false)==true){verify("turnipSo","turnip/libvulkan_freedreno.so",false);verify("turnipIcd","turnip/freedreno_icd.aarch64.json",false)}
   return RuntimeManifestValidation(errors.isEmpty(),errors.distinct(),json,files)
  }
- private fun hashDirectory(dir:File):String{val d=MessageDigest.getInstance("SHA-256");dir.walkTopDown().filter{it.isFile}.sortedBy{it.relativeTo(dir).invariantSeparatorsPath}.forEach{f->d.update(f.relativeTo(dir).invariantSeparatorsPath.toByteArray(Charsets.UTF_8));f.inputStream().use{input->val b=ByteArray(65536);while(true){val n=input.read(b);if(n<0)break;d.update(b,0,n)}}};return d.digest().joinToString(""){"%02x".format(it)}}
+ private fun hashDirectory(dir:File):String{val listing=StringBuilder();dir.walkTopDown().filter{it.isFile}.sortedBy{it.relativeTo(dir).invariantSeparatorsPath}.forEach{f->listing.append(hashFile(f)).append("  ./").append(f.relativeTo(dir).invariantSeparatorsPath).append('\\n')};val d=MessageDigest.getInstance("SHA-256");d.update(listing.toString().toByteArray(Charsets.UTF_8));return d.digest().joinToString(""){"%02x".format(it)}}
  private fun hashFile(file:File):String{val d=MessageDigest.getInstance("SHA-256");file.inputStream().use{input->val b=ByteArray(65536);while(true){val n=input.read(b);if(n<0)break;d.update(b,0,n)}};return d.digest().joinToString(""){"%02x".format(it)}}
 }
