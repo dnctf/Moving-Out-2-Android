@@ -19,7 +19,7 @@ class InstallationValidatorTest {
         File(root, "mo2.exe").writeBytes(pe)
         val metadata = File(root, "MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat")
         metadata.parentFile?.mkdirs()
-        metadata.writeBytes(byteArrayOf(0xFA.toByte(), 0xB1.toByte(), 0x1B, 0xAF.toByte(), 0x29, 0, 0, 0))
+        metadata.writeBytes(byteArrayOf(0xAF.toByte(), 0x1B, 0xB1.toByte(), 0xFA.toByte(), 0x29, 0, 0, 0))
         return root
     }
     @Test fun validX64InstallationIsDetected() {
