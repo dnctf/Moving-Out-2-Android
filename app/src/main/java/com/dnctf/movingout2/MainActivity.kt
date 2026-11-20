@@ -74,7 +74,8 @@ class MainActivity : Activity() {
         val stateText = TextView(this).apply { text = "Input: idle"; textSize = 13f; setPadding(0, 8, 0, 8) }
         val pad = VirtualControllerView(this) { state ->
             stateText.text = "Input: buttons=" + state.buttons.joinToString() + " | left=(" + state.leftX.toInt() + ", " + state.leftY.toInt() + ")"
-            touchControllerState = state\n            sendCombinedInput()
+            touchControllerState = state
+            sendCombinedInput()
         }
         container.addView(info)
         container.addView(stateText)
