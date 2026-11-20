@@ -118,12 +118,7 @@ class GameZipImporter(
         }
     }
 
-    private fun safeEntryName(raw: String): String {
-        val normalized = raw.replace('\\\\', '/').trimEnd('/')
-        if (normalized.isBlank() || normalized.startsWith('/') || Regex("^[A-Za-z]:").containsMatchIn(normalized) ||
-            normalized.split('/').any { it == ".." || it.isBlank() || it == "." }) throw IOException("Unsafe ZIP path: $raw")
-        return normalized
-    }
+    private fun safeEntryName(raw: String): String = ZipEntryPath.normalize(raw)
 
     private fun findRootPrefix(names: List<String>): String? {
         val files = names.filterNot { it.endsWith('/') }.map { it.lowercase(Locale.ROOT) }.toSet()
