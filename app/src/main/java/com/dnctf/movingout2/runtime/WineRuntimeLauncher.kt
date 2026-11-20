@@ -103,7 +103,6 @@ class WineRuntimeLauncher(
 
     fun neutralizeInputBridge() {
         for (player in 0 until 4) runCatching { inputBridge.disconnectPlayer(player) }
-        runCatching { inputBridge.destroy() }
     }
 
     fun stopWineserver(): Boolean {
