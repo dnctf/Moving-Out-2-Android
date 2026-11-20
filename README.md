@@ -1,44 +1,53 @@
 # Moving Out 2 Android
 
-Dedicated Android ARM64 compatibility launcher/runtime research project for **Moving Out 2**.
+Android ARM64 compatibility launcher and runtime-integration research for **Moving Out 2** (Windows x64 Unity/IL2CPP).
 
-> Status: **Early scaffold — no game execution or compatibility has been demonstrated yet.**
+> **Status: Phase 2 runtime bundle validation groundwork.** The APK/launcher and native bundle validator build in CI. Wine/Box64 execution, graphics translation and actual gameplay are not yet integrated or demonstrated.
 
-This project aims to investigate running the Windows x64 Unity/IL2CPP build of Moving Out 2 on Android through a native Android launcher and a compatibility runtime. It is not an official Team17/SMG Studio project.
+This is an independent project, not affiliated with Team17 or SMG Studio.
 
 ## Target
 
 - Game: Moving Out 2 (Windows x64)
 - Reported target version: 1.2.274
-- Engine: Unity 2021.3.16f1, IL2CPP (target details still subject to validation)
-- Android target: ARM64
+- Engine: Unity 2021.3.16f1 / IL2CPP (details still require validation)
+- Android target: ARM64 (arm64-v8a)
 
-Expected user-supplied game installation files may include `mo2.exe`, `GameAssembly.dll`, `UnityPlayer.dll`, `baselib.dll`, `MovingOut2_Data/`, and `il2cpp_data/Metadata/global-metadata.dat`. The app will validate files locally; proprietary game files are not distributed in this repository.
+The user supplies a legitimate game installation. The app does not distribute game files, proprietary libraries, or runtime binaries.
 
-## Architecture
+## Current implementation
 
-- **Android app** — Kotlin UI, installation picker (SAF), validation and settings
-- **Runtime session** — lifecycle, process supervision, diagnostics, launch orchestration
-- **Compatibility** — focused Moving Out 2 / Unity / IL2CPP / Windows x64 checks
-- **Native runtime** — integration research and build boundaries for Wine / Box64
-- **Graphics** — Vulkan, DXVK and Turnip feasibility/integration experiments
-- **Input & audio** — controller/touch mapping, audio routing, lifecycle handling
-- **Tests & CI** — validation tests, build checks, reports and artifacts
+- Android launcher and persisted SAF game-folder selection.
+- Installation file/structure validation and diagnostics.
+- Runtime process supervision and state machine foundation.
+- Device, RAM, EGL/GLES and Vulkan-feature diagnostics (Vulkan API/extensions are not enumerated yet).
+- Runtime bundle validator for a user-built ARM64 bundle manifest: checks paths, ELF64 little-endian AArch64 executable headers, executable flags, and library directory.
+- CI builds debug APK and runs unit tests.
+
+## Runtime bundle layout (validator contract)
+
+See [Runtime bundle format](docs/RUNTIME_BUNDLE.md). This is validation-only; no import/install UI or native launch is implemented.
 
 ## Roadmap
 
-1. Clean project skeleton, Android build and CI
-2. SAF-based game folder selection and file validation
-3. Runtime feasibility and integration (Wine / Box64, native dependencies)
-4. Vulkan / DXVK / Turnip graphics pipeline experiments
-5. First-frame milestone (must be demonstrated, not simulated)
-6. Input, audio, lifecycle and playable-session validation
-7. Device testing, performance, reliability and APK packaging
+1. [x] Android project and CI
+2. [x] SAF game-folder selection and initial validation
+3. [x] Runtime session/process/diagnostic foundation
+4. [x] Runtime bundle format and ARM64 ELF validation (validation only)
+5. [ ] Bundle import/installation flow with storage safety and dependency inventory
+6. [ ] Build or integrate Wine ARM64 + Box64 (license-aware, reproducible, device-tested)
+7. [ ] Wine prefix bootstrap and Windows x64 process execution
+8. [ ] Unity/IL2CPP dependency/compatibility checks
+9. [ ] Vulkan API/device-extension enumeration and surface testing
+10. [ ] DXVK integration research/build; Turnip assessment for Adreno
+11. [ ] Real first-frame milestone (must be captured and independently validated)
+12. [ ] Input/audio bridges, suspend/resume and crash recovery
+13. [ ] Device testing, performance, thermal behavior and reproducible release packaging
 
 ## Build
 
-Build instructions will be expanded as the Android project and runtime dependencies are implemented. A successful CI build only proves that the launcher builds; it does **not** prove that Moving Out 2 runs.
+CI uses JDK 17, Android SDK 35, Gradle 8.9 and produces a debug APK. A successful build proves the launcher compiles; it is not runtime/game compatibility evidence.
 
 ## Legal / distribution
 
-Moving Out 2 is copyrighted commercial software. This repository does not include the game, game assets, executables, metadata, or proprietary libraries. Users must provide a legitimate installation and comply with applicable licenses.
+Moving Out 2 is copyrighted commercial software. Game files remain user-provided and are not committed. Runtime binaries must be sourced, built, packaged and redistributed only in accordance with their respective licenses.
