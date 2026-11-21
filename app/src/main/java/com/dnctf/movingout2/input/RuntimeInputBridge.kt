@@ -17,11 +17,24 @@ data class XInputPacket(
         .putShort(thumbLX).putShort(thumbLY).putShort(thumbRX).putShort(thumbRY).array()
 }
 
-enum class InputBridgeStatus { WAITING_FOR_NATIVE_RUNTIME, BRIDGE_CONNECTED }
+enum class InputBridgeStatus { BRIDGE_READY_WAITING_RUNTIME, BRIDGE_CONNECTED, BRIDGE_UNSUPPORTED }
+
+data class RuntimeInputCapabilities(
+    val nativeSharedMemoryAvailable: Boolean,
+    val transportInitialized: Boolean,
+    val runtimeConnectionConfirmed: Boolean,
+    val status: InputBridgeStatus
+)
 
 class RuntimeInputBridge(private val transport: XInputTransport = NativeXInputTransport()) {
-    @Volatile var status = InputBridgeStatus.WAITING_FOR_NATIVE_RUNTIME
+    @Volatile var status = InputBridgeStatus.BRIDGE_UNSUPPORTED
         private set
+    val capabilities: RuntimeInputCapabilities get() = RuntimeInputCapabilities(
+        nativeSharedMemoryAvailable = transport.isNativeAvailable(),
+        transportInitialized = transport.isInitialized(),
+        runtimeConnectionConfirmed = status == InputBridgeStatus.BRIDGE_CONNECTED,
+        status = status
+    )
 
     fun initialize(shmFilePath: String): Boolean {
         val initialized = transport.init(shmFilePath)
@@ -71,14 +84,17 @@ class RuntimeInputBridge(private val transport: XInputTransport = NativeXInputTr
 
     fun destroy() {
         transport.destroy()
-        status = InputBridgeStatus.WAITING_FOR_NATIVE_RUNTIME
+        status = InputBridgeStatus.BRIDGE_UNSUPPORTED
     }
     fun isNativeAvailable() = transport.isNativeAvailable()
     fun isInitialized() = transport.isInitialized()
 
     private fun updateStatus(runtimeConnected: Boolean = false) {
-        status = if (runtimeConnected && transport.isNativeAvailable() && transport.isInitialized())
-            InputBridgeStatus.BRIDGE_CONNECTED else InputBridgeStatus.WAITING_FOR_NATIVE_RUNTIME
+        status = when {
+            runtimeConnected && transport.isNativeAvailable() && transport.isInitialized() -> InputBridgeStatus.BRIDGE_CONNECTED
+            transport.isNativeAvailable() && transport.isInitialized() -> InputBridgeStatus.BRIDGE_READY_WAITING_RUNTIME
+            else -> InputBridgeStatus.BRIDGE_UNSUPPORTED
+        }
     }
 
     companion object {
