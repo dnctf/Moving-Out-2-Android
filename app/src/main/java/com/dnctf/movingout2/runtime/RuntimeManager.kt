@@ -2,6 +2,10 @@ package com.dnctf.movingout2.runtime
 
 import java.io.File
 
+/**
+ * Coordinates a launch only when the manager's bundle and the launcher's bundle
+ * are the same canonical directory and the manager's validation is READY.
+ */
 class RuntimeManager(
     private val diagnostics: RuntimeDiagnostics = RuntimeDiagnostics(),
     private val bundleRoot: File? = null,
@@ -14,22 +18,52 @@ class RuntimeManager(
 
     fun diagnostics(): RuntimeDiagnostics = diagnostics
     fun bundleReport(): RuntimeBundleReport? = bundleRoot?.let(bundleValidator::validate)
+
     fun availability(): String {
         val report = bundleReport()
         return when {
             report?.isReady != true -> "MISSING_NATIVE_COMPONENTS"
             wineLauncher == null -> "BUNDLE_VALIDATION_ONLY"
+            !runtimeBundleRootsMatch(bundleRoot, wineLauncher.bundleRoot) -> "BUNDLE_CONFIGURATION_MISMATCH"
             else -> "LAUNCH_PREPARATION_AVAILABLE"
         }
     }
 
     @Synchronized fun start(gameExe: File, options: WineLaunchOptions = WineLaunchOptions()): LaunchPreparationResult {
-        if (activeProcess?.process?.isAlive == true) return LaunchPreparationResult.MissingPayload(listOf("A runtime process is already active."))
-        val launcher = wineLauncher ?: return LaunchPreparationResult.MissingPayload(listOf("WineRuntimeLauncher is not configured."))
-        state = RuntimeState.STARTING
+        if (activeProcess?.process?.isAlive == true) {
+            return LaunchPreparationResult.MissingPayload(listOf("A runtime process is already active."))
+        }
+        if (state == RuntimeState.STARTING || state == RuntimeState.STOPPING) {
+            return LaunchPreparationResult.MissingPayload(listOf("Runtime state $state does not permit a new launch."))
+        }
+        if (state == RuntimeState.RUNNING) {
+            activeProcess = null
+            state = RuntimeStateTransitions.transition(state, RuntimeState.FAILED)
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "runtime", "State was RUNNING but no live process remained; marked failed before retry."))
+        }
+
+        val report = bundleReport()
+        if (report?.isReady != true) {
+            val blockers = report?.blockers ?: listOf("Runtime bundle root is not configured.")
+            resetToNotInstalledIfSafe()
+            blockers.forEach { diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime", it)) }
+            return LaunchPreparationResult.MissingPayload(blockers)
+        }
+        val launcher = wineLauncher ?: run {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime", "Launch blocked: WineRuntimeLauncher is not configured."))
+            return LaunchPreparationResult.MissingPayload(listOf("WineRuntimeLauncher is not configured."))
+        }
+        if (!runtimeBundleRootsMatch(bundleRoot, launcher.bundleRoot)) {
+            val blocker = "RuntimeManager and WineRuntimeLauncher bundle roots do not match; launch blocked."
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime", blocker))
+            return LaunchPreparationResult.MissingPayload(listOf(blocker))
+        }
+
+        if (state == RuntimeState.NOT_INSTALLED) state = RuntimeStateTransitions.transition(state, RuntimeState.READY)
+        state = RuntimeStateTransitions.transition(state, RuntimeState.STARTING)
         when (val prepared = launcher.prepare(gameExe, options)) {
             is LaunchPreparationResult.MissingPayload -> {
-                state = RuntimeState.FAILED
+                state = RuntimeStateTransitions.transition(state, RuntimeState.FAILED)
                 prepared.blockers.forEach { diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime", it)) }
                 return prepared
             }
@@ -37,20 +71,30 @@ class RuntimeManager(
                 return try {
                     val running = launcher.launch(prepared.plan)
                     activeProcess = running
-                    state = RuntimeState.RUNNING
+                    state = RuntimeStateTransitions.transition(state, RuntimeState.RUNNING)
                     Thread({
                         val result = runCatching { running.waitFor() }.getOrNull()
                         synchronized(this) {
                             activeProcess = null
-                            state = if (result?.exitCode == 0) RuntimeState.STOPPED else RuntimeState.FAILED
+                            val next = when {
+                                state == RuntimeState.STOPPING -> RuntimeState.STOPPED
+                                state == RuntimeState.RUNNING && result?.exitCode == 0 -> RuntimeState.STOPPED
+                                state == RuntimeState.RUNNING -> RuntimeState.FAILED
+                                else -> state
+                            }
+                            if (next != state) state = RuntimeStateTransitions.transition(state, next)
                             launcher.stop(running, 0)
-                            diagnostics.record(RuntimeDiagnostic(if (result?.exitCode == 0) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.WARNING, "runtime", "Game process exited with code ${result?.exitCode ?: "unknown"}"))
+                            diagnostics.record(RuntimeDiagnostic(
+                                if (state == RuntimeState.STOPPED) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.WARNING,
+                                "runtime",
+                                "Game process exited with code ${result?.exitCode ?: "unknown"}; final state=$state"
+                            ))
                         }
                     }, "mo2-runtime-watchdog").apply { isDaemon = true; start() }
                     prepared
                 } catch (error: Exception) {
                     activeProcess = null
-                    state = RuntimeState.FAILED
+                    state = RuntimeStateTransitions.transition(state, RuntimeState.FAILED)
                     diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime", "Launch failed: ${error.message}"))
                     LaunchPreparationResult.MissingPayload(listOf("Process launch failed: ${error.message}"))
                 }
@@ -58,24 +102,47 @@ class RuntimeManager(
         }
     }
 
+    private fun resetToNotInstalledIfSafe() {
+        if (state == RuntimeState.READY || state == RuntimeState.STOPPED || state == RuntimeState.FAILED) {
+            state = RuntimeStateTransitions.transition(state, RuntimeState.NOT_INSTALLED)
+        }
+    }
+
     @Synchronized fun stop(): Boolean {
-        val process = activeProcess ?: run { state = RuntimeState.STOPPED; return false }
-        state = RuntimeState.STOPPING
+        val process = activeProcess ?: return false
+        if (state == RuntimeState.RUNNING) state = RuntimeStateTransitions.transition(state, RuntimeState.STOPPING)
+        else if (state != RuntimeState.STOPPING) return false
         val launcher = wineLauncher
         runCatching { process.stop(1000) }
         runCatching { launcher?.neutralizeInputBridge() }
         runCatching { launcher?.stopWineserver() }
         activeProcess = null
-        state = RuntimeState.STOPPED
+        if (state == RuntimeState.STOPPING) state = RuntimeStateTransitions.transition(state, RuntimeState.STOPPED)
         diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "runtime", "Runtime stopped by user."))
         return true
     }
 
-    /** Kept as a fail-closed entry point when callers haven't supplied a game executable. */
+    /** Fail-closed entry point when no game executable is supplied. */
     fun start(): Nothing {
         val report = bundleReport()
-        if (report?.isReady == true && wineLauncher != null) diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "runtime", "Bundle validates; game executable is required to start."))
-        else diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime", "Launch blocked: native runtime bundle is missing or launcher unavailable."))
-        throw UnsupportedOperationException(if (report?.isReady != true) "RUNTIME_NOT_INSTALLED: native runtime bundle is missing or invalid." else "RUNTIME_NOT_READY: game executable and configured WineRuntimeLauncher are required.")
+        val launcher = wineLauncher
+        val message = when {
+            report?.isReady != true -> "RUNTIME_NOT_INSTALLED: native runtime bundle is missing or invalid."
+            launcher == null -> "RUNTIME_NOT_READY: WineRuntimeLauncher is not configured."
+            !runtimeBundleRootsMatch(bundleRoot, launcher.bundleRoot) -> "RUNTIME_NOT_READY: manager and launcher bundle roots differ."
+            else -> "RUNTIME_NOT_READY: game executable is required to start."
+        }
+        diagnostics.record(RuntimeDiagnostic(
+            if (report?.isReady == true && launcher != null && runtimeBundleRootsMatch(bundleRoot, launcher.bundleRoot)) RuntimeDiagnostic.Severity.WARNING else RuntimeDiagnostic.Severity.ERROR,
+            "runtime",
+            message
+        ))
+        throw UnsupportedOperationException(message)
     }
+}
+
+/** Canonical path equality prevents diagnostics/availability from validating a different bundle than the launcher uses. */
+internal fun runtimeBundleRootsMatch(managerRoot: File?, launcherRoot: File?): Boolean {
+    if (managerRoot == null || launcherRoot == null) return false
+    return runCatching { managerRoot.canonicalFile == launcherRoot.canonicalFile }.getOrDefault(false)
 }
