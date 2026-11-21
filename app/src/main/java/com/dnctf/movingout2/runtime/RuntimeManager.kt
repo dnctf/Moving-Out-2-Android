@@ -96,13 +96,6 @@ class RuntimeManager(
                                 diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "runtime", "Ignored stale watchdog completion from an earlier session."))
                                 return@synchronized
                             }
-                            val next = when {
-                                state == RuntimeState.STOPPING -> RuntimeState.STOPPED
-                                state == RuntimeState.RUNNING && result?.exitCode == 0 -> RuntimeState.STOPPED
-                                state == RuntimeState.RUNNING -> RuntimeState.FAILED
-                                else -> state
-                            }
-                            if (next != state) state = RuntimeStateTransitions.transition(state, next)
                             val cleanupSucceeded = runCatching { cleanupGuard.runOnce { launcher.stop(running, 0) } }.getOrElse { error ->
                                 diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime-cleanup", "Watchdog cleanup failed: ${error.message ?: error.javaClass.simpleName}"))
                                 false
@@ -110,6 +103,13 @@ class RuntimeManager(
                             if (cleanupSucceeded || cleanupGuard.isCompleted()) {
                                 activeProcess = null
                                 activeCleanupGuard = null
+                                val next = when {
+                                    state == RuntimeState.STOPPING -> RuntimeState.STOPPED
+                                    state == RuntimeState.RUNNING && result?.exitCode == 0 -> RuntimeState.STOPPED
+                                    state == RuntimeState.RUNNING -> RuntimeState.FAILED
+                                    else -> state
+                                }
+                                if (next != state) state = RuntimeStateTransitions.transition(state, next)
                             } else {
                                 if (state != RuntimeState.FAILED) state = RuntimeStateTransitions.transition(state, RuntimeState.FAILED)
                             }
