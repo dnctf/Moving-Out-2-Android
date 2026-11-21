@@ -24,7 +24,7 @@ class EndToEndRuntimeWiringTest {
             return initialized
         }
         override fun writePacket(playerIndex: Int, connected: Boolean, packet: ByteArray): Boolean {
-            if (!initialized || playerIndex !in 0..3 || packet.size != PACKET_SIZE_BYTES) return false
+            if (!initialized || playerIndex !in 0..3 || packet.size != XInputTransport.PACKET_SIZE_BYTES) return false
             this.connected[playerIndex] = connected
             packets[playerIndex] = packet.copyOf()
             return true
