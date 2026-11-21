@@ -16,7 +16,8 @@ data class ProcessResult(val process: Process, val pid: Long?, val stdoutThread:
     }
     fun stop(gracePeriodMs: Long = 1000): ExitResult {
         require(gracePeriodMs >= 0)
-        if (process.isAlive) {
+        val wasAliveAtStopRequest = process.isAlive
+        if (wasAliveAtStopRequest) {
             process.destroy()
             if (!process.waitFor(gracePeriodMs, TimeUnit.MILLISECONDS)) {
                 process.destroyForcibly()
@@ -26,7 +27,7 @@ data class ProcessResult(val process: Process, val pid: Long?, val stdoutThread:
             }
         }
         closeStreamsAndJoinReaders()
-        return ExitResult(exitCodeSafely(), pid, process.isAlive, true, elapsed())
+        return ExitResult(exitCodeSafely(), pid, process.isAlive, wasAliveAtStopRequest, elapsed())
     }
     /** Close inherited pipes and bound reader shutdown so descendants cannot pin daemon readers. */
     private fun closeStreamsAndJoinReaders() {

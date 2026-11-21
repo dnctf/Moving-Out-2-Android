@@ -67,4 +67,15 @@ class RuntimeProcessTest {
         assertTrue(result.terminatedByUser)
         assertFalse(process.process.isAlive)
     }
+
+    @Test fun stopAfterNaturalExitDoesNotReportUserTermination() {
+        available()
+        val process = RuntimeProcess(RuntimeDiagnostics()).start(shell, listOf("-c", "exit 0"))
+        val naturalExit = process.waitFor(1000)
+        assertEquals(0, naturalExit.exitCode)
+        val stopped = process.stop(100)
+        assertFalse("Already-exited process should not be reported as user-terminated", stopped.terminatedByUser)
+        assertFalse(stopped.timedOut)
+        assertEquals(0, stopped.exitCode)
+    }
 }
