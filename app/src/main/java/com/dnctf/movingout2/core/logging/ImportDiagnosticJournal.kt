@@ -19,6 +19,7 @@ class ImportDiagnosticJournal(private val diagnosticsDirectory: File, private va
     fun checkpoint(type: String, archiveName: String?, archiveBytes: Long? = null, entryCount: Int? = null,
         extractedBytes: Long? = null, availableBytesBefore: Long? = null, availableBytesAfter: Long? = null,
         stage: String, activationStatus: String = "PENDING", rollbackStatus: String = "NOT_REQUIRED", error: Throwable? = null) {
+        runCatching {
         if (!diagnosticsDirectory.exists() && !diagnosticsDirectory.mkdirs()) throw IOException("Unable to create diagnostic journal directory")
         val entries = runCatching { JSONArray(journalFile.takeIf { it.isFile }?.readText() ?: "[]") }.getOrDefault(JSONArray())
         val record = JSONObject().put("timestamp", System.currentTimeMillis()).put("type", type)
@@ -37,6 +38,7 @@ class ImportDiagnosticJournal(private val diagnosticsDirectory: File, private va
             Files.move(temporaryJournalFile.toPath(), journalFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }
         if (error != null) appendBoundedErrorLog("\n--- ${System.currentTimeMillis()} $type $stage ---\n${error.stackTraceToString()}\n")
+        } // Diagnostic persistence is best-effort and must never abort import/runtime operations.
     }
     private fun appendBoundedErrorLog(text: String) {
         val boundedEntry = text.takeLast(maxErrorLogBytes)
