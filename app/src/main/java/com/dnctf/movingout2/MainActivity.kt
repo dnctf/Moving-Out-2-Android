@@ -202,7 +202,7 @@ class MainActivity : Activity() {
         val current = LauncherSettings.load(this)
         val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(36, 12, 36, 8) }
         val scroll = ScrollView(this).apply { addView(panel) }
-        lateinit var dialog: AlertDialog
+        var dialog: AlertDialog? = null
         fun slider(label: String, value: Int, max: Int = 100): SeekBar {
             val labelView = TextView(this).apply { text = "$label: $value%"; textSize = 16f }
             panel.addView(labelView)
@@ -234,8 +234,8 @@ class MainActivity : Activity() {
             setSelection(if (presetIndex >= 0) presetIndex else profileOptions.lastIndex)
         }
         panel.addView(profileSpinner)
-        val profileImportButton = Button(this).apply { text = "Import profile JSON"; setOnClickListener { dialog.dismiss(); openControllerProfileImport() } }
-        val profileExportButton = Button(this).apply { text = "Export current profile JSON"; setOnClickListener { dialog.dismiss(); openControllerProfileExport() } }
+        val profileImportButton = Button(this).apply { text = "Import profile JSON"; setOnClickListener { dialog?.dismiss(); openControllerProfileImport() } }
+        val profileExportButton = Button(this).apply { text = "Export current profile JSON"; setOnClickListener { dialog?.dismiss(); openControllerProfileExport() } }
         panel.addView(profileImportButton); panel.addView(profileExportButton)
 
         panel.addView(TextView(this).apply { text = "FPS cap target"; textSize = 16f })
@@ -268,7 +268,7 @@ class MainActivity : Activity() {
                 Toast.makeText(this, "Settings saved (runtime application pending).", Toast.LENGTH_SHORT).show()
             }
         dialog = builder.create()
-        dialog.show()
+        dialog?.show()
     }
 
 
