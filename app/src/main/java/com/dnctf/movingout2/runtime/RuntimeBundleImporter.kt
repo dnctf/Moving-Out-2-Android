@@ -27,9 +27,8 @@ class RuntimeBundleImporter(
         val source = DocumentFile.fromTreeUri(resolverContext(), uri)
         if (source == null || !source.isDirectory || !source.canRead()) throw IOException("Selected SAF tree is not readable.")
         if (!parent.mkdirs() && !parent.isDirectory) throw IOException("Unable to create private runtime storage.")
-        // Recover a previous import interrupted between moving the active bundle and activating staging.
-        if (!target.exists() && backup.exists() && !backup.renameTo(target)) throw IOException("Unable to recover previous runtime bundle.")
-        if (target.exists()) backup.deleteRecursively()
+        // Validate both sides before cleanup: a crash can leave an invalid new target beside the old backup.
+        recoverRuntimeBundle(target, backup) { bundle -> validator.validate(bundle).isReady }
         staging.deleteRecursively()
         if (!staging.mkdirs()) throw IOException("Unable to create runtime staging directory.")
         val counter = Counter()
@@ -105,6 +104,24 @@ class RuntimeBundleImporter(
             if (!file.toPath().startsWith(root.canonicalFile.toPath())) throw IOException("Executable path escapes bundle.")
             if (file.isFile && !file.setExecutable(true, false) && !file.canExecute()) throw IOException("Unable to set executable flag for $relative.")
         }
+    }
+}
+
+
+/** Recover interrupted activation without deleting a valid backup before validating the active bundle. */
+internal fun recoverRuntimeBundle(target: File, backup: File, isValid: (File) -> Boolean) {
+    if (!backup.exists()) return
+    val activeValid = target.exists() && runCatching { isValid(target) }.getOrDefault(false)
+    val backupValid = runCatching { isValid(backup) }.getOrDefault(false)
+    when {
+        activeValid -> {
+            if (!backup.deleteRecursively()) throw IOException("Unable to remove stale runtime bundle backup.")
+        }
+        backupValid -> {
+            if (target.exists() && !target.deleteRecursively()) throw IOException("Unable to remove invalid active runtime bundle during recovery.")
+            if (!backup.renameTo(target)) throw IOException("Unable to restore valid runtime bundle backup.")
+        }
+        else -> throw IOException("Runtime bundle recovery found no valid active or backup bundle; both were preserved.")
     }
 }
 

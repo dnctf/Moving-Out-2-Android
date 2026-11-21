@@ -19,6 +19,38 @@ class RuntimeBundleImporterRollbackTest {
         root.deleteRecursively()
     }
 
+
+    @Test fun recoveryKeepsValidActiveAndRemovesStaleBackup() {
+        val root = Files.createTempDirectory("recovery-active").toFile()
+        val target = File(root, "target").apply { mkdirs(); File(this, "marker").writeText("active") }
+        val backup = File(root, "backup").apply { mkdirs(); File(this, "marker").writeText("old") }
+        recoverRuntimeBundle(target, backup) { File(it, "marker").isFile }
+        assertEquals("active", File(target, "marker").readText())
+        assertFalse(backup.exists())
+        root.deleteRecursively()
+    }
+
+    @Test fun recoveryRestoresValidBackupWhenActiveTargetIsCorrupt() {
+        val root = Files.createTempDirectory("recovery-backup").toFile()
+        val target = File(root, "target").apply { mkdirs(); File(this, "corrupt").writeText("new") }
+        val backup = File(root, "backup").apply { mkdirs(); File(this, "marker").writeText("previous-valid") }
+        recoverRuntimeBundle(target, backup) { File(it, "marker").isFile }
+        assertEquals("previous-valid", File(target, "marker").readText())
+        assertFalse(backup.exists())
+        root.deleteRecursively()
+    }
+
+    @Test fun recoveryPreservesBothDirectoriesWhenNeitherIsValid() {
+        val root = Files.createTempDirectory("recovery-invalid").toFile()
+        val target = File(root, "target").apply { mkdirs(); File(this, "corrupt").writeText("new") }
+        val backup = File(root, "backup").apply { mkdirs(); File(this, "corrupt").writeText("old") }
+        val failure = runCatching { recoverRuntimeBundle(target, backup) { File(it, "marker").isFile } }.exceptionOrNull()
+        assertNotNull(failure)
+        assertTrue(target.exists())
+        assertTrue(backup.exists())
+        root.deleteRecursively()
+    }
+
     @Test fun rollbackRestoreFailureThrowsExplicitlyAndLeavesBackup() {
         val root = Files.createTempDirectory("rollback-failure").toFile()
         val staging = File(root, "staging").apply { mkdirs() }
