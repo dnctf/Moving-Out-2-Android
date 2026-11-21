@@ -103,13 +103,20 @@ class RuntimeManager(
                                 else -> state
                             }
                             if (next != state) state = RuntimeStateTransitions.transition(state, next)
-                            cleanupGuard.runOnce { launcher.stop(running, 0) }
-                            activeProcess = null
-                            activeCleanupGuard = null
+                            val cleanupSucceeded = runCatching { cleanupGuard.runOnce { launcher.stop(running, 0) } }.getOrElse { error ->
+                                diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime-cleanup", "Watchdog cleanup failed: ${error.message ?: error.javaClass.simpleName}"))
+                                false
+                            }
+                            if (cleanupSucceeded || cleanupGuard.isCompleted()) {
+                                activeProcess = null
+                                activeCleanupGuard = null
+                            } else {
+                                if (state != RuntimeState.FAILED) state = RuntimeStateTransitions.transition(state, RuntimeState.FAILED)
+                            }
                             diagnostics.record(RuntimeDiagnostic(
-                                if (state == RuntimeState.STOPPED) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.WARNING,
+                                if (state == RuntimeState.STOPPED && cleanupSucceeded) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.WARNING,
                                 "runtime",
-                                "Game process exited with code ${result?.exitCode ?: "unknown"}; final state=$state"
+                                "Game process exited with code ${result?.exitCode ?: "unknown"}; cleanupSucceeded=$cleanupSucceeded; final state=$state"
                             ))
                         }
                     }, "mo2-runtime-watchdog").apply { isDaemon = true; start() }
@@ -137,12 +144,20 @@ class RuntimeManager(
         else if (state != RuntimeState.STOPPING) return false
         val launcher = wineLauncher
         val guard = activeCleanupGuard ?: RuntimeCleanupGuard()
-        guard.runOnce { runCatching { launcher?.stop(process, 1000) }.getOrThrow() }
-        activeProcess = null
-        activeCleanupGuard = null
-        if (state == RuntimeState.STOPPING) state = RuntimeStateTransitions.transition(state, RuntimeState.STOPPED)
-        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "runtime", "Runtime stopped by user."))
-        return true
+        val cleanupSucceeded = runCatching { guard.runOnce { launcher?.stop(process, 1000) } }.getOrElse { error ->
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime-cleanup", "Manual stop cleanup failed: ${error.message ?: error.javaClass.simpleName}"))
+            false
+        }
+        if (cleanupSucceeded || guard.isCompleted()) {
+            activeProcess = null
+            activeCleanupGuard = null
+            if (state == RuntimeState.STOPPING) state = RuntimeStateTransitions.transition(state, RuntimeState.STOPPED)
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "runtime", "Runtime stopped by user; cleanup complete."))
+        } else {
+            if (state == RuntimeState.STOPPING) state = RuntimeStateTransitions.transition(state, RuntimeState.FAILED)
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "runtime", "Runtime stop incomplete; retained session handle for cleanup retry."))
+        }
+        return cleanupSucceeded || guard.isCompleted()
     }
 
     /** Fail-closed entry point when no game executable is supplied. */
@@ -193,6 +208,15 @@ internal class RuntimeCleanupGuard {
         }
     }
     fun isCompleted() = completed.get()
+}
+
+/** Execute cleanup without allowing a teardown exception to escape a watchdog thread. */
+internal fun safeRuntimeCleanup(component: String, diagnostics: RuntimeDiagnostics, cleanup: () -> Unit): Boolean = try {
+    cleanup()
+    true
+} catch (error: Throwable) {
+    diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, component, "Cleanup failed: ${error.message ?: error.javaClass.simpleName}"))
+    false
 }
 
 /** Session identity check prevents an old watchdog from mutating a newer launch. */

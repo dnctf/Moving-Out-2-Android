@@ -76,6 +76,13 @@ class RuntimeManagerTest {
     }
 
 
+    @Test fun cleanupFailureIsLoggedAndReportedAsUnsuccessful() {
+        val diagnostics = RuntimeDiagnostics()
+        val success = safeRuntimeCleanup("test-cleanup", diagnostics) { throw IllegalStateException("native teardown fault") }
+        assertFalse(success)
+        assertTrue(diagnostics.snapshot().any { it.component == "test-cleanup" && it.message.contains("native teardown fault") })
+    }
+
     @Test fun retainedProcessHandleBlocksLaunchUntilWatchdogClearsIt() {
         assertFalse(runtimeSessionCleanupPending(null))
         assertTrue(runtimeSessionCleanupPending(Any()))

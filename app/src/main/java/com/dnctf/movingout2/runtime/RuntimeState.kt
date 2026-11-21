@@ -12,7 +12,7 @@ object RuntimeStateTransitions {
         RuntimeState.RUNNING to setOf(RuntimeState.STOPPING, RuntimeState.FAILED),
         RuntimeState.STOPPING to setOf(RuntimeState.STOPPED, RuntimeState.FAILED),
         RuntimeState.STOPPED to setOf(RuntimeState.STARTING, RuntimeState.READY, RuntimeState.NOT_INSTALLED),
-        RuntimeState.FAILED to setOf(RuntimeState.READY, RuntimeState.STARTING, RuntimeState.NOT_INSTALLED)
+        RuntimeState.FAILED to setOf(RuntimeState.READY, RuntimeState.STARTING, RuntimeState.STOPPING, RuntimeState.NOT_INSTALLED)
     )
     fun canTransition(from: RuntimeState, to: RuntimeState): Boolean = to in allowed[from].orEmpty()
     fun transition(from: RuntimeState, to: RuntimeState): RuntimeState {
