@@ -32,6 +32,7 @@ class RuntimeProcessTest {
         val result = process.waitFor(100)
         assertTrue(result.timedOut)
         assertFalse(process.process.isAlive)
+        assertNotNull("Terminated process should have an exit code after reaping", result.exitCode)
     }
     @Test fun stopMarksUserTerminationAndStopsProcess() {
         available()

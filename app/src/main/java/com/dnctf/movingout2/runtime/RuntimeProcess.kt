@@ -10,7 +10,7 @@ data class ProcessResult(val process: Process, val pid: Long?, val stdoutThread:
         val timedOut = timeoutMs != null && !process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
         if (timedOut) terminate(250)
         else if (timeoutMs == null) process.waitFor()
-        return ExitResult(process.exitValue(), pid, timedOut, false, elapsed())
+        return ExitResult(exitCodeSafely(), pid, timedOut, false, elapsed())
     }
     fun stop(gracePeriodMs: Long = 1000): ExitResult {
         require(gracePeriodMs >= 0)
@@ -18,21 +18,25 @@ data class ProcessResult(val process: Process, val pid: Long?, val stdoutThread:
             process.destroy()
             if (!process.waitFor(gracePeriodMs, TimeUnit.MILLISECONDS)) {
                 process.destroyForcibly()
-                process.waitFor()
+                // Forced termination is also bounded; retain a nullable exit code if
+                // the OS/process implementation has not reaped it within this window.
+                process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             }
         }
-        return ExitResult(if (process.isAlive) null else process.exitValue(), pid, false, true, elapsed())
+        return ExitResult(exitCodeSafely(), pid, false, true, elapsed())
     }
-    private fun terminate(grace: Long) {
-        if (process.isAlive) {
-            process.destroy()
-            if (!process.waitFor(grace, TimeUnit.MILLISECONDS)) {
-                process.destroyForcibly()
-                process.waitFor()
-            }
-        }
+    private fun terminate(grace: Long): Boolean {
+        if (!process.isAlive) return true
+        process.destroy()
+        if (process.waitFor(grace, TimeUnit.MILLISECONDS)) return true
+        process.destroyForcibly()
+        return process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
     }
+    private fun exitCodeSafely(): Int? = if (process.isAlive) null else runCatching { process.exitValue() }.getOrNull()
     private fun elapsed() = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos)
+    companion object {
+        private const val FORCE_REAP_TIMEOUT_MS = 1000L
+    }
 }
 
 class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xinputConfig: RuntimeLaunchConfig? = null) {
