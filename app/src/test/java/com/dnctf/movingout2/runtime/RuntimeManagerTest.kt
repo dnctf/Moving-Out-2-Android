@@ -58,6 +58,24 @@ class RuntimeManagerTest {
         File(root, "lib/lib.so").writeBytes(byteArrayOf(1))
         return root
     }
+    @Test fun cleanupGuardRetriesAfterExceptionAndLocksAfterSuccess() {
+        val guard = RuntimeCleanupGuard()
+        try {
+            guard.runOnce { throw IllegalStateException("cleanup failed") }
+            fail("Expected cleanup exception")
+        } catch (expected: IllegalStateException) {
+            assertEquals("cleanup failed", expected.message)
+        }
+        assertFalse(guard.isCompleted())
+        var calls = 0
+        assertTrue(guard.runOnce { calls++ })
+        assertEquals(1, calls)
+        assertTrue(guard.isCompleted())
+        assertFalse(guard.runOnce { calls++ })
+        assertEquals(1, calls)
+    }
+
+
     @Test fun retainedProcessHandleBlocksLaunchUntilWatchdogClearsIt() {
         assertFalse(runtimeSessionCleanupPending(null))
         assertTrue(runtimeSessionCleanupPending(Any()))

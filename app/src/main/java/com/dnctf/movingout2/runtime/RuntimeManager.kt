@@ -176,11 +176,21 @@ internal fun runtimeBundleRootsMatch(managerRoot: File?, launcherRoot: File?): B
 
 /** Per-session cleanup gate shared by manual stop and the process watchdog. */
 internal class RuntimeCleanupGuard {
+    private val claimed = AtomicBoolean(false)
     private val completed = AtomicBoolean(false)
+
+
     fun runOnce(cleanup: () -> Unit): Boolean {
-        if (!completed.compareAndSet(false, true)) return false
-        cleanup()
-        return true
+        if (!claimed.compareAndSet(false, true)) return false
+        try {
+            cleanup()
+            completed.set(true)
+            return true
+        } catch (error: Throwable) {
+            // Failed cleanup is retryable; do not advertise completion.
+            claimed.set(false)
+            throw error
+        }
     }
     fun isCompleted() = completed.get()
 }
