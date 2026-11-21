@@ -15,7 +15,9 @@ class PhysicalGamepadNormalizerTest {
     }
     @Test fun triggerRangesAndNonFiniteSamplesAreSafe() {
         assertEquals(0f, PhysicalGamepadNormalizer.normalizeTrigger(-1f), 0f)
-        assertEquals(.5f, PhysicalGamepadNormalizer.normalizeTrigger(0f), 0f)
+        assertEquals(0f, PhysicalGamepadNormalizer.normalizeTrigger(0f), 0f)
+        assertEquals(.5f, PhysicalGamepadNormalizer.normalizeTriggerInRange(0f, -1f, 1f), 0f)
+        assertEquals(.5f, PhysicalGamepadNormalizer.normalizeTrigger(.5f), 0f
         assertEquals(1f, PhysicalGamepadNormalizer.normalizeTrigger(1f), 0f)
         assertEquals(0f, PhysicalGamepadNormalizer.normalizeTrigger(Float.NaN), 0f)
         assertEquals(1f, PhysicalGamepadNormalizer.normalizeTrigger(2f), 0f)
