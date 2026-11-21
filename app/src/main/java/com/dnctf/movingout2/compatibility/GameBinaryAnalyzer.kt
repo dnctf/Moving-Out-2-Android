@@ -53,7 +53,7 @@ object GameBinaryAnalyzer {
             val optionalSize = u16(peOffset + 20)
             val optional = peOffset + 24
             require(optional.toLong() + optionalSize <= bytes.size) { "Truncated optional header" }
-            require(optionalSize >= 112) { "Optional header lacks PE32+ directory fields" }
+            require(optionalSize >= 120) { "Optional header lacks PE32+ import directory fields" }
             require(u16(optional) == 0x20b) { "Not PE32+" }
             pe32Plus = true
             val importRva = u32(optional + 112 + 8).toInt()
@@ -80,11 +80,12 @@ object GameBinaryAnalyzer {
             if (importRva != 0 && importSize > 0) {
                 require(importSize >= 20) { "Import directory too small" }
                 val directoryOffset = rvaToOffset(importRva)
+                require(directoryOffset.toLong() + importSize <= bytes.size) { "Import directory exceeds file bounds" }
                 val descriptorLimit = minOf(importSize / 20, 4096)
                 var terminated = false
                 for (i in 0 until descriptorLimit) {
                     val d = directoryOffset.toLong() + i * 20
-                    require(d + 20 <= bytes.size) { "Import descriptor out of bounds" }
+                    require(d + 20 <= bytes.size && d + 20 <= directoryOffset.toLong() + importSize) { "Import descriptor out of directory bounds" }
                     val descriptor = d.toInt()
                     val original = u32(descriptor)
                     val nameRva = u32(descriptor + 12)
