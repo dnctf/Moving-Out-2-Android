@@ -45,7 +45,18 @@ class ControllerProfileRepositoryTest {
         assertEquals(1f, out.leftX, 0f)
         assertEquals(1f, out.leftTrigger, 0f)
     }
-    @Test fun oversizeImportIsRejected() {
+    @Test fun malformedMapTypesAndCrossGroupAxesAreRejected() {
+        assertThrows(IllegalArgumentException::class.java) {
+            ControllerProfile.importFromJson("""{"schemaVersion":1,"name":"bad","buttonMap":"A"}""")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ControllerProfile.importFromJson("""{"schemaVersion":1,"name":"bad","axisMap":{"LEFT_X":"LEFT_TRIGGER"}}""")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ControllerProfile.importFromJson("""{"schemaVersion":1,"name":"bad","buttonMap":{"A":2} }""")
+        }
+    }
+    @Test fun oversizeImportIsRejected {
         assertThrows(IllegalArgumentException::class.java) {
             ControllerProfile.importFromJson(" ".repeat(65537))
         }

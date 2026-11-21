@@ -31,6 +31,17 @@ class PhysicalGamepadNormalizer(private val deadzone: Float = 0.12f) {
             val scaled = ((clampedMagnitude - zone) / (1f - zone)).coerceIn(0f, 1f)
             return Stick((x / magnitude * scaled).coerceIn(-1f, 1f), (y / magnitude * scaled).coerceIn(-1f, 1f))
         }
+        /** Converts vendor-advertised stick axis ranges to a centered [-1,1] value. */
+        fun normalizeAxisInRange(raw: Float, min: Float, max: Float): Float {
+            if (!raw.isFinite() || !min.isFinite() || !max.isFinite() || max <= min) return 0f
+            val center = if (min < 0f && max > 0f) 0f else (min + max) / 2f
+            val value = raw.coerceIn(min, max)
+            return when {
+                value < center && center > min -> ((value - center) / (center - min)).coerceIn(-1f, 0f)
+                value > center && max > center -> ((value - center) / (max - center)).coerceIn(0f, 1f)
+                else -> 0f
+            }
+        }
         fun normalizeTrigger(raw: Float, digital: Boolean = false): Float = when {
             digital -> if (raw > 0f) 1f else 0f
             !raw.isFinite() -> 0f

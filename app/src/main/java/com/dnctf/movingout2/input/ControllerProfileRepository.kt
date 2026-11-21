@@ -27,6 +27,9 @@ data class ControllerProfile(
         require(deadzone.isFinite() && deadzone in 0f..0.5f) { "Deadzone must be between 0 and 0.5." }
         require(buttonMap.keys.all { it in BUTTON_NAMES } && buttonMap.values.all { it in BUTTON_NAMES }) { "Unknown button mapping." }
         require(axisMap.keys.all { it in AXIS_NAMES } && axisMap.values.all { it in AXIS_NAMES }) { "Unknown axis mapping." }
+        require(axisMap.all { (target, source) ->
+            (target in STICK_AXES && source in STICK_AXES) || (target in TRIGGER_AXES && source in TRIGGER_AXES)
+        }) { "Stick axes cannot be remapped to triggers or vice versa." }
     }
 
     fun remapButton(button: ControllerButton): ControllerButton =
@@ -56,7 +59,9 @@ data class ControllerProfile(
         private const val CURRENT_SCHEMA = 1
         private const val PREFS = "controller_profiles_v1"
         private val BUTTON_NAMES = ControllerButton.values().map { it.name }.toSet()
-        private val AXIS_NAMES = setOf("LEFT_X", "LEFT_Y", "RIGHT_X", "RIGHT_Y", "LEFT_TRIGGER", "RIGHT_TRIGGER")
+        private val STICK_AXES = setOf("LEFT_X", "LEFT_Y", "RIGHT_X", "RIGHT_Y")
+        private val TRIGGER_AXES = setOf("LEFT_TRIGGER", "RIGHT_TRIGGER")
+        private val AXIS_NAMES = STICK_AXES + TRIGGER_AXES
 
         val presets = listOf(
             ControllerProfile(name = "Moving Out 2 Co-Op Default"),
@@ -68,13 +73,20 @@ data class ControllerProfile(
             require(json.length <= 65536) { "Controller profile is too large." }
             val root = JSONObject(json)
             require(root.optInt("schemaVersion", -1) == CURRENT_SCHEMA) { "Unsupported controller profile schema." }
-            val buttons = root.optJSONObject("buttonMap") ?: JSONObject()
-            val axes = root.optJSONObject("axisMap") ?: JSONObject()
+            fun readStringMap(field: String): Map<String, String> {
+                if (!root.has(field) || root.isNull(field)) return emptyMap()
+                val obj = root.optJSONObject(field) ?: throw IllegalArgumentException("$field must be a JSON object.")
+                return obj.keys().asSequence().associateWith { key ->
+                    val value = obj.get(key)
+                    require(value is String) { "$field values must be strings." }
+                    value
+                }
+            }
             val profile = ControllerProfile(
                 schemaVersion = root.optInt("schemaVersion"),
                 name = root.optString("name"),
-                buttonMap = buttons.keys().asSequence().associateWith { buttons.optString(it) },
-                axisMap = axes.keys().asSequence().associateWith { axes.optString(it) },
+                buttonMap = readStringMap("buttonMap"),
+                axisMap = readStringMap("axisMap"),
                 sensitivity = root.optDouble("sensitivity", 1.0).toFloat(),
                 deadzone = root.optDouble("deadzone", .12).toFloat()
             )

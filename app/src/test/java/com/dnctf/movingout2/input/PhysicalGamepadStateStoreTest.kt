@@ -26,7 +26,18 @@ class PhysicalGamepadStateStoreTest {
         assertEquals(1, store.deviceCount())
         assertEquals(ControllerState(), store.aggregate())
     }
-    @Test fun updatesForUnknownDevicesAreIgnored() {
+    @Test fun stickVectorIsSelectedFromOneDeviceRatherThanMixedAxes() {
+        val store = PhysicalGamepadStateStore()
+        store.register(1); store.register(2)
+        store.update(1, ControllerState(leftX=.8f, leftY=0f, rightX=.1f, rightY=0f))
+        store.update(2, ControllerState(leftX=0f, leftY=.9f, rightX=0f, rightY=.8f))
+        val state = store.aggregate()
+        assertEquals(0f, state.leftX, 0f)
+        assertEquals(.9f, state.leftY, 0f)
+        assertEquals(0f, state.rightX, 0f)
+        assertEquals(.8f, state.rightY, 0f)
+    }
+    @Test fun updatesForUnknownDevicesAreIgnored {
         val store = PhysicalGamepadStateStore()
         store.update(7, ControllerState(buttons=setOf(ControllerButton.X)))
         assertEquals(0, store.deviceCount())

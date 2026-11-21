@@ -24,14 +24,14 @@ class GamepadTranslator(private val deadzone: Float = 0.18f) {
     fun onMotion(event: MotionEvent): ControllerState? {
         if (event.source and (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK) == 0) return null
         val device = InputDevice.getDevice(event.deviceId)
-        lx = event.getAxisValue(MotionEvent.AXIS_X)
-        ly = event.getAxisValue(MotionEvent.AXIS_Y)
+        val left = PhysicalGamepadNormalizer.normalizeStick(
+            axisValue(event, device, MotionEvent.AXIS_X), axisValue(event, device, MotionEvent.AXIS_Y), deadzone
+        )
         val rightX = if (supports(device, MotionEvent.AXIS_RX)) MotionEvent.AXIS_RX else MotionEvent.AXIS_Z
         val rightY = if (supports(device, MotionEvent.AXIS_RY)) MotionEvent.AXIS_RY else MotionEvent.AXIS_RZ
-        rx = event.getAxisValue(rightX)
-        ry = event.getAxisValue(rightY)
-        val left = PhysicalGamepadNormalizer.normalizeStick(lx, ly, deadzone)
-        val right = PhysicalGamepadNormalizer.normalizeStick(rx, ry, deadzone)
+        val right = PhysicalGamepadNormalizer.normalizeStick(
+            axisValue(event, device, rightX), axisValue(event, device, rightY), deadzone
+        )
         lx = left.x; ly = left.y; rx = right.x; ry = right.y
         val lAxis = if (supports(device, MotionEvent.AXIS_LTRIGGER)) MotionEvent.AXIS_LTRIGGER else MotionEvent.AXIS_BRAKE
         val rAxis = if (supports(device, MotionEvent.AXIS_RTRIGGER)) MotionEvent.AXIS_RTRIGGER else MotionEvent.AXIS_GAS
@@ -49,6 +49,12 @@ class GamepadTranslator(private val deadzone: Float = 0.18f) {
         return snapshot()
     }
 
+    private fun axisValue(event: MotionEvent, device: InputDevice?, axis: Int): Float {
+        val raw = event.getAxisValue(axis)
+        val range = device?.getMotionRange(axis)
+        return if (range != null) PhysicalGamepadNormalizer.normalizeAxisInRange(raw, range.min, range.max)
+        else raw.takeIf { it.isFinite() }?.coerceIn(-1f, 1f) ?: 0f
+    }
     private fun supports(device: InputDevice?, axis: Int): Boolean =
         device?.getMotionRange(axis) != null
 
