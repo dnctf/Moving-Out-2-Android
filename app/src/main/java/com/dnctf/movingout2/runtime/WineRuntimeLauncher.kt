@@ -130,6 +130,8 @@ class WineRuntimeLauncher(
         for (player in 0 until 4) runCatching { inputBridge.disconnectPlayer(player) }
     }
 
+    fun destroyInputBridge() { runCatching { inputBridge.destroy() } }
+
     /** Works with both legacy runtime.properties and the current hash-validated JSON manifest. */
     fun stopWineserver(): Boolean {
         val server = WineServerResolver.resolve(bundleRoot)
@@ -155,8 +157,9 @@ class WineRuntimeLauncher(
     }
 
     fun stop(result: ProcessResult, graceMs: Long = 1200) {
-        runCatching { result.stop(graceMs) }
         neutralizeInputBridge()
+        destroyInputBridge()
+        runCatching { result.stop(graceMs) }
         stopWineserver()
         diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "launcher", "Runtime process stopped; wineserver cleanup requested."))
     }
