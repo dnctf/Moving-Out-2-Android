@@ -8,7 +8,19 @@ import java.nio.ByteOrder
 object GameBinaryAnalyzer {
     data class Analysis(val machine: Int, val isPe32Plus: Boolean, val imports: Set<String>, val errors: List<String>)
 
-    fun analyze(input: InputStream): Analysis = analyze(input.readBytes())
+    const val MAX_BINARY_BYTES = 128 * 1024 * 1024
+    fun analyze(input: InputStream): Analysis {
+        val output = java.io.ByteArrayOutputStream(8192)
+        val buffer = ByteArray(8192)
+        while (output.size() <= MAX_BINARY_BYTES) {
+            val remaining = MAX_BINARY_BYTES + 1 - output.size()
+            val count = input.read(buffer, 0, minOf(buffer.size, remaining))
+            if (count <= 0) break
+            output.write(buffer, 0, count)
+        }
+        if (output.size() > MAX_BINARY_BYTES) return Analysis(-1, false, emptySet(), listOf("Binary exceeds 128 MiB analysis limit"))
+        return analyze(output.toByteArray())
+    }
     fun analyze(bytes: ByteArray): Analysis {
         val imports = linkedSetOf<String>()
         val errors = mutableListOf<String>()
@@ -31,6 +43,7 @@ object GameBinaryAnalyzer {
         }
         var machine = -1
         var pe32Plus = false
+        if (bytes.size > MAX_BINARY_BYTES) return Analysis(-1, false, emptySet(), listOf("Binary exceeds 128 MiB analysis limit"))
         try {
             require(bytes.size >= 64 && u16(0) == 0x5a4d) { "Invalid DOS MZ" }
             val peOffset = u32(0x3c).toInt()
