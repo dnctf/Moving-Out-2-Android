@@ -12,7 +12,7 @@ class GamepadTranslator(private val deadzone: Float = 0.18f) {
     private var lt = 0f; private var rt = 0f
 
     fun onKey(event: KeyEvent): ControllerState? {
-        val button = keyMap[event.keyCode] ?: return null
+        val button = GamepadKeyMapping.mapKeyCode(event.keyCode) ?: return null
         when (event.action) {
             KeyEvent.ACTION_DOWN -> keyButtons.add(button)
             KeyEvent.ACTION_UP -> keyButtons.remove(button)
@@ -65,16 +65,4 @@ class GamepadTranslator(private val deadzone: Float = 0.18f) {
 
     private fun snapshot() = ControllerState(keyButtons + hatButtons, lx, ly, rx, ry, lt, rt)
 
-    companion object {
-        private val keyMap = mapOf(
-            KeyEvent.KEYCODE_BUTTON_A to ControllerButton.A, KeyEvent.KEYCODE_BUTTON_B to ControllerButton.B,
-            KeyEvent.KEYCODE_BUTTON_X to ControllerButton.X, KeyEvent.KEYCODE_BUTTON_Y to ControllerButton.Y,
-            KeyEvent.KEYCODE_BUTTON_L1 to ControllerButton.LB, KeyEvent.KEYCODE_BUTTON_R1 to ControllerButton.RB,
-            KeyEvent.KEYCODE_BUTTON_L2 to ControllerButton.LT, KeyEvent.KEYCODE_BUTTON_R2 to ControllerButton.RT,
-            KeyEvent.KEYCODE_BUTTON_START to ControllerButton.START, KeyEvent.KEYCODE_BUTTON_SELECT to ControllerButton.BACK,
-            KeyEvent.KEYCODE_BUTTON_THUMBL to ControllerButton.L3, KeyEvent.KEYCODE_BUTTON_THUMBR to ControllerButton.R3,
-            KeyEvent.KEYCODE_DPAD_UP to ControllerButton.UP, KeyEvent.KEYCODE_DPAD_DOWN to ControllerButton.DOWN,
-            KeyEvent.KEYCODE_DPAD_LEFT to ControllerButton.LEFT, KeyEvent.KEYCODE_DPAD_RIGHT to ControllerButton.RIGHT
-        )
-    }
 }
