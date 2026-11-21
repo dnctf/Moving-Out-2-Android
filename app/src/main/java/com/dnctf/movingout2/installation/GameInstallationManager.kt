@@ -65,7 +65,7 @@ class GameInstallationManager(private val context: Context) {
         val importAnalyses = peFiles.mapNotNull { path ->
             resolved[path]?.let { file ->
                 path to runCatching {
-                    context.contentResolver.openInputStream(file.uri)?.use(GameBinaryAnalyzer::analyze)
+                    context.contentResolver.openInputStream(file.uri)?.use { stream -> GameBinaryAnalyzer.analyze(stream) }
                         ?: GameBinaryAnalyzer.analyze(byteArrayOf())
                 }.getOrElse { GameBinaryAnalyzer.Analysis(-1, false, emptySet(), listOf(it.message ?: "Import analysis failed")) }
             }
