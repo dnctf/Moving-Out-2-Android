@@ -252,7 +252,7 @@ class MainActivity : Activity() {
             setSelection(presetOptions.indexOf(current.graphicsPreset).coerceAtLeast(0))
         }
         panel.addView(preset)
-        dialog = AlertDialog.Builder(this).setTitle("Performance & audio")
+        val builder = AlertDialog.Builder(this).setTitle("Performance & audio")
             .setMessage("Baseline target: Snapdragon 855+, Low graphics, 70–75% resolution scale, 30 FPS. Saved values are preferences only; runtime application is not implemented yet.")
             .setView(scroll)
             .setNegativeButton("Cancel", null)
@@ -267,6 +267,7 @@ class MainActivity : Activity() {
                 LauncherSettings.save(this, LauncherSettings(resolutionScale = resolution.progress.coerceIn(50, 100), fpsTarget = selectedFps, graphicsPreset = selectedPreset, masterVolume = master.progress, musicVolume = music.progress, sfxVolume = sfx.progress, controllerScale = controllerScale.progress.coerceIn(65, 150), controllerOpacity = controllerOpacity.progress.coerceIn(15, 100), controllerOffsetX = controllerOffsetX.progress.coerceIn(35, 65), controllerOffsetY = controllerOffsetY.progress.coerceIn(35, 65), controllerEnabled = controllerEnabled.isChecked, controllerHaptics = controllerHaptics.isChecked))
                 Toast.makeText(this, "Settings saved (runtime application pending).", Toast.LENGTH_SHORT).show()
             }
+        dialog = builder.create()
         dialog.show()
     }
 
