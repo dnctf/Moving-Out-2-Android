@@ -5,6 +5,7 @@ import java.util.concurrent.TimeUnit
 
 data class ExitResult(val exitCode: Int?, val pid: Long?, val timedOut: Boolean, val terminatedByUser: Boolean, val durationMs: Long)
 data class ProcessResult(val process: Process, val pid: Long?, val stdoutThread: Thread, val stderrThread: Thread, private val startedNanos: Long) {
+    private val streamCleanupLock = Any()
     fun waitFor(timeoutMs: Long? = null): ExitResult {
         require(timeoutMs == null || timeoutMs >= 0)
         val timedOut = timeoutMs != null && !process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
@@ -30,7 +31,7 @@ data class ProcessResult(val process: Process, val pid: Long?, val stdoutThread:
         return ExitResult(exitCodeSafely(), pid, process.isAlive, wasAliveAtStopRequest, elapsed())
     }
     /** Close inherited pipes and bound reader shutdown so descendants cannot pin daemon readers. */
-    private fun closeStreamsAndJoinReaders() {
+    private fun closeStreamsAndJoinReaders() = synchronized(streamCleanupLock) {
         runCatching { process.inputStream.close() }
         runCatching { process.errorStream.close() }
         runCatching { process.outputStream.close() }

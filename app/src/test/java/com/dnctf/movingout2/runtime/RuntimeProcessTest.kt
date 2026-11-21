@@ -68,6 +68,21 @@ class RuntimeProcessTest {
         assertFalse(process.process.isAlive)
     }
 
+    @Test fun concurrentStopCallsCleanupStreamsSafely() {
+        available()
+        val process = RuntimeProcess(RuntimeDiagnostics()).start(shell, listOf("-c", "exec sleep 10"))
+        val results = java.util.concurrent.ConcurrentLinkedQueue<ExitResult>()
+        val first = Thread { results.add(process.stop(100)) }
+        val second = Thread { results.add(process.stop(100)) }
+        first.start(); second.start()
+        first.join(3000); second.join(3000)
+        assertFalse("first stop caller should complete", first.isAlive)
+        assertFalse("second stop caller should complete", second.isAlive)
+        assertEquals(2, results.size)
+        assertFalse("process should be terminated after concurrent stops", process.process.isAlive)
+        assertFalse("stdout reader should stop after concurrent cleanup", process.stdoutThread.isAlive)
+        assertFalse("stderr reader should stop after concurrent cleanup", process.stderrThread.isAlive)
+    }
     @Test fun stopAfterNaturalExitDoesNotReportUserTermination() {
         available()
         val process = RuntimeProcess(RuntimeDiagnostics()).start(shell, listOf("-c", "exit 0"))
