@@ -79,7 +79,11 @@ class RuntimeManager(
                     Thread({
                         val result = runCatching { running.waitFor() }.getOrNull()
                         synchronized(this) {
-                            activeProcess = null
+                            // A late completion from a stopped session must not mutate a newer launch.
+                            if (!isRuntimeSessionCurrent(activeProcess, activeCleanupGuard, running, cleanupGuard)) {
+                                diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "runtime", "Ignored stale watchdog completion from an earlier session."))
+                                return@synchronized
+                            }
                             val next = when {
                                 state == RuntimeState.STOPPING -> RuntimeState.STOPPED
                                 state == RuntimeState.RUNNING && result?.exitCode == 0 -> RuntimeState.STOPPED
@@ -88,6 +92,8 @@ class RuntimeManager(
                             }
                             if (next != state) state = RuntimeStateTransitions.transition(state, next)
                             cleanupGuard.runOnce { launcher.stop(running, 0) }
+                            activeProcess = null
+                            activeCleanupGuard = null
                             diagnostics.record(RuntimeDiagnostic(
                                 if (state == RuntimeState.STOPPED) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.WARNING,
                                 "runtime",
@@ -119,7 +125,7 @@ class RuntimeManager(
         else if (state != RuntimeState.STOPPING) return false
         val launcher = wineLauncher
         val guard = activeCleanupGuard ?: RuntimeCleanupGuard()
-        if (!guard.runOnce { runCatching { launcher?.stop(process, 1000) }.getOrThrow() }) runCatching { process.stop(1000) }
+        guard.runOnce { runCatching { launcher?.stop(process, 1000) }.getOrThrow() }
         activeProcess = null
         activeCleanupGuard = null
         if (state == RuntimeState.STOPPING) state = RuntimeStateTransitions.transition(state, RuntimeState.STOPPED)
@@ -162,3 +168,6 @@ internal class RuntimeCleanupGuard {
     }
     fun isCompleted() = completed.get()
 }
+
+/** Session identity check prevents an old watchdog from mutating a newer launch. */
+internal fun <T : Any> isRuntimeSessionCurrent(activeProcess: T?, activeGuard: RuntimeCleanupGuard?, expectedProcess: T, expectedGuard: RuntimeCleanupGuard): Boolean = activeProcess === expectedProcess && activeGuard === expectedGuard
