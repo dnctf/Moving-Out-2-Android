@@ -52,6 +52,14 @@ class RuntimeProcessTest {
         assertNull(result.exitCode)
     }
 
+    @Test fun timeoutClosesStreamsAndReaderThreads() {
+        available()
+        val process = RuntimeProcess(RuntimeDiagnostics()).start(shell, listOf("-c", "sleep 10"))
+        val result = process.waitFor(100)
+        assertTrue(result.timedOut)
+        assertFalse("stdout reader should finish after timeout cleanup", process.stdoutThread.isAlive)
+        assertFalse("stderr reader should finish after timeout cleanup", process.stderrThread.isAlive)
+    }
     @Test fun stopMarksUserTerminationAndStopsProcess() {
         available()
         val process = RuntimeProcess(RuntimeDiagnostics()).start(shell, listOf("-c", "sleep 10"))

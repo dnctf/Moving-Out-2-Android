@@ -8,8 +8,10 @@ data class ProcessResult(val process: Process, val pid: Long?, val stdoutThread:
     fun waitFor(timeoutMs: Long? = null): ExitResult {
         require(timeoutMs == null || timeoutMs >= 0)
         val timedOut = timeoutMs != null && !process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
-        if (timedOut) terminate(250)
-        else if (timeoutMs == null) process.waitFor()
+        if (timedOut) {
+            terminate(250)
+            closeStreamsAndJoinReaders()
+        } else if (timeoutMs == null) process.waitFor()
         return ExitResult(exitCodeSafely(), pid, timedOut, false, elapsed())
     }
     fun stop(gracePeriodMs: Long = 1000): ExitResult {
@@ -23,7 +25,20 @@ data class ProcessResult(val process: Process, val pid: Long?, val stdoutThread:
                 process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             }
         }
+        closeStreamsAndJoinReaders()
         return ExitResult(exitCodeSafely(), pid, process.isAlive, true, elapsed())
+    }
+    /** Close inherited pipes and bound reader shutdown so descendants cannot pin daemon readers. */
+    private fun closeStreamsAndJoinReaders() {
+        runCatching { process.inputStream.close() }
+        runCatching { process.errorStream.close() }
+        runCatching { process.outputStream.close() }
+        listOf(stdoutThread, stderrThread).forEach { reader ->
+            if (reader !== Thread.currentThread() && reader.isAlive) {
+                reader.interrupt()
+                runCatching { reader.join(READER_JOIN_TIMEOUT_MS) }
+            }
+        }
     }
     private fun terminate(grace: Long): Boolean {
         if (!process.isAlive) return true
@@ -36,6 +51,7 @@ data class ProcessResult(val process: Process, val pid: Long?, val stdoutThread:
     private fun elapsed() = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos)
     companion object {
         private const val FORCE_REAP_TIMEOUT_MS = 1000L
+        private const val READER_JOIN_TIMEOUT_MS = 250L
     }
 }
 
