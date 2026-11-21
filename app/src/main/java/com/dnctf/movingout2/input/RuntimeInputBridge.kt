@@ -82,6 +82,17 @@ class RuntimeInputBridge(private val transport: XInputTransport = NativeXInputTr
     fun disconnectPlayer(playerIndex: Int): Boolean =
         transport.writePacket(playerIndex, false, ByteArray(XInputTransport.PACKET_SIZE_BYTES))
 
+    /** Idempotent teardown: an already-destroyed bridge is neutralized successfully. */
+    fun neutralizeAllPlayers(): Boolean {
+        if (!transport.isInitialized()) return true
+        var success = true
+        for (player in 0 until XInputTransport.MAX_PLAYERS) {
+            val disconnected = runCatching { disconnectPlayer(player) }.getOrDefault(false)
+            success = disconnected && success
+        }
+        return success
+    }
+
     fun destroy() {
         transport.destroy()
         status = InputBridgeStatus.BRIDGE_UNSUPPORTED

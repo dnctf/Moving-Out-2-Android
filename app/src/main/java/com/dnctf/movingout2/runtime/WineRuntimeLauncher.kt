@@ -132,11 +132,7 @@ class WineRuntimeLauncher(
 
 
     fun neutralizeInputBridge(): Boolean {
-        var success = true
-        for (player in 0 until 4) {
-            val disconnected = runCatching { inputBridge.disconnectPlayer(player) }.getOrDefault(false)
-            success = disconnected && success
-        }
+        val success = inputBridge.neutralizeAllPlayers()
         if (!success) diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "input-bridge", "One or more players could not be neutralized during cleanup."))
         return success
     }

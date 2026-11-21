@@ -9,10 +9,11 @@ class RuntimeInputBridgeTest {
         var lastPlayer = -1
         var lastConnected = false
         var lastPacket = byteArrayOf()
+        var disconnectFailures = mutableSetOf<Int>()
         override fun init(shmFilePath: String) = (shmFilePath.isNotBlank()).also { initialized = it }
         override fun writePacket(playerIndex: Int, connected: Boolean, packet: ByteArray): Boolean {
             lastPlayer = playerIndex; lastConnected = connected; lastPacket = packet.copyOf()
-            return initialized
+            return initialized && playerIndex !in disconnectFailures
         }
         override fun destroy() { initialized = false }
         override fun isNativeAvailable() = true
@@ -57,6 +58,23 @@ class RuntimeInputBridgeTest {
         bridge.destroy()
         assertEquals(InputBridgeStatus.BRIDGE_UNSUPPORTED, bridge.status)
     }
+    @Test fun neutralizationIsIdempotentAfterBridgeDestroy() {
+        val fake = FakeTransport()
+        val bridge = RuntimeInputBridge(fake)
+        assertTrue(bridge.initialize("/tmp/input.shm"))
+        assertTrue(bridge.neutralizeAllPlayers())
+        bridge.destroy()
+        assertTrue(bridge.neutralizeAllPlayers())
+    }
+
+    @Test fun neutralizationReportsPlayerDisconnectFailures() {
+        val fake = FakeTransport()
+        val bridge = RuntimeInputBridge(fake)
+        assertTrue(bridge.initialize("/tmp/input.shm"))
+        fake.disconnectFailures += 2
+        assertFalse(bridge.neutralizeAllPlayers())
+    }
+
     @Test fun disconnectWritesNeutralPacketAndMarksPlayerDisconnected() {
         val fake = FakeTransport()
         val bridge = RuntimeInputBridge(fake)
