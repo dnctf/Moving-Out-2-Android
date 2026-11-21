@@ -31,4 +31,13 @@ class RuntimeLifecycleCleanupTest {
         assertFalse(guard.runOnce { neutralizeDestroyAndWineserver++ })
         assertEquals(1, neutralizeDestroyAndWineserver)
     }
+    @Test fun staleWatchdogCannotClaimCurrentRuntimeSession() {
+        val previousProcess = Any()
+        val currentProcess = Any()
+        val previousGuard = RuntimeCleanupGuard()
+        val currentGuard = RuntimeCleanupGuard()
+        assertFalse(isRuntimeSessionCurrent(currentProcess, currentGuard, previousProcess, previousGuard))
+        assertFalse(isRuntimeSessionCurrent(currentProcess, currentGuard, currentProcess, previousGuard))
+        assertTrue(isRuntimeSessionCurrent(currentProcess, currentGuard, currentProcess, currentGuard))
+    }
 }
