@@ -5,7 +5,6 @@ import android.app.AlertDialog
 import android.app.ProgressDialog
 import android.app.Dialog
 import android.view.InputDevice
-import android.hardware.input.InputManager
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.os.Bundle
@@ -17,9 +16,9 @@ import android.widget.Spinner
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import com.dnctf.movingout2.runtime.RuntimeDiagnostics
-import com.dnctf.movingout2.input.GamepadTranslator
 import com.dnctf.movingout2.input.RuntimeInputBridge
 import com.dnctf.movingout2.input.VirtualControllerView
+import com.dnctf.movingout2.input.PhysicalGamepadManager
 import com.dnctf.movingout2.installation.GameInstallationManager
 import com.dnctf.movingout2.installation.InstallationRepository
 import com.dnctf.movingout2.runtime.RuntimeBundleImporter
@@ -37,22 +36,13 @@ class MainActivity : Activity() {
     private lateinit var runtimeStatus: TextView
     private lateinit var graphicsStatus: TextView
     private lateinit var repository: InstallationRepository
-    private val gamepadTranslator = GamepadTranslator()
+    private lateinit var physicalGamepadManager: PhysicalGamepadManager
     private val inputBridge = RuntimeInputBridge()
     private val diagnosticLog = RuntimeDiagnostics()
     private var pendingDiagnosticZip: File? = null
     private val pickDiagnosticDestination = 1004
     private var touchControllerState = com.dnctf.movingout2.input.ControllerState()
     private var physicalControllerState = com.dnctf.movingout2.input.ControllerState()
-    private val inputDeviceListener = object : InputManager.InputDeviceListener {
-        override fun onInputDeviceAdded(deviceId: Int) {}
-        override fun onInputDeviceChanged(deviceId: Int) {}
-        override fun onInputDeviceRemoved(deviceId: Int) {
-            gamepadTranslator.releaseAll()
-            physicalControllerState = com.dnctf.movingout2.input.ControllerState()
-            sendCombinedInput()
-        }
-    }
     private val pickFolder = 1001
     private val pickRuntimeBundle = 1002
     private val pickGameZip = 1003
@@ -61,6 +51,10 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         repository = InstallationRepository(this)
         inputBridge.initialize(RuntimeLaunchConfig(filesDir).sharedMemoryFile.absolutePath)
+        physicalGamepadManager = PhysicalGamepadManager(this) { state ->
+            physicalControllerState = state
+            sendCombinedInput()
+        }
         val views = LauncherHomeView.create(this, ::openFolderPicker, ::revalidateSavedFolder, ::openRuntimeBundlePicker, ::openGameZipPicker, ::showSettings, ::showControllerTest, ::exportDiagnostics)
         status = views.status
         runtimeStatus = views.runtimeStatus
@@ -115,27 +109,27 @@ class MainActivity : Activity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.source and (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK) != 0) {
-            gamepadTranslator.onKey(event)?.let { physicalControllerState = it; sendCombinedInput(); return true }
+            physicalGamepadManager.handleKey(event)?.let { return true }
         }
         return super.dispatchKeyEvent(event)
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         if (event.source and (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK) != 0) {
-            gamepadTranslator.onMotion(event)?.let { physicalControllerState = it; sendCombinedInput(); return true }
+            physicalGamepadManager.handleMotion(event)?.let { return true }
         }
         return super.dispatchGenericMotionEvent(event)
     }
 
     override fun onResume() {
         super.onResume()
-        (getSystemService(INPUT_SERVICE) as? InputManager)?.registerInputDeviceListener(inputDeviceListener, null)
+        physicalGamepadManager.register()
     }
 
     override fun onPause() {
-        (getSystemService(INPUT_SERVICE) as? InputManager)?.unregisterInputDeviceListener(inputDeviceListener)
+        physicalGamepadManager.unregister()
         touchControllerState = com.dnctf.movingout2.input.ControllerState()
-        physicalControllerState = gamepadTranslator.releaseAll()
+        physicalControllerState = com.dnctf.movingout2.input.ControllerState()
         inputBridge.disconnectPlayer(0)
         super.onPause()
     }
