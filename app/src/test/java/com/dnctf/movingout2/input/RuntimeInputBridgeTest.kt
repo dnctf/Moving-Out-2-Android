@@ -46,8 +46,12 @@ class RuntimeInputBridgeTest {
     @Test fun bridgeStatusNeverClaimsRuntimeConnectedWithoutTransport() {
         val fake = FakeTransport()
         val bridge = RuntimeInputBridge(fake)
-        assertEquals(InputBridgeStatus.WAITING_FOR_NATIVE_RUNTIME, bridge.status)
+        assertEquals(InputBridgeStatus.BRIDGE_UNSUPPORTED, bridge.status)
         assertTrue(bridge.initialize("/tmp/input.shm"))
+        assertEquals(InputBridgeStatus.BRIDGE_READY_WAITING_RUNTIME, bridge.status)
+        assertTrue(bridge.capabilities.nativeSharedMemoryAvailable)
+        assertTrue(bridge.capabilities.transportInitialized)
+        assertFalse(bridge.capabilities.runtimeConnectionConfirmed)
         bridge.setNativeRuntimeConnected(true)
         assertEquals(InputBridgeStatus.BRIDGE_CONNECTED, bridge.status)
         bridge.destroy()
