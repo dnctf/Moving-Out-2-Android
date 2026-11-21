@@ -16,7 +16,7 @@ class InstallationValidatorTest {
         pe[64] = 'P'.code.toByte(); pe[65] = 'E'.code.toByte()
         pe[68] = (machine and 0xff).toByte(); pe[69] = ((machine ushr 8) and 0xff).toByte()
         // COFF SizeOfOptionalHeader and PE32/PE32+ magic
-        pe[84] = 224.toByte(); pe[85] = 0
+        pe[84] = 224.toByte(); pe[85] = 0.toByte()
         pe[88] = (optionalMagic and 0xff).toByte().toByte(); pe[89] = ((optionalMagic ushr 8) and 0xff).toByte()
         return pe
     }
