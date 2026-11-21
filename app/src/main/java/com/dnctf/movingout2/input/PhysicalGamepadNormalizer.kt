@@ -19,24 +19,29 @@ class PhysicalGamepadNormalizer(private val deadzone: Float = 0.12f) {
     fun reset(): Sample { state = Sample(); return state }
     fun snapshot() = state
     private fun trigger(v: Float) = if (v.isFinite()) v.coerceIn(0f,1f) else 0f
-    private fun radial(x: Float,y: Float): Stick {
-        if (!x.isFinite() || !y.isFinite()) return Stick(0f,0f)
-        val mag=sqrt(x*x+y*y); if(mag<=deadzone) return Stick(0f,0f)
-        val scale=((mag-deadzone)/(1f-deadzone).coerceAtLeast(0.001f)).coerceIn(0f,1f)
-        val factor=if(mag>1f) 1f/mag else 1f
-        return Stick((x*factor/mag*scale).coerceIn(-1f,1f),(y*factor/mag*scale).coerceIn(-1f,1f))
-    }
+    private fun radial(x: Float,y: Float): Stick = normalizeStick(x, y, deadzone)
     data class Stick(val x:Float,val y:Float)
     companion object {
-        fun normalizeTrigger(raw: Float, digital: Boolean=false):Float = when {
-            digital -> if(raw>0f) 1f else 0f
-            !raw.isFinite() -> 0f
-            raw < 0f -> ((raw+1f)/2f).coerceIn(0f,1f)
-            else -> raw.coerceIn(0f,1f)
+        fun normalizeStick(x: Float, y: Float, deadzone: Float = 0.12f): Stick {
+            if (!x.isFinite() || !y.isFinite()) return Stick(0f, 0f)
+            val magnitude = sqrt(x * x + y * y)
+            val clampedMagnitude = magnitude.coerceAtMost(1f)
+            val zone = deadzone.coerceIn(0f, 0.99f)
+            if (clampedMagnitude <= zone || magnitude == 0f) return Stick(0f, 0f)
+            val scaled = ((clampedMagnitude - zone) / (1f - zone)).coerceIn(0f, 1f)
+            return Stick((x / magnitude * scaled).coerceIn(-1f, 1f), (y / magnitude * scaled).coerceIn(-1f, 1f))
         }
-        fun hatButtons(x:Float,y:Float):Set<ControllerButton> = buildSet {
-            if(x < -0.5f) add(ControllerButton.LEFT); if(x > 0.5f) add(ControllerButton.RIGHT)
-            if(y < -0.5f) add(ControllerButton.UP); if(y > 0.5f) add(ControllerButton.DOWN)
+        fun normalizeTrigger(raw: Float, digital: Boolean = false): Float = when {
+            digital -> if (raw > 0f) 1f else 0f
+            !raw.isFinite() -> 0f
+            raw < 0f -> ((raw + 1f) / 2f).coerceIn(0f, 1f)
+            else -> raw.coerceIn(0f, 1f)
+        }
+        fun hatButtons(x: Float, y: Float): Set<ControllerButton> = buildSet {
+            if (x < -0.5f) add(ControllerButton.LEFT)
+            if (x > 0.5f) add(ControllerButton.RIGHT)
+            if (y < -0.5f) add(ControllerButton.UP)
+            if (y > 0.5f) add(ControllerButton.DOWN)
         }
     }
 }
