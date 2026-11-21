@@ -54,7 +54,7 @@ class RuntimeProcessTest {
 
     @Test fun timeoutClosesStreamsAndReaderThreads() {
         available()
-        val process = RuntimeProcess(RuntimeDiagnostics()).start(shell, listOf("-c", "sleep 10"))
+        val process = RuntimeProcess(RuntimeDiagnostics()).start(shell, listOf("-c", "exec sleep 10"))
         val result = process.waitFor(100)
         assertTrue(result.timedOut)
         assertFalse("stdout reader should finish after timeout cleanup", process.stdoutThread.isAlive)
