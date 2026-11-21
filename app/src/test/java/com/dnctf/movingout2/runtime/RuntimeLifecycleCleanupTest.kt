@@ -42,13 +42,26 @@ class RuntimeLifecycleCleanupTest {
     }
     @Test fun cleanupSequenceStopsProcessBeforeDestroyingSharedInputAndKeepsGoingOnErrors() {
         val events = mutableListOf<String>()
-        runRuntimeCleanupSequence(
-            neutralize = { events += "neutralize" },
-            stopProcess = { events += "stop-process"; throw IllegalStateException("simulated stop failure") },
-            destroyBridge = { events += "destroy-shm" },
-            stopServer = { events += "stop-wineserver" }
+        val cleanupSucceeded = runRuntimeCleanupSequence(
+            neutralize = { events += "neutralize"; true },
+            stopProcess = { events += "stop-process"; false },
+            destroyBridge = { events += "destroy-shm"; true },
+            stopServer = { events += "stop-wineserver"; true }
         )
+        assertFalse(cleanupSucceeded)
         assertEquals(listOf("neutralize", "stop-process", "destroy-shm", "stop-wineserver"), events)
+    }
+
+    @Test fun cleanupSequenceReportsThrownAndFalseStepsWhileContinuing() {
+        val events = mutableListOf<String>()
+        val result = runRuntimeCleanupSequence(
+            neutralize = { events += "neutralize"; throw IllegalStateException("bridge fault") },
+            stopProcess = { events += "stop-process"; true },
+            destroyBridge = { events += "destroy"; true },
+            stopServer = { events += "wineserver"; false }
+        )
+        assertFalse(result)
+        assertEquals(listOf("neutralize", "stop-process", "destroy", "wineserver"), events)
     }
 
     @Test fun runtimeImporterReserveThresholdIsEnforced() {

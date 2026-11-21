@@ -131,11 +131,23 @@ class WineRuntimeLauncher(
     }
 
 
-    fun neutralizeInputBridge() {
-        for (player in 0 until 4) runCatching { inputBridge.disconnectPlayer(player) }
+    fun neutralizeInputBridge(): Boolean {
+        var success = true
+        for (player in 0 until 4) {
+            val disconnected = runCatching { inputBridge.disconnectPlayer(player) }.getOrDefault(false)
+            success = disconnected && success
+        }
+        if (!success) diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "input-bridge", "One or more players could not be neutralized during cleanup."))
+        return success
     }
 
-    fun destroyInputBridge() { runCatching { inputBridge.destroy() } }
+    fun destroyInputBridge(): Boolean = runCatching {
+        inputBridge.destroy()
+        true
+    }.getOrElse {
+        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "input-bridge", "Bridge destroy failed: ${it.message}"))
+        false
+    }
 
     /** Works with both legacy runtime.properties and the current hash-validated JSON manifest. */
     fun stopWineserver(): Boolean {
@@ -161,14 +173,19 @@ class WineRuntimeLauncher(
         }
     }
 
-    fun stop(result: ProcessResult, graceMs: Long = 1200) {
-        runRuntimeCleanupSequence(
+    fun stop(result: ProcessResult, graceMs: Long = 1200): Boolean {
+        val cleanupSucceeded = runRuntimeCleanupSequence(
             neutralize = { neutralizeInputBridge() },
-            stopProcess = { result.stop(graceMs) },
+            stopProcess = { result.stop(graceMs).let { !result.process.isAlive } },
             destroyBridge = { destroyInputBridge() },
             stopServer = { stopWineserver() }
         )
-        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "launcher", "Runtime process stopped; wineserver cleanup requested."))
+        diagnostics.record(RuntimeDiagnostic(
+            if (cleanupSucceeded) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.ERROR,
+            "launcher",
+            "Runtime teardown finished; cleanupSucceeded=$cleanupSucceeded."
+        ))
+        return cleanupSucceeded
     }
 
     internal fun rewriteTurnipIcd(source: File, library: File): File {
@@ -220,6 +237,11 @@ class WineRuntimeLauncher(
 }
 
 /** Cleanup steps are ordered and failure-isolated so later resources are still released. */
-internal fun runRuntimeCleanupSequence(neutralize: () -> Unit, stopProcess: () -> Unit, destroyBridge: () -> Unit, stopServer: () -> Unit) {
-    listOf(neutralize, stopProcess, destroyBridge, stopServer).forEach { step -> runCatching { step() } }
+internal fun runRuntimeCleanupSequence(neutralize: () -> Boolean, stopProcess: () -> Boolean, destroyBridge: () -> Boolean, stopServer: () -> Boolean): Boolean {
+    var success = true
+    listOf(neutralize, stopProcess, destroyBridge, stopServer).forEachIndexed { index, step ->
+        val stepSuccess = runCatching { step() }.getOrDefault(false)
+        if (!stepSuccess) success = false
+    }
+    return success
 }

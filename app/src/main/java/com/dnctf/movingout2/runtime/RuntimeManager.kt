@@ -144,7 +144,7 @@ class RuntimeManager(
         else if (state != RuntimeState.STOPPING) return false
         val launcher = wineLauncher
         val guard = activeCleanupGuard ?: RuntimeCleanupGuard()
-        val cleanupSucceeded = runCatching { guard.runOnce { launcher?.stop(process, 1000) } }.getOrElse { error ->
+        val cleanupSucceeded = runCatching { guard.runOnce { if (launcher?.stop(process, 1000) != true) throw IllegalStateException("Manual teardown reported incomplete cleanup.") } }.getOrElse { error ->
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime-cleanup", "Manual stop cleanup failed: ${error.message ?: error.javaClass.simpleName}"))
             false
         }
