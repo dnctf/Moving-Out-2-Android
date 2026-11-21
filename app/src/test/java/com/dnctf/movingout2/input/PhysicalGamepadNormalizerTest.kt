@@ -1,5 +1,6 @@
 package com.dnctf.movingout2.input
 
+import android.view.KeyEvent
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -21,6 +22,12 @@ class PhysicalGamepadNormalizerTest {
     @Test fun hatProducesIndependentDirections() {
         assertEquals(setOf(ControllerButton.LEFT, ControllerButton.UP), PhysicalGamepadNormalizer.hatButtons(-1f, -1f))
         assertTrue(PhysicalGamepadNormalizer.hatButtons(0f, 0f).isEmpty())
+    }
+    @Test fun standardAndroidButtonsMapToCanonicalButtons() {
+        assertEquals(ControllerButton.A, GamepadKeyMapping.mapKeyCode(KeyEvent.KEYCODE_BUTTON_A))
+        assertEquals(ControllerButton.RB, GamepadKeyMapping.mapKeyCode(KeyEvent.KEYCODE_BUTTON_R1))
+        assertEquals(ControllerButton.UP, GamepadKeyMapping.mapKeyCode(KeyEvent.KEYCODE_DPAD_UP))
+        assertNull(GamepadKeyMapping.mapKeyCode(KeyEvent.KEYCODE_VOLUME_UP))
     }
     @Test fun resetClearsAllAxesAndButtons() {
         val n = PhysicalGamepadNormalizer()
