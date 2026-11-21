@@ -102,11 +102,7 @@ class RuntimeBundleImporter(
             if (relative.startsWith("/") || relative.split('/', '\\').any { it == ".." }) throw IOException("Executable path is unsafe.")
             val file = File(root, relative).canonicalFile
             if (!file.toPath().startsWith(root.canonicalFile.toPath())) throw IOException("Executable path escapes bundle.")
-            if (!file.isFile) throw IOException("Runtime executable is missing after extraction: $relative.")
-            // Android executes app-private native payloads as the app UID; keep the
-            // packaged permission explicit (0755) instead of relying on ZIP metadata.
-            if (!file.setExecutable(true, false) && !file.canExecute()) throw IOException("Unable to set executable flag for $relative.")
-            if (!file.canExecute()) throw IOException("Runtime executable permission verification failed for $relative.")
+            RuntimeExecutablePermissions.ensureExecutable(file, relative)
         }
     }
 }
@@ -141,5 +137,14 @@ internal fun rollbackImport(staging: File, backup: File, target: File, activated
         }
     } else if (activated && target.exists() && !target.deleteRecursively()) {
         throw IOException("Import failed and the activated bundle could not be removed.", cause)
+    }
+}
+
+/** Explicitly sets and verifies 0755-style executable access for native runtime payloads. */
+internal object RuntimeExecutablePermissions {
+    fun ensureExecutable(file: File, relativePath: String) {
+        if (!file.isFile) throw IOException("Runtime executable is missing after extraction: $relativePath")
+        if (!file.setExecutable(true, false) && !file.canExecute()) throw IOException("Unable to set executable flag for $relativePath.")
+        if (!file.canExecute()) throw IOException("Runtime executable permission verification failed for $relativePath.")
     }
 }
