@@ -46,7 +46,11 @@ class RuntimeBundleImporter(
         var activated = false
         try {
             copyDirectory(source, staging, 0, counter)
-            journal.checkpoint("RUNTIME_BUNDLE", archiveName, entryCount=counter.entries, extractedBytes=counter.bytes, availableBytesBefore=availableBefore, availableBytesAfter=runCatching { StatFs(parent.absolutePath).availableBytes }.getOrNull(), stage="STAGING_VALIDATION")
+            val availableAfterCopy = StatFs(parent.absolutePath).availableBytes
+            if (!runtimeBundleHasReserve(availableAfterCopy, storageReserveBytes)) {
+                throw IOException("Runtime import aborted: free storage fell below configured reserve after extraction.")
+            }
+            journal.checkpoint("RUNTIME_BUNDLE", archiveName, entryCount=counter.entries, extractedBytes=counter.bytes, availableBytesBefore=availableBefore, availableBytesAfter=availableAfterCopy, stage="STAGING_VALIDATION")
             grantExecutableFlags(staging)
             val validation = validator.validate(staging)
             if (!validation.isReady) throw IOException("Runtime bundle failed validation: " + validation.blockers.joinToString("; "))

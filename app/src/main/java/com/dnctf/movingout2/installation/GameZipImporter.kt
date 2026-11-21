@@ -65,7 +65,7 @@ class GameZipImporter(
                 val stat = StatFs(parent.absolutePath)
                 val archiveBytes = sourceZip.length()
                 val requiredSpace = Math.addExact(Math.addExact(totalBytes, archiveBytes), storageReserveBytes)
-                if (stat.availableBytes < requiredSpace) throw IOException("Insufficient storage. ZIP copy, extraction ($totalBytes bytes), and 1.5 GiB reserve require approximately $requiredSpace bytes.")
+                if (!gameZipStorageReserveSatisfied(stat.availableBytes, requiredSpace)) throw IOException("Insufficient storage. ZIP copy, extraction ($totalBytes bytes), and reserve require approximately $requiredSpace bytes.")
                 staging.deleteRecursively()
                 if (!staging.mkdirs()) throw IOException("Cannot create staging directory.")
                 var bytesWritten = 0L
@@ -83,12 +83,18 @@ class GameZipImporter(
                         zip.getInputStream(entry).use { input ->
                             FileOutputStream(out).use { sink ->
                                 val buffer = ByteArray(64 * 1024)
+                                var lastSpaceCheckBytes = bytesWritten
                                 while (true) {
                                     checkCancellation(cancelled)
                                     val n = input.read(buffer)
                                     if (n < 0) break
                                     bytesWritten = Math.addExact(bytesWritten, n.toLong())
                                     if (bytesWritten > maxExpandedBytes || bytesWritten > totalBytes) throw IOException("ZIP expansion exceeded preflight size.")
+                                    if (bytesWritten - lastSpaceCheckBytes >= 4L * 1024L * 1024L) {
+                                        val available = StatFs(parentDir.absolutePath).availableBytes
+                                        if (!gameZipStorageReserveSatisfied(available, storageReserveBytes)) throw IOException("ZIP extraction aborted: free storage fell below reserve.")
+                                        lastSpaceCheckBytes = bytesWritten
+                                    }
                                     sink.write(buffer, 0, n)
                                 }
                             }
@@ -136,6 +142,7 @@ class GameZipImporter(
             FileOutputStream(sourceZip).use { output ->
                 val buffer = ByteArray(128 * 1024)
                 var copied = 0L
+                var lastSpaceCheckBytes = 0L
                 while (true) {
                     checkCancellation(cancelled)
                     val n = raw.read(buffer)
@@ -144,9 +151,16 @@ class GameZipImporter(
                     if (copied > maxExpandedBytes || (advertisedSize != null && copied > advertisedSize)) {
                         throw IOException("ZIP source exceeds safe staging limit or advertised size.")
                     }
+                    if (copied - lastSpaceCheckBytes >= 16L * 1024L * 1024L) {
+                        val available = StatFs(root.parentFile?.absolutePath ?: throw IOException("Private storage unavailable.")).availableBytes
+                        if (!gameZipStorageReserveSatisfied(available, storageReserveBytes)) throw IOException("ZIP staging aborted: free storage fell below reserve.")
+                        lastSpaceCheckBytes = copied
+                    }
                     output.write(buffer, 0, n)
                 }
                 if (advertisedSize != null && copied != advertisedSize) throw IOException("ZIP source size changed or was truncated during staging.")
+                val availableAfterCopy = StatFs(root.parentFile?.absolutePath ?: throw IOException("Private storage unavailable.")).availableBytes
+                if (!gameZipStorageReserveSatisfied(availableAfterCopy, storageReserveBytes)) throw IOException("ZIP staging aborted: free storage fell below reserve.")
             }
         }
     }
@@ -220,3 +234,6 @@ internal object GameZipRootLocator {
         return null
     }
 }
+
+/** Pure free-space threshold used by the ZIP importer and tests. */
+internal fun gameZipStorageReserveSatisfied(availableBytes: Long, requiredBytes: Long): Boolean = requiredBytes >= 0 && availableBytes >= requiredBytes
