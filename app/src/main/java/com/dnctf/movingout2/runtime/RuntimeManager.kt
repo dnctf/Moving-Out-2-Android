@@ -32,7 +32,7 @@ class RuntimeManager(
     }
 
     @Synchronized fun start(gameExe: File, options: WineLaunchOptions = WineLaunchOptions()): LaunchPreparationResult {
-        if (activeProcess != null) {
+        if (runtimeSessionCleanupPending(activeProcess)) {
             val processAlive = activeProcess?.process?.isAlive == true
             val message = if (processAlive) {
                 "A runtime process is already active."
@@ -163,6 +163,10 @@ class RuntimeManager(
         throw UnsupportedOperationException(message)
     }
 }
+
+
+/** Retained process handle means cleanup/watchdog still owns the previous runtime session. */
+internal fun runtimeSessionCleanupPending(activeProcess: Any?): Boolean = activeProcess != null
 
 /** Canonical path equality prevents diagnostics/availability from validating a different bundle than the launcher uses. */
 internal fun runtimeBundleRootsMatch(managerRoot: File?, launcherRoot: File?): Boolean {
