@@ -4,39 +4,88 @@ import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/** Minimal bounds-checked PE32+ x64 import-directory reader; pure JVM. */
+/** Bounds-checked PE32+ import directory reader. Intended for analysis, not loading binaries. */
 object GameBinaryAnalyzer {
-    data class Analysis(val machine:Int,val isPe32Plus:Boolean,val imports:Set<String>,val errors:List<String>)
-    fun analyze(input:InputStream):Analysis = analyze(input.readBytes())
-    fun analyze(bytes:ByteArray):Analysis {
-        val errors=mutableListOf<String>(); val imports=linkedSetOf<String>()
-        fun u16(o:Int):Int { if(o<0||o+2>bytes.size) throw IllegalArgumentException("out of bounds u16"); return ByteBuffer.wrap(bytes,o,2).order(ByteOrder.LITTLE_ENDIAN).short.toInt() and 0xffff }
-        fun u32(o:Int):Long { if(o<0||o+4>bytes.size) throw IllegalArgumentException("out of bounds u32"); return ByteBuffer.wrap(bytes,o,4).order(ByteOrder.LITTLE_ENDIAN).int.toLong() and 0xffffffffL }
-        fun cstr(o:Int):String { if(o<0||o>=bytes.size) throw IllegalArgumentException("invalid string offset"); var e=o; while(e<bytes.size&&bytes[e].toInt()!=0)e++; return String(bytes,o,e-o,Charsets.US_ASCII) }
+    data class Analysis(val machine: Int, val isPe32Plus: Boolean, val imports: Set<String>, val errors: List<String>)
+
+    fun analyze(input: InputStream): Analysis = analyze(input.readBytes())
+    fun analyze(bytes: ByteArray): Analysis {
+        val imports = linkedSetOf<String>()
+        val errors = mutableListOf<String>()
+        fun u16(o: Int): Int {
+            require(o >= 0 && o.toLong() + 2 <= bytes.size) { "out of bounds u16" }
+            return ByteBuffer.wrap(bytes, o, 2).order(ByteOrder.LITTLE_ENDIAN).short.toInt() and 0xffff
+        }
+        fun u32(o: Int): Long {
+            require(o >= 0 && o.toLong() + 4 <= bytes.size) { "out of bounds u32" }
+            return ByteBuffer.wrap(bytes, o, 4).order(ByteOrder.LITTLE_ENDIAN).int.toLong() and 0xffffffffL
+        }
+        fun cstr(o: Int): String {
+            require(o in bytes.indices) { "invalid string offset" }
+            var e = o
+            while (e < bytes.size && e - o <= 4096 && bytes[e].toInt() != 0) e++
+            require(e < bytes.size && e - o <= 4096) { "unterminated or oversized import name" }
+            val name = String(bytes, o, e - o, Charsets.US_ASCII)
+            require(name.isNotBlank() && name.all { it.code in 0x20..0x7e }) { "invalid import name" }
+            return name
+        }
+        var machine = -1
+        var pe32Plus = false
         try {
-            require(bytes.size>=64 && u16(0)==0x5a4d){"Invalid DOS MZ"}
-            val pe=u32(0x3c).toInt(); require(pe>=0 && pe+24<=bytes.size && u32(pe)==0x00004550L){"Invalid PE signature"}
-            val machine=u16(pe+4); val sections=u16(pe+6); val optSize=u16(pe+20); val opt=pe+24
-            require(opt+optSize<=bytes.size){"Truncated optional header"}
-            val magic=u16(opt); require(magic==0x20b){"Not PE32+"}
-            val dirs=opt+112; val importRva=u32(dirs+8).toInt(); val importSize=u32(dirs+12).toInt()
-            val secStart=opt+optSize
-            fun rvaToOffset(rva:Int):Int {
-                for(i in 0 until sections) { val s=secStart+i*40; if(s+40>bytes.size) break
-                    val va=u32(s+12).toInt(); val vsize=u32(s+8).toInt(); val rawSize=u32(s+16).toInt(); val raw=u32(s+20).toInt()
-                    val span=maxOf(vsize,rawSize); if(rva>=va && rva<va+span) return raw+(rva-va)
-                }; throw IllegalArgumentException("RVA not mapped: $rva")
-            }
-            if(importRva!=0&&importSize>0) {
-                var d=rvaToOffset(importRva); var count=0
-                while(d+20<=bytes.size && count++<4096) {
-                    val original=u32(d); val nameRva=u32(d+12); val first=u32(d+16)
-                    if(original==0L&&nameRva==0L&&first==0L) break
-                    imports.add(cstr(rvaToOffset(nameRva.toInt()))); d+=20
+            require(bytes.size >= 64 && u16(0) == 0x5a4d) { "Invalid DOS MZ" }
+            val peOffset = u32(0x3c).toInt()
+            require(peOffset >= 0 && peOffset.toLong() + 24 <= bytes.size && u32(peOffset) == 0x00004550L) { "Invalid PE signature" }
+            machine = u16(peOffset + 4)
+            val sections = u16(peOffset + 6)
+            val optionalSize = u16(peOffset + 20)
+            val optional = peOffset + 24
+            require(optional.toLong() + optionalSize <= bytes.size) { "Truncated optional header" }
+            require(optionalSize >= 112) { "Optional header lacks PE32+ directory fields" }
+            require(u16(optional) == 0x20b) { "Not PE32+" }
+            pe32Plus = true
+            val importRva = u32(optional + 112 + 8).toInt()
+            val importSize = u32(optional + 112 + 12).toInt()
+            val sectionStart = optional + optionalSize
+            require(sectionStart.toLong() + sections.toLong() * 40 <= bytes.size) { "Truncated section table" }
+            fun rvaToOffset(rva: Int): Int {
+                require(rva >= 0) { "Negative RVA" }
+                for (i in 0 until sections) {
+                    val s = sectionStart + i * 40
+                    val virtualAddress = u32(s + 12).toInt()
+                    val virtualSize = u32(s + 8).toInt()
+                    val rawSize = u32(s + 16).toInt()
+                    val rawPointer = u32(s + 20).toInt()
+                    val delta = rva.toLong() - virtualAddress
+                    if (delta >= 0 && delta < rawSize && delta < maxOf(virtualSize, rawSize)) {
+                        val offset = rawPointer.toLong() + delta
+                        require(offset >= 0 && offset < bytes.size) { "RVA raw offset out of bounds" }
+                        return offset.toInt()
+                    }
                 }
+                throw IllegalArgumentException("RVA not mapped to raw data: $rva")
             }
-            if(machine!=0x8664) errors.add("Machine is not AMD64 (0x8664)")
-            return Analysis(machine,true,imports,errors)
-        } catch(e:Exception) { errors.add(e.message ?: "PE parse failure"); return Analysis(-1,false,imports,errors) }
+            if (importRva != 0 && importSize > 0) {
+                require(importSize >= 20) { "Import directory too small" }
+                val directoryOffset = rvaToOffset(importRva)
+                val descriptorLimit = minOf(importSize / 20, 4096)
+                var terminated = false
+                for (i in 0 until descriptorLimit) {
+                    val d = directoryOffset.toLong() + i * 20
+                    require(d + 20 <= bytes.size) { "Import descriptor out of bounds" }
+                    val descriptor = d.toInt()
+                    val original = u32(descriptor)
+                    val nameRva = u32(descriptor + 12)
+                    val firstThunk = u32(descriptor + 16)
+                    if (original == 0L && nameRva == 0L && firstThunk == 0L) { terminated = true; break }
+                    require(nameRva != 0L) { "Import descriptor has no name RVA" }
+                    imports.add(cstr(rvaToOffset(nameRva.toInt())))
+                }
+                require(terminated) { "Import descriptor table is not terminated within directory bounds" }
+            }
+            if (machine != 0x8664) errors.add("Machine is not AMD64 (0x8664)")
+        } catch (e: Exception) {
+            errors.add(e.message ?: "PE parse failure")
+        }
+        return Analysis(machine, pe32Plus, imports, errors)
     }
 }
