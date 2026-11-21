@@ -55,7 +55,7 @@ class RuntimeInputBridgeTest {
         bridge.setNativeRuntimeConnected(true)
         assertEquals(InputBridgeStatus.BRIDGE_CONNECTED, bridge.status)
         bridge.destroy()
-        assertEquals(InputBridgeStatus.WAITING_FOR_NATIVE_RUNTIME, bridge.status)
+        assertEquals(InputBridgeStatus.BRIDGE_UNSUPPORTED, bridge.status)
     }
     @Test fun disconnectWritesNeutralPacketAndMarksPlayerDisconnected() {
         val fake = FakeTransport()
