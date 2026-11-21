@@ -34,7 +34,6 @@ class ImportDiagnosticJournalTest {
         }
         root.deleteRecursively()
     }
-}
 
     @Test fun errorLogRemainsBoundedAfterRepeatedLargeErrors() {
         val root = Files.createTempDirectory("bounded-import-errors").toFile()
@@ -48,3 +47,6 @@ class ImportDiagnosticJournalTest {
         assertTrue(file.readText().contains("RUNTIME_BUNDLE"))
         root.deleteRecursively()
     }
+
+}
+
