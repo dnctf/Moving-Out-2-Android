@@ -12,12 +12,12 @@ class InstallationValidatorTest {
     private fun peFixture(machine: Int = 0x8664, optionalMagic: Int = 0x20b): ByteArray {
         val pe = ByteArray(512)
         pe[0] = 'M'.code.toByte(); pe[1] = 'Z'.code.toByte()
-        pe[0x3c] = 64
+        pe[0x3c] = 64.toByte()
         pe[64] = 'P'.code.toByte(); pe[65] = 'E'.code.toByte()
         pe[68] = (machine and 0xff).toByte(); pe[69] = ((machine ushr 8) and 0xff).toByte()
         // COFF SizeOfOptionalHeader and PE32/PE32+ magic
-        pe[84] = 224; pe[85] = 0
-        pe[88] = (optionalMagic and 0xff).toByte(); pe[89] = ((optionalMagic ushr 8) and 0xff).toByte()
+        pe[84] = 224.toByte(); pe[85] = 0
+        pe[88] = (optionalMagic and 0xff).toByte().toByte(); pe[89] = ((optionalMagic ushr 8) and 0xff).toByte()
         return pe
     }
 
