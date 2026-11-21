@@ -16,11 +16,14 @@ import android.widget.Spinner
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import android.widget.CheckBox
+import android.widget.Button
 import android.widget.ScrollView
 import com.dnctf.movingout2.runtime.RuntimeDiagnostics
 import com.dnctf.movingout2.input.RuntimeInputBridge
 import com.dnctf.movingout2.input.VirtualControllerView
 import com.dnctf.movingout2.input.PhysicalGamepadManager
+import com.dnctf.movingout2.input.ControllerProfile
+import com.dnctf.movingout2.input.ControllerProfileRepository
 import com.dnctf.movingout2.installation.GameInstallationManager
 import com.dnctf.movingout2.installation.InstallationRepository
 import com.dnctf.movingout2.runtime.RuntimeBundleImporter
@@ -45,13 +48,18 @@ class MainActivity : Activity() {
     private val pickDiagnosticDestination = 1004
     private var touchControllerState = com.dnctf.movingout2.input.ControllerState()
     private var physicalControllerState = com.dnctf.movingout2.input.ControllerState()
+    private var controllerProfile = ControllerProfile.presets.first()
+    private var pendingProfileExport: String? = null
     private val pickFolder = 1001
     private val pickRuntimeBundle = 1002
     private val pickGameZip = 1003
+    private val pickControllerProfileImport = 1005
+    private val pickControllerProfileExport = 1006
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repository = InstallationRepository(this)
+        controllerProfile = ControllerProfileRepository.load(this, "moving-out-2") ?: ControllerProfile.presets.first()
         inputBridge.initialize(RuntimeLaunchConfig(filesDir).sharedMemoryFile.absolutePath)
         physicalGamepadManager = PhysicalGamepadManager(this) { state ->
             physicalControllerState = state
@@ -147,7 +155,20 @@ class MainActivity : Activity() {
     }
 
     private fun sendCombinedInput() {
-        inputBridge.sendCombined(0, touchControllerState, physicalControllerState, connected = true)
+        inputBridge.sendCombined(0, controllerProfile.apply(touchControllerState), controllerProfile.apply(physicalControllerState), connected = true)
+    }
+
+    private fun openControllerProfileImport() {
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE); type = "application/json"; addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }, pickControllerProfileImport)
+    }
+
+    private fun openControllerProfileExport() {
+        pendingProfileExport = controllerProfile.exportToJson()
+        startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE); type = "application/json"; putExtra(Intent.EXTRA_TITLE, "moving-out-2-controller-profile.json")
+        }, pickControllerProfileExport)
     }
 
     private fun openFolderPicker() {
@@ -181,6 +202,7 @@ class MainActivity : Activity() {
         val current = LauncherSettings.load(this)
         val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(36, 12, 36, 8) }
         val scroll = ScrollView(this).apply { addView(panel) }
+        lateinit var dialog: AlertDialog
         fun slider(label: String, value: Int, max: Int = 100): SeekBar {
             val labelView = TextView(this).apply { text = "$label: $value%"; textSize = 16f }
             panel.addView(labelView)
@@ -204,6 +226,18 @@ class MainActivity : Activity() {
         val controllerEnabled = CheckBox(this).apply { text = "Show virtual controller"; isChecked = current.controllerEnabled }
         val controllerHaptics = CheckBox(this).apply { text = "Touch haptics"; isChecked = current.controllerHaptics }
         panel.addView(controllerEnabled); panel.addView(controllerHaptics)
+        panel.addView(TextView(this).apply { text = "Controller profile"; textSize = 16f })
+        val profileOptions = ControllerProfile.presets.map { it.name } + "Custom (keep current)"
+        val profileSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, profileOptions)
+            val presetIndex = ControllerProfile.presets.indexOfFirst { it.name == controllerProfile.name }
+            setSelection(if (presetIndex >= 0) presetIndex else profileOptions.lastIndex)
+        }
+        panel.addView(profileSpinner)
+        val profileImportButton = Button(this).apply { text = "Import profile JSON"; setOnClickListener { dialog.dismiss(); openControllerProfileImport() } }
+        val profileExportButton = Button(this).apply { text = "Export current profile JSON"; setOnClickListener { dialog.dismiss(); openControllerProfileExport() } }
+        panel.addView(profileImportButton); panel.addView(profileExportButton)
+
         panel.addView(TextView(this).apply { text = "FPS cap target"; textSize = 16f })
         val fpsOptions = listOf("30 FPS (recommended minimum)", "45 FPS", "60 FPS")
         val fps = Spinner(this).apply {
@@ -218,17 +252,24 @@ class MainActivity : Activity() {
             setSelection(presetOptions.indexOf(current.graphicsPreset).coerceAtLeast(0))
         }
         panel.addView(preset)
-        AlertDialog.Builder(this).setTitle("Performance & audio")
+        dialog = AlertDialog.Builder(this).setTitle("Performance & audio")
             .setMessage("Baseline target: Snapdragon 855+, Low graphics, 70–75% resolution scale, 30 FPS. Saved values are preferences only; runtime application is not implemented yet.")
             .setView(scroll)
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Save") { _, _ ->
                 val selectedFps = listOf(30, 45, 60)[fps.selectedItemPosition.coerceIn(0, 2)]
                 val selectedPreset = presetOptions[preset.selectedItemPosition.coerceIn(0, presetOptions.lastIndex)]
+                val selectedProfileIndex = profileSpinner.selectedItemPosition
+                if (selectedProfileIndex in ControllerProfile.presets.indices) {
+                    controllerProfile = ControllerProfile.presets[selectedProfileIndex]
+                    ControllerProfileRepository.save(this, "moving-out-2", controllerProfile)
+                }
                 LauncherSettings.save(this, LauncherSettings(resolutionScale = resolution.progress.coerceIn(50, 100), fpsTarget = selectedFps, graphicsPreset = selectedPreset, masterVolume = master.progress, musicVolume = music.progress, sfxVolume = sfx.progress, controllerScale = controllerScale.progress.coerceIn(65, 150), controllerOpacity = controllerOpacity.progress.coerceIn(15, 100), controllerOffsetX = controllerOffsetX.progress.coerceIn(35, 65), controllerOffsetY = controllerOffsetY.progress.coerceIn(35, 65), controllerEnabled = controllerEnabled.isChecked, controllerHaptics = controllerHaptics.isChecked))
                 Toast.makeText(this, "Settings saved (runtime application pending).", Toast.LENGTH_SHORT).show()
-            }.show()
+            }
+        dialog.show()
     }
+
 
     private fun probeGraphicsAsync() {
         graphicsStatus.text = "Probing Vulkan loader and physical device..."
