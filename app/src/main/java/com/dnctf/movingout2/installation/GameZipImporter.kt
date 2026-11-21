@@ -133,7 +133,7 @@ class GameZipImporter(
         }
     }
 
-    private fun findRootPrefix(names: List<String>): String? {
+    internal fun findRootPrefix(names: List<String>): String? {
         val files = names.filterNot { it.endsWith('/') }.map { it.lowercase(Locale.ROOT) }.toSet()
         val exe = names.filter { it.equals("mo2.exe", true) || it.lowercase(Locale.ROOT).endsWith("/mo2.exe") }
         val required = listOf("gameassembly.dll", "unityplayer.dll", "baselib.dll", "movingout2_data/il2cpp_data/metadata/global-metadata.dat")
@@ -187,7 +187,7 @@ class GameZipImporter(
         while (pending.isNotEmpty()) {
             val (dir, depth) = pending.removeFirst()
             if (File(dir, "mo2.exe").isFile && File(dir, "MovingOut2_Data").isDirectory) return dir
-            if (depth >= 4) continue
+            if (depth >= 12) continue
             dir.listFiles()?.filter { it.isDirectory }?.forEach { pending.add(it to depth + 1) }
         }
         return null
