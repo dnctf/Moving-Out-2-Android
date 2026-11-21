@@ -3,18 +3,20 @@ package com.dnctf.movingout2.input
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
-import kotlin.math.abs
 
-/** Android controller input normalizer with configurable deadzone and safe release handling. */
+/** Per-device Android controller translator. Hat and key D-pad states are kept separate. */
 class GamepadTranslator(private val deadzone: Float = 0.18f) {
-    private val buttons = mutableSetOf<ControllerButton>()
-    private var lx = 0f; private var ly = 0f; private var rx = 0f; private var ry = 0f; private var lt = 0f; private var rt = 0f
+    private val keyButtons = mutableSetOf<ControllerButton>()
+    private var hatButtons = emptySet<ControllerButton>()
+    private var lx = 0f; private var ly = 0f; private var rx = 0f; private var ry = 0f
+    private var lt = 0f; private var rt = 0f
 
     fun onKey(event: KeyEvent): ControllerState? {
         val button = keyMap[event.keyCode] ?: return null
         when (event.action) {
-            KeyEvent.ACTION_DOWN -> buttons.add(button)
-            KeyEvent.ACTION_UP -> buttons.remove(button)
+            KeyEvent.ACTION_DOWN -> keyButtons.add(button)
+            KeyEvent.ACTION_UP -> keyButtons.remove(button)
+            KeyEvent.ACTION_CANCEL -> keyButtons.remove(button)
             else -> return null
         }
         return snapshot()
@@ -22,46 +24,46 @@ class GamepadTranslator(private val deadzone: Float = 0.18f) {
 
     fun onMotion(event: MotionEvent): ControllerState? {
         if (event.source and (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK) == 0) return null
-        lx = normalizeAxis(event.getAxisValue(MotionEvent.AXIS_X))
-        ly = normalizeAxis(event.getAxisValue(MotionEvent.AXIS_Y))
-        rx = normalizeAxis(firstNonZero(event, MotionEvent.AXIS_Z, MotionEvent.AXIS_RX))
-        ry = normalizeAxis(firstNonZero(event, MotionEvent.AXIS_RZ, MotionEvent.AXIS_RY))
-        lt = normalizeTrigger(firstNonZero(event, MotionEvent.AXIS_LTRIGGER, MotionEvent.AXIS_BRAKE))
-        rt = normalizeTrigger(firstNonZero(event, MotionEvent.AXIS_RTRIGGER, MotionEvent.AXIS_GAS))
-        updateHat(event.getAxisValue(MotionEvent.AXIS_HAT_X), event.getAxisValue(MotionEvent.AXIS_HAT_Y))
+        val device = InputDevice.getDevice(event.deviceId)
+        lx = event.getAxisValue(MotionEvent.AXIS_X)
+        ly = event.getAxisValue(MotionEvent.AXIS_Y)
+        val rightX = if (supports(device, MotionEvent.AXIS_RX)) MotionEvent.AXIS_RX else MotionEvent.AXIS_Z
+        val rightY = if (supports(device, MotionEvent.AXIS_RY)) MotionEvent.AXIS_RY else MotionEvent.AXIS_RZ
+        rx = event.getAxisValue(rightX)
+        ry = event.getAxisValue(rightY)
+        val left = PhysicalGamepadNormalizer.normalizeStick(lx, ly, deadzone)
+        val right = PhysicalGamepadNormalizer.normalizeStick(rx, ry, deadzone)
+        lx = left.x; ly = left.y; rx = right.x; ry = right.y
+        val lAxis = if (supports(device, MotionEvent.AXIS_LTRIGGER)) MotionEvent.AXIS_LTRIGGER else MotionEvent.AXIS_BRAKE
+        val rAxis = if (supports(device, MotionEvent.AXIS_RTRIGGER)) MotionEvent.AXIS_RTRIGGER else MotionEvent.AXIS_GAS
+        lt = normalizeTrigger(event.getAxisValue(lAxis), device?.getMotionRange(lAxis))
+        rt = normalizeTrigger(event.getAxisValue(rAxis), device?.getMotionRange(rAxis))
+        hatButtons = PhysicalGamepadNormalizer.hatButtons(
+            event.getAxisValue(MotionEvent.AXIS_HAT_X), event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+        )
         return snapshot()
     }
 
     fun releaseAll(): ControllerState {
-        buttons.clear()
+        keyButtons.clear(); hatButtons = emptySet()
         lx = 0f; ly = 0f; rx = 0f; ry = 0f; lt = 0f; rt = 0f
         return snapshot()
     }
 
-    private fun normalizeAxis(raw: Float): Float {
-        if (!raw.isFinite() || abs(raw) <= deadzone) return 0f
-        return (if (raw > 0f) (raw - deadzone) / (1f - deadzone) else (raw + deadzone) / (1f - deadzone)).coerceIn(-1f, 1f)
-    }
+    private fun supports(device: InputDevice?, axis: Int): Boolean =
+        device?.getMotionRange(axis) != null
 
-    private fun normalizeTrigger(raw: Float): Float {
+    private fun normalizeTrigger(raw: Float, range: InputDevice.MotionRange?): Float {
         if (!raw.isFinite()) return 0f
-        return if (raw < 0f) ((raw + 1f) / 2f).coerceIn(0f, 1f) else raw.coerceIn(0f, 1f)
+        if (range != null && range.max > range.min) {
+            val normalized = if (range.min < 0f) (raw - range.min) / (range.max - range.min)
+                else raw / range.max
+            return normalized.coerceIn(0f, 1f)
+        }
+        return PhysicalGamepadNormalizer.normalizeTrigger(raw)
     }
 
-    private fun firstNonZero(event: MotionEvent, primary: Int, alternate: Int): Float {
-        val value = event.getAxisValue(primary)
-        return if (value != 0f) value else event.getAxisValue(alternate)
-    }
-
-    private fun updateHat(x: Float, y: Float) {
-        buttons.removeAll(setOf(ControllerButton.UP, ControllerButton.DOWN, ControllerButton.LEFT, ControllerButton.RIGHT))
-        if (x < -0.5f) buttons.add(ControllerButton.LEFT)
-        if (x > 0.5f) buttons.add(ControllerButton.RIGHT)
-        if (y < -0.5f) buttons.add(ControllerButton.UP)
-        if (y > 0.5f) buttons.add(ControllerButton.DOWN)
-    }
-
-    private fun snapshot() = ControllerState(buttons.toSet(), lx, ly, rx, ry, lt, rt)
+    private fun snapshot() = ControllerState(keyButtons + hatButtons, lx, ly, rx, ry, lt, rt)
 
     companion object {
         private val keyMap = mapOf(
