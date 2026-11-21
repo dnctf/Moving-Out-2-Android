@@ -57,9 +57,12 @@ class InstallationValidator {
         val exeArch = peChecks.firstOrNull { it.first == "mo2.exe" }?.second
         val peOk = peChecks.all { it.second == "x86_64" }
         val metadataVersion = files[required.last()]?.let(::inspectMetadataVersion)
+        val unityVersion = runCatching { findCaseInsensitive(root, "MovingOut2_Data/globalgamemanagers") }
+            .getOrNull()?.takeIf { it.isFile && it.canRead() && it.length() > 0 }
+            ?.let { file -> runCatching { file.inputStream().use { UnityGameProfileDetector.detectUnityVersion(readUpTo(it, 256 * 1024)) } }.getOrNull() }
         stages += StageResult(ValidationStage.VERSION_ARCH, peOk,
             peChecks.map { (name, arch) -> "$name: ${arch ?: "invalid/truncated PE32+ header"}" } +
-                "Unity version not detected (globalgamemanagers not supplied)" +
+                "Unity version: ${unityVersion ?: "not detected (globalgamemanagers unavailable/unsupported)"}" +
                 "IL2CPP metadata version: ${metadataVersion ?: "invalid/unknown"}")
         val compatibilityPass = false
         stages += StageResult(ValidationStage.COMPATIBILITY, compatibilityPass,
