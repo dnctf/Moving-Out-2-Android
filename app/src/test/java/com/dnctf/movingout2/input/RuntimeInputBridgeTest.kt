@@ -23,7 +23,7 @@ class RuntimeInputBridgeTest {
         val bytes = RuntimeInputBridge.encodeXInputPacket(0x1234.toShort(), 0x56, 0x78,
             0x1234, (-32768).toShort(), 0x7fff, 0)
         assertEquals(12, bytes.size)
-        assertArrayEquals(byteArrayOf(0x34,0x12,0x56,0x78,0x34,0x12,0x00,0x80,0xff.toByte(),0x7f,0x00,0x00), bytes)
+        assertArrayEquals(byteArrayOf(0x34,0x12,0x56,0x78,0x34,0x12,0x00,0x80.toByte(),0xff.toByte(),0x7f,0x00,0x00), bytes)
     }
     @Test fun signedAxesAndUnsignedTriggerConversionsCoverEndpoints() {
         assertEquals((-32768).toShort(), RuntimeInputBridge.axisShort(-1f))
