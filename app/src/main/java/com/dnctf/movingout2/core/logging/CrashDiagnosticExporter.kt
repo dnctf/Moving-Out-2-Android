@@ -17,7 +17,8 @@ class CrashDiagnosticExporter(private val outputDirectory: File) {
         runtimeBundleReportJson: String,
         processDiagnostics: List<RuntimeDiagnostic>,
         exitCode: Int? = null,
-        crashInfo: String? = null
+        crashInfo: String? = null,
+        importDiagnosticDirectory: File? = null
     ): File {
         if (!outputDirectory.exists() && !outputDirectory.mkdirs()) throw IllegalStateException("Cannot create diagnostic output directory")
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
@@ -38,6 +39,16 @@ class CrashDiagnosticExporter(private val outputDirectory: File) {
             put("game-installation-report.json", gameInstallationReportJson)
             put("runtime-bundle-report.json", runtimeBundleReportJson)
             put("runtime-process.log", log)
+            importDiagnosticDirectory?.let { directory ->
+                listOf("import-diagnostic-journal.json", "last-import-errors.log").forEach { name ->
+                    val source = File(directory, name)
+                    if (source.isFile) {
+                        zip.putNextEntry(ZipEntry(name))
+                        source.inputStream().use { it.copyTo(zip) }
+                        zip.closeEntry()
+                    }
+                }
+            }
         }
         return target
     }
