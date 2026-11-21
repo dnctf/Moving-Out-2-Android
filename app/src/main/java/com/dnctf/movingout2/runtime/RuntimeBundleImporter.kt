@@ -6,6 +6,8 @@ import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import android.os.StatFs
+import com.dnctf.movingout2.core.logging.ImportDiagnosticJournal
 import java.util.Properties
 
 data class RuntimeImportResult(val report: RuntimeBundleReport, val copiedFiles: Int, val copiedBytes: Long)
@@ -24,6 +26,11 @@ class RuntimeBundleImporter(
     private val backup = File(parent, "bundle_backup")
 
     fun importTree(uri: Uri): RuntimeImportResult {
+        val journal = ImportDiagnosticJournal(File(contextHolder.filesDir, "diagnostics"))
+        val archiveName = uri.lastPathSegment
+        val availableBefore = runCatching { StatFs(parent.absolutePath).availableBytes }.getOrNull()
+        val counter = Counter()
+        journal.checkpoint("RUNTIME_BUNDLE", archiveName, stage="IMPORT_START", availableBytesBefore=availableBefore)
         val source = DocumentFile.fromTreeUri(resolverContext(), uri)
         if (source == null || !source.isDirectory || !source.canRead()) throw IOException("Selected SAF tree is not readable.")
         if (!parent.mkdirs() && !parent.isDirectory) throw IOException("Unable to create private runtime storage.")
@@ -31,10 +38,10 @@ class RuntimeBundleImporter(
         recoverRuntimeBundle(target, backup) { bundle -> validator.validate(bundle).isReady }
         staging.deleteRecursively()
         if (!staging.mkdirs()) throw IOException("Unable to create runtime staging directory.")
-        val counter = Counter()
         var activated = false
         try {
             copyDirectory(source, staging, 0, counter)
+            journal.checkpoint("RUNTIME_BUNDLE", archiveName, entryCount=counter.entries, extractedBytes=counter.bytes, availableBytesBefore=availableBefore, availableBytesAfter=runCatching { StatFs(parent.absolutePath).availableBytes }.getOrNull(), stage="STAGING_VALIDATION")
             grantExecutableFlags(staging)
             val validation = validator.validate(staging)
             if (!validation.isReady) throw IOException("Runtime bundle failed validation: " + validation.blockers.joinToString("; "))
@@ -44,9 +51,12 @@ class RuntimeBundleImporter(
             val active = validator.validate(target)
             if (!active.isReady) throw IOException("Installed bundle revalidation failed: " + active.blockers.joinToString("; "))
             backup.deleteRecursively()
+            journal.checkpoint("RUNTIME_BUNDLE", archiveName, entryCount=counter.entries, extractedBytes=counter.bytes, availableBytesBefore=availableBefore, availableBytesAfter=runCatching { StatFs(parent.absolutePath).availableBytes }.getOrNull(), stage="ACTIVATED", activationStatus="SUCCESS", rollbackStatus="NOT_REQUIRED")
             return RuntimeImportResult(active, counter.files, counter.bytes)
         } catch (error: Exception) {
-            rollbackImport(staging, backup, target, activated, error)
+            val rollback = runCatching { rollbackImport(staging, backup, target, activated, error) }
+            journal.checkpoint("RUNTIME_BUNDLE", archiveName, entryCount=counter.entries, extractedBytes=counter.bytes, availableBytesBefore=availableBefore, availableBytesAfter=runCatching { StatFs(parent.absolutePath).availableBytes }.getOrNull(), stage="IMPORT_FAILED", activationStatus="FAILED", rollbackStatus=if (rollback.isSuccess) "ROLLBACK_COMPLETED" else "ROLLBACK_FAILED", error=rollback.exceptionOrNull() ?: error)
+            if (rollback.isFailure) throw IOException("Runtime import failed and rollback failed.", rollback.exceptionOrNull())
             throw error
         }
     }
