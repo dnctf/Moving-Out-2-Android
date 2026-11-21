@@ -8,6 +8,29 @@ import org.junit.Test
 class RuntimeProcessTest {
     private val shell = File("/bin/sh")
     private fun available() = Assume.assumeTrue("POSIX shell required for process integration tests", shell.exists() && shell.canExecute())
+    @Test fun rejectsMissingOrNonDirectoryWorkingDirectoryBeforeProcessStart() {
+        available()
+        val diagnostics = RuntimeDiagnostics()
+        val runtime = RuntimeProcess(diagnostics)
+        val missing = File(System.getProperty("java.io.tmpdir"), "mo2-missing-runtime-dir-${System.nanoTime()}")
+        try {
+            runtime.start(shell, listOf("-c", "exit 0"), workingDirectory = missing)
+            fail("Expected invalid working directory to be rejected")
+        } catch (expected: IllegalArgumentException) {
+            assertTrue(expected.message.orEmpty().contains("Working directory"))
+        }
+        val file = File.createTempFile("mo2-runtime-cwd", ".tmp")
+        try {
+            try {
+                runtime.start(shell, listOf("-c", "exit 0"), workingDirectory = file)
+                fail("Expected file working directory to be rejected")
+            } catch (expected: IllegalArgumentException) {
+                assertTrue(expected.message.orEmpty().contains("Working directory"))
+            }
+        } finally {
+            file.delete()
+        }
+    }
     @Test fun pidParserAcceptsOnlyValidPidPatterns() {
         assertEquals(4321L, RuntimeProcess.parsePidSafely("Process[pid=4321, exitValue=0]"))
         assertNull(RuntimeProcess.parsePidSafely("no process pid available"))

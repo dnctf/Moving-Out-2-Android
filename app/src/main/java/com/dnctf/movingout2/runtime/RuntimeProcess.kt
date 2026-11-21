@@ -64,6 +64,9 @@ data class ProcessResult(val process: Process, val pid: Long?, val stdoutThread:
 class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xinputConfig: RuntimeLaunchConfig? = null) {
     fun start(executable: File, args: List<String> = emptyList(), environment: Map<String, String> = emptyMap(), workingDirectory: File? = executable.parentFile): ProcessResult {
         require(executable.exists() && executable.isFile && executable.canExecute()) { "Executable missing or not executable: $executable" }
+        require(workingDirectory == null || (workingDirectory.exists() && workingDirectory.isDirectory)) {
+            "Working directory must exist and be a directory: $workingDirectory"
+        }
         val builder = ProcessBuilder(listOf(executable.absolutePath) + args)
         workingDirectory?.let { builder.directory(it) }
         builder.environment().putAll(xinputConfig?.environment(environment) ?: environment)
