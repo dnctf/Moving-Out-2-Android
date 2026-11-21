@@ -9,6 +9,8 @@ import java.io.IOException
 import android.os.StatFs
 import com.dnctf.movingout2.core.logging.ImportDiagnosticJournal
 import java.util.Properties
+import java.util.Locale
+import java.text.Normalizer
 
 data class RuntimeImportResult(val report: RuntimeBundleReport, val copiedFiles: Int, val copiedBytes: Long)
 
@@ -78,13 +80,12 @@ class RuntimeBundleImporter(
 
     private fun copyDirectory(source: DocumentFile, destination: File, depth: Int, counter: Counter) {
         if (depth > maxDepth) throw IOException("Runtime bundle directory depth exceeds limit.")
+        val names = RuntimeBundleEntryNameRegistry()
         for (child in source.listFiles()) {
             counter.entries++
             if (counter.entries > maxEntries) throw IOException("Runtime bundle contains too many entries.")
-            val name = child.name ?: throw IOException("SAF entry has no name.")
-            if (name.isBlank() || name == "." || name == ".." || name.contains('/') || name.contains('\\') || name.any { it.code < 32 }) {
-                throw IOException("Unsafe runtime bundle entry name.")
-            }
+            val rawName = child.name ?: throw IOException("SAF entry has no name.")
+            val name = names.register(rawName)
             val output = File(destination, name)
             if (child.isDirectory) {
                 if (!output.mkdirs() && !output.isDirectory) throw IOException("Unable to create runtime directory: $name")
@@ -178,3 +179,18 @@ internal object RuntimeExecutablePermissions {
 
 /** Pure reserve threshold used by import preflight and regression tests. */
 internal fun runtimeBundleHasReserve(availableBytes: Long, reserveBytes: Long): Boolean = reserveBytes >= 0 && availableBytes >= reserveBytes
+
+
+/** Rejects unsafe names and sibling collisions across case/Unicode normalization. */
+internal class RuntimeBundleEntryNameRegistry {
+    private val normalizedNames = mutableSetOf<String>()
+
+    fun register(name: String): String {
+        if (name.isBlank() || name == "." || name == ".." || name.contains('/') || name.contains('\\') || name.any { it.code < 32 || it.code == 127 }) {
+            throw IOException("Unsafe runtime bundle entry name.")
+        }
+        val normalized = Normalizer.normalize(name, Normalizer.Form.NFKC).lowercase(Locale.ROOT)
+        if (!normalizedNames.add(normalized)) throw IOException("Runtime bundle contains duplicate or case/Unicode-colliding entry names: $name")
+        return name
+    }
+}
