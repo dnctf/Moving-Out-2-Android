@@ -37,6 +37,10 @@ class PhysicalGamepadNormalizer(private val deadzone: Float = 0.12f) {
             raw < 0f -> ((raw + 1f) / 2f).coerceIn(0f, 1f)
             else -> raw.coerceIn(0f, 1f)
         }
+        fun normalizeTriggerInRange(raw: Float, min: Float, max: Float): Float {
+            if (!raw.isFinite() || !min.isFinite() || !max.isFinite() || max <= min) return 0f
+            return ((raw - min) / (max - min)).coerceIn(0f, 1f)
+        }
         fun hatButtons(x: Float, y: Float): Set<ControllerButton> = buildSet {
             if (x < -0.5f) add(ControllerButton.LEFT)
             if (x > 0.5f) add(ControllerButton.RIGHT)
