@@ -28,12 +28,29 @@ class VirtualControllerEngineTest {
         engine.claimButton(1, ControllerButton.B)
         engine.claimStick(2)
         engine.moveStick(2, 40f, -40f, 40f)
-        engine.setTrigger(2, 0.9f, right = false)
+        engine.claimTrigger(3, right = false)
+        engine.setTrigger(3, 0.9f, right = false)
         val cleared = engine.releaseAll()
         assertTrue(cleared.buttons.isEmpty())
         assertEquals(0f, cleared.leftX, 0f)
         assertEquals(0f, cleared.leftY, 0f)
         assertEquals(0f, cleared.leftTrigger, 0f)
+    }
+    @Test fun triggersArePointerOwnedAndReleaseIndependently() {
+        val engine = VirtualControllerEngine()
+        assertTrue(engine.claimTrigger(10, false))
+        assertTrue(engine.claimTrigger(11, true))
+        assertTrue(engine.setTrigger(10, .75f, false))
+        assertTrue(engine.setTrigger(11, .4f, true))
+        engine.releasePointer(10)
+        assertEquals(0f, engine.snapshot().leftTrigger, 0f)
+        assertEquals(.4f, engine.snapshot().rightTrigger, .0001f)
+    }
+    @Test fun onePointerCannotClaimMultipleControls() {
+        val engine = VirtualControllerEngine()
+        assertTrue(engine.claimButton(1, ControllerButton.A))
+        assertFalse(engine.claimStick(1))
+        assertFalse(engine.claimTrigger(1, false))
     }
     @Test fun duplicateButtonPointerClaimsAreRejected() {
         val engine = VirtualControllerEngine()
