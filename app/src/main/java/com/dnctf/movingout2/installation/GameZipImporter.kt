@@ -49,7 +49,7 @@ class GameZipImporter(
                     }
                     entry to name
                 }
-                val candidateRootPrefix = findRootPrefix(normalized.map { it.second })
+                val candidateRootPrefix = GameZipRootLocator.findRootPrefix(normalized.map { it.second })
                     ?: throw IOException("ZIP central directory does not contain the required Unity game files.")
                 val stat = StatFs(parent.absolutePath)
                 val archiveBytes = sourceZip.length()
@@ -133,17 +133,6 @@ class GameZipImporter(
         }
     }
 
-    internal fun findRootPrefix(names: List<String>): String? {
-        val files = names.filterNot { it.endsWith('/') }.map { it.lowercase(Locale.ROOT) }.toSet()
-        val exe = names.filter { it.equals("mo2.exe", true) || it.lowercase(Locale.ROOT).endsWith("/mo2.exe") }
-        val required = listOf("gameassembly.dll", "unityplayer.dll", "baselib.dll", "movingout2_data/il2cpp_data/metadata/global-metadata.dat")
-        for (exePath in exe) {
-            val prefix = exePath.substringBeforeLast('/', "").let { if (it.isEmpty()) "" else "$it/" }
-            if (required.all { req -> files.contains((prefix + req).lowercase(Locale.ROOT)) }) return prefix
-        }
-        return null
-    }
-
     private fun activateWithRollback(candidatePrefix: String) {
         if (root.exists()) {
             backup.deleteRecursively()
@@ -198,4 +187,18 @@ class GameZipImporter(
     }
 
     class ImportCancelledException : IOException("Import cancelled by user.")
+}
+
+/** Pure ZIP central-directory root discovery; safe to test without Android Context. */
+internal object GameZipRootLocator {
+    fun findRootPrefix(names: List<String>): String? {
+        val files = names.filterNot { it.endsWith('/') }.map { it.lowercase(Locale.ROOT) }.toSet()
+        val exe = names.filter { it.equals("mo2.exe", true) || it.lowercase(Locale.ROOT).endsWith("/mo2.exe") }
+        val required = listOf("gameassembly.dll", "unityplayer.dll", "baselib.dll", "movingout2_data/il2cpp_data/metadata/global-metadata.dat")
+        for (exePath in exe) {
+            val prefix = exePath.substringBeforeLast('/', "").let { if (it.isEmpty()) "" else "$it/" }
+            if (required.all { req -> files.contains((prefix + req).lowercase(Locale.ROOT)) }) return prefix
+        }
+        return null
+    }
 }
