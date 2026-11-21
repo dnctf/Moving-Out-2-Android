@@ -29,6 +29,7 @@ class InstallationValidatorTest {
         val metadata = File(root, "MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat")
         metadata.parentFile?.mkdirs()
         metadata.writeBytes(byteArrayOf(0xaf.toByte(), 0x1b, 0xb1.toByte(), 0xfa.toByte(), 29, 0, 0, 0))
+        File(root, "MovingOut2_Data/globalgamemanagers").apply { parentFile.mkdirs(); writeText("Unity 2021.3.16f1 synthetic fixture") }
         return root
     }
 
@@ -38,6 +39,7 @@ class InstallationValidatorTest {
         assertEquals(InstallationStatus.VALID, report.status)
         assertEquals("x86_64", report.detectedArchitecture)
         assertEquals(29, report.metadataVersion)
+        assertEquals("2021.3.16f1", report.detectedUnityVersion)
         assertEquals("RUNTIME_NOT_INSTALLED", report.runtimeStatus)
         assertFalse(report.isReadyForRuntime)
         assertFalse(report.stages.first { it.stage == ValidationStage.LAUNCH_READINESS }.passed)
