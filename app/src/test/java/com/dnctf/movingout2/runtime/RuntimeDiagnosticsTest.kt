@@ -10,6 +10,19 @@ class RuntimeDiagnosticsTest {
         assertEquals(listOf("entry-2", "entry-3", "entry-4"), diagnostics.snapshot().map { it.message })
     }
 
+    @Test fun circularBufferPreservesOrderAcrossMultipleWraps() {
+        val diagnostics = RuntimeDiagnostics(capacity = 2)
+        (1..7).forEach { diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "test", "entry-$it")) }
+        assertEquals(listOf("entry-6", "entry-7"), diagnostics.snapshot().map { it.message })
+    }
+
+    @Test fun capacityOneAlwaysKeepsMostRecentEntry() {
+        val diagnostics = RuntimeDiagnostics(capacity = 1)
+        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "test", "old"))
+        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "test", "new"))
+        assertEquals(listOf("new"), diagnostics.snapshot().map { it.message })
+    }
+
     @Test fun snapshotIsIndependentAndClearResetsBuffer() {
         val diagnostics = RuntimeDiagnostics(capacity = 2)
         diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "test", "kept"))
