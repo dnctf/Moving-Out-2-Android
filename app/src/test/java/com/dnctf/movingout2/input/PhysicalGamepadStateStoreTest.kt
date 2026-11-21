@@ -37,7 +37,7 @@ class PhysicalGamepadStateStoreTest {
         assertEquals(0f, state.rightX, 0f)
         assertEquals(.8f, state.rightY, 0f)
     }
-    @Test fun updatesForUnknownDevicesAreIgnored {
+    @Test fun updatesForUnknownDevicesAreIgnored() {
         val store = PhysicalGamepadStateStore()
         store.update(7, ControllerState(buttons=setOf(ControllerButton.X)))
         assertEquals(0, store.deviceCount())

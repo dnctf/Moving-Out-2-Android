@@ -34,7 +34,7 @@ class PhysicalGamepadNormalizerTest {
         assertEquals(1f, PhysicalGamepadNormalizer.normalizeAxisInRange(255f, 0f, 255f), 0f)
         assertEquals(0f, PhysicalGamepadNormalizer.normalizeAxisInRange(Float.NaN, -1f, 1f), 0f)
     }
-    @Test fun axisLayoutUsesAdvertisedAxesAndFallbacks {
+    @Test fun axisLayoutUsesAdvertisedAxesAndFallbacks() {
         val standard = PhysicalGamepadAxisLayout.resolve(setOf(MotionEvent.AXIS_RX, MotionEvent.AXIS_RY, MotionEvent.AXIS_LTRIGGER, MotionEvent.AXIS_RTRIGGER))
         assertEquals(MotionEvent.AXIS_RX, standard.rightX); assertEquals(MotionEvent.AXIS_RY, standard.rightY)
         assertEquals(MotionEvent.AXIS_LTRIGGER, standard.leftTrigger); assertEquals(MotionEvent.AXIS_RTRIGGER, standard.rightTrigger)

@@ -56,7 +56,7 @@ class ControllerProfileRepositoryTest {
             ControllerProfile.importFromJson("""{"schemaVersion":1,"name":"bad","buttonMap":{"A":2} }""")
         }
     }
-    @Test fun oversizeImportIsRejected {
+    @Test fun oversizeImportIsRejected() {
         assertThrows(IllegalArgumentException::class.java) {
             ControllerProfile.importFromJson(" ".repeat(65537))
         }
