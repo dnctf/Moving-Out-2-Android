@@ -16,7 +16,6 @@ class GamepadTranslator(private val deadzone: Float = 0.18f) {
         when (event.action) {
             KeyEvent.ACTION_DOWN -> keyButtons.add(button)
             KeyEvent.ACTION_UP -> keyButtons.remove(button)
-            KeyEvent.ACTION_CANCEL -> keyButtons.remove(button)
             else -> return null
         }
         return snapshot()
