@@ -9,6 +9,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
+import java.nio.file.attribute.PosixFilePermission
 
 /** JVM integration seam test: touch/gamepad state -> XInput packet -> launch environment path. */
 class EndToEndRuntimeWiringTest {
@@ -31,6 +32,19 @@ class EndToEndRuntimeWiringTest {
         override fun destroy() { initialized = false }
         override fun isNativeAvailable() = true
         override fun isInitialized() = initialized
+    }
+
+    @Test fun runtimePayloadExecutablePermissionIsAppliedAndVerified() {
+        val root = Files.createTempDirectory("runtime-permission").toFile()
+        val executable = File(root, "box64").apply { writeBytes(byteArrayOf(0x7f, 0x45, 0x4c, 0x46)) }
+        RuntimeExecutablePermissions.ensureExecutable(executable, "box64")
+        assertTrue("runtime executable bit must be set", executable.canExecute())
+        runCatching { Files.getPosixFilePermissions(executable.toPath()) }.getOrNull()?.let { permissions ->
+            assertTrue(permissions.contains(PosixFilePermission.OWNER_EXECUTE))
+            assertTrue(permissions.contains(PosixFilePermission.GROUP_EXECUTE))
+            assertTrue(permissions.contains(PosixFilePermission.OTHERS_EXECUTE))
+        }
+        root.deleteRecursively()
     }
 
     @Test fun touchAndPhysicalStateShareTransportAndLauncherPathContract() {
