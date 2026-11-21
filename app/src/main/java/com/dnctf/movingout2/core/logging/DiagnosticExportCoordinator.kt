@@ -57,7 +57,8 @@ class DiagnosticExportCoordinator(
             diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "diagnostics", "Diagnostic ZIP export requested"))
             val result = runCatching {
                 CrashDiagnosticExporter(File(appContext.cacheDir, "diagnostics")).export(
-                    deviceJson.toString(2), gameJson.toString(2), runtimeJson.toString(2), diagnosticLog.snapshot()
+                    deviceJson.toString(2), gameJson.toString(2), runtimeJson.toString(2), diagnosticLog.snapshot(),
+                    importDiagnosticDirectory = File(appContext.filesDir, "diagnostics")
                 )
             }
             Handler(Looper.getMainLooper()).post { onComplete(result) }
