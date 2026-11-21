@@ -18,6 +18,7 @@ class PhysicalGamepadManager(
     private val inputManager = context.getSystemService(Context.INPUT_SERVICE) as InputManager
     private val translators = mutableMapOf<Int, GamepadTranslator>()
     private val states = mutableMapOf<Int, ControllerState>()
+    private val profiles = mutableMapOf<Int, PhysicalGamepadDeviceProfile>()
     private var registered = false
 
     @Synchronized fun register() {
@@ -35,6 +36,7 @@ class PhysicalGamepadManager(
         translators.values.forEach { it.releaseAll() }
         translators.clear()
         states.clear()
+        profiles.clear()
         emit()
     }
 
@@ -52,15 +54,16 @@ class PhysicalGamepadManager(
         return emit()
     }
 
-    fun deviceDescriptions(): List<String> = translators.keys.mapNotNull { id ->
-        InputDevice.getDevice(id)?.let { "${it.name} (${it.descriptor})" }
-    }
+    fun deviceDescriptions(): List<String> = profiles.values.map { "${it.name} (${it.descriptor})" }
+    fun deviceProfiles(): List<PhysicalGamepadDeviceProfile> = profiles.values.toList()
 
     @Synchronized override fun onInputDeviceAdded(deviceId: Int) { addDevice(deviceId); emit() }
     @Synchronized override fun onInputDeviceChanged(deviceId: Int) {
-        if (isGamepad(InputDevice.getDevice(deviceId))) {
+        val device = InputDevice.getDevice(deviceId)
+        if (isGamepad(device)) {
             translators[deviceId]?.releaseAll()
             states[deviceId] = ControllerState()
+            device?.let { profiles[deviceId] = PhysicalGamepadAxisLayout.fromDevice(it) }
         } else removeDevice(deviceId)
         emit()
     }
@@ -69,12 +72,14 @@ class PhysicalGamepadManager(
     private fun addDevice(deviceId: Int) {
         val device = InputDevice.getDevice(deviceId) ?: return
         if (!isGamepad(device)) return
-        translators.putIfAbsent(deviceId, GamepadTranslator()) 
+        translators.putIfAbsent(deviceId, GamepadTranslator())
         states.putIfAbsent(deviceId, ControllerState())
+        profiles[deviceId] = PhysicalGamepadAxisLayout.fromDevice(device)
     }
     private fun removeDevice(deviceId: Int) {
         translators.remove(deviceId)?.releaseAll()
         states.remove(deviceId)
+        profiles.remove(deviceId)
     }
     private fun isGamepad(device: InputDevice?): Boolean = device != null &&
         (device.sources and (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK)) != 0
