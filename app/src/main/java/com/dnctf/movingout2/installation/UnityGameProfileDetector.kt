@@ -41,11 +41,20 @@ object UnityGameProfileDetector {
             ((header[0x3d].toInt() and 0xff) shl 8) or
             ((header[0x3e].toInt() and 0xff) shl 16) or
             ((header[0x3f].toInt() and 0xff) shl 24)
-        if (offset < 0 || offset > header.size - 6 || header[offset] != 'P'.code.toByte() ||
+        if (offset < 0 || offset > header.size - 26 || header[offset] != 'P'.code.toByte() ||
             header[offset + 1] != 'E'.code.toByte() || header[offset + 2] != 0.toByte() ||
             header[offset + 3] != 0.toByte()) return null
         val machine = (header[offset + 4].toInt() and 0xff) or ((header[offset + 5].toInt() and 0xff) shl 8)
-        return when (machine) { 0x8664 -> "x86_64"; 0x14c -> "x86"; 0xaa64 -> "arm64"; else -> "unknown" }
+        val optionalSize = (header[offset + 20].toInt() and 0xff) or ((header[offset + 21].toInt() and 0xff) shl 8)
+        val optionalOffset = offset + 24
+        if (optionalSize < 2 || optionalOffset > header.size - 2 || optionalOffset + optionalSize > header.size) return null
+        val optionalMagic = (header[optionalOffset].toInt() and 0xff) or ((header[optionalOffset + 1].toInt() and 0xff) shl 8)
+        return when {
+            machine == 0x8664 && optionalMagic == 0x20b -> "x86_64"
+            machine == 0x14c && optionalMagic == 0x10b -> "x86"
+            machine == 0xaa64 && optionalMagic == 0x20b -> "arm64"
+            else -> null
+        }
     }
 
     fun readBounded(input: InputStream, limit: Int): ByteArray {
