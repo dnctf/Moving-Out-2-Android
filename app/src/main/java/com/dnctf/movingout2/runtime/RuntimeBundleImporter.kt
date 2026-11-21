@@ -31,15 +31,22 @@ class RuntimeBundleImporter(
     fun importTree(uri: Uri): RuntimeImportResult {
         val journal = ImportDiagnosticJournal(File(contextHolder.filesDir, "diagnostics"))
         val archiveName = uri.lastPathSegment
-        val availableBefore = runCatching { StatFs(parent.absolutePath).availableBytes }.getOrNull()
+        if (storageReserveBytes < 0) throw IOException("Runtime storage reserve must not be negative.")
+        // filesDir is guaranteed to exist; preflight must not silently skip when parent is not created yet.
+        val availableBefore = runCatching { StatFs(contextHolder.filesDir.absolutePath).availableBytes }
+            .getOrElse { throw IOException("Unable to determine available storage before runtime import.", it) }
         val counter = Counter()
         journal.checkpoint("RUNTIME_BUNDLE", archiveName, stage="IMPORT_START", availableBytesBefore=availableBefore)
         val source = DocumentFile.fromTreeUri(resolverContext(), uri)
         if (source == null || !source.isDirectory || !source.canRead()) throw IOException("Selected SAF tree is not readable.")
-        if (!parent.mkdirs() && !parent.isDirectory) throw IOException("Unable to create private runtime storage.")
-        if (storageReserveBytes < 0) throw IOException("Runtime storage reserve must not be negative.")
-        if (availableBefore != null && !runtimeBundleHasReserve(availableBefore, storageReserveBytes)) {
+        if (!runtimeBundleStoragePreflight(availableBefore, storageReserveBytes)) {
             throw IOException("Insufficient storage: preserve at least ${storageReserveBytes} bytes before runtime import.")
+        }
+        if (!parent.mkdirs() && !parent.isDirectory) throw IOException("Unable to create private runtime storage.")
+        val availableAfterDirectoryCreation = runCatching { StatFs(parent.absolutePath).availableBytes }
+            .getOrElse { throw IOException("Unable to determine available storage after runtime directory creation.", it) }
+        if (!runtimeBundleStoragePreflight(availableAfterDirectoryCreation, storageReserveBytes)) {
+            throw IOException("Insufficient storage after runtime directory creation; import cancelled.")
         }
         // Validate both sides before cleanup: a crash can leave an invalid new target beside the old backup.
         recoverRuntimeBundle(target, backup) { bundle -> validator.validate(bundle).isReady }
@@ -179,6 +186,9 @@ internal object RuntimeExecutablePermissions {
 
 /** Pure reserve threshold used by import preflight and regression tests. */
 internal fun runtimeBundleHasReserve(availableBytes: Long, reserveBytes: Long): Boolean = reserveBytes >= 0 && availableBytes >= reserveBytes
+
+/** Fail-closed preflight; unlike StatFs callers this helper never treats an unavailable reading as success. */
+internal fun runtimeBundleStoragePreflight(availableBytes: Long, reserveBytes: Long): Boolean = runtimeBundleHasReserve(availableBytes, reserveBytes)
 
 
 /** Rejects unsafe names and sibling collisions across case/Unicode normalization. */

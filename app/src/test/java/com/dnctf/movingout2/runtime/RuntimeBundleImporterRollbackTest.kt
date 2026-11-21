@@ -7,6 +7,18 @@ import java.io.IOException
 import java.nio.file.Files
 
 class RuntimeBundleImporterRollbackTest {
+    @Test fun storagePreflightAcceptsExactReserve() {
+        assertTrue(runtimeBundleStoragePreflight(512, 512))
+    }
+
+    @Test fun storagePreflightRejectsInsufficientReserve() {
+        assertFalse(runtimeBundleStoragePreflight(511, 512))
+    }
+
+    @Test fun storagePreflightRejectsNegativeReserve() {
+        assertFalse(runtimeBundleStoragePreflight(512, -1))
+    }
+
     @Test fun rollbackRestoresBackupWhenTargetWasRemoved() {
         val root = Files.createTempDirectory("rollback-success").toFile()
         val staging = File(root, "staging").apply { mkdirs() }
