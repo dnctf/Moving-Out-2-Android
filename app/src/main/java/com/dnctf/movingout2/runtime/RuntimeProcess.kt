@@ -6,6 +6,7 @@ import java.util.concurrent.TimeUnit
 data class ExitResult(val exitCode: Int?, val pid: Long?, val timedOut: Boolean, val terminatedByUser: Boolean, val durationMs: Long)
 data class ProcessResult(val process: Process, val pid: Long?, val stdoutThread: Thread, val stderrThread: Thread, private val startedNanos: Long) {
     private val streamCleanupLock = Any()
+    private val terminationLock = Any()
     fun waitFor(timeoutMs: Long? = null): ExitResult {
         require(timeoutMs == null || timeoutMs >= 0)
         val timedOut = timeoutMs != null && !process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
@@ -17,15 +18,18 @@ data class ProcessResult(val process: Process, val pid: Long?, val stdoutThread:
     }
     fun stop(gracePeriodMs: Long = 1000): ExitResult {
         require(gracePeriodMs >= 0)
-        val wasAliveAtStopRequest = process.isAlive
-        if (wasAliveAtStopRequest) {
-            process.destroy()
-            if (!process.waitFor(gracePeriodMs, TimeUnit.MILLISECONDS)) {
-                process.destroyForcibly()
-                // Forced termination is also bounded; retain a nullable exit code if
-                // the OS/process implementation has not reaped it within this window.
-                process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        val wasAliveAtStopRequest = synchronized(terminationLock) {
+            val alive = process.isAlive
+            if (alive) {
+                process.destroy()
+                if (!process.waitFor(gracePeriodMs, TimeUnit.MILLISECONDS)) {
+                    process.destroyForcibly()
+                    // Forced termination is also bounded; retain a nullable exit code if
+                    // the OS/process implementation has not been reaped within this window.
+                    process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                }
             }
+            alive
         }
         closeStreamsAndJoinReaders()
         return ExitResult(exitCodeSafely(), pid, process.isAlive, wasAliveAtStopRequest, elapsed())
@@ -42,12 +46,12 @@ data class ProcessResult(val process: Process, val pid: Long?, val stdoutThread:
             }
         }
     }
-    private fun terminate(grace: Long): Boolean {
-        if (!process.isAlive) return true
+    private fun terminate(grace: Long): Boolean = synchronized(terminationLock) {
+        if (!process.isAlive) return@synchronized true
         process.destroy()
-        if (process.waitFor(grace, TimeUnit.MILLISECONDS)) return true
+        if (process.waitFor(grace, TimeUnit.MILLISECONDS)) return@synchronized true
         process.destroyForcibly()
-        return process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
     }
     private fun exitCodeSafely(): Int? = if (process.isAlive) null else runCatching { process.exitValue() }.getOrNull()
     private fun elapsed() = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos)

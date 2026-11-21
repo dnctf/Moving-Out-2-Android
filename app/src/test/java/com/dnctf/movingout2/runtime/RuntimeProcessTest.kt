@@ -83,6 +83,22 @@ class RuntimeProcessTest {
         assertFalse("stdout reader should stop after concurrent cleanup", process.stdoutThread.isAlive)
         assertFalse("stderr reader should stop after concurrent cleanup", process.stderrThread.isAlive)
     }
+    @Test fun concurrentTimedWaitAndStopShareTerminationSafely() {
+        available()
+        val process = RuntimeProcess(RuntimeDiagnostics()).start(shell, listOf("-c", "exec sleep 10"))
+        val waitResult = java.util.concurrent.atomic.AtomicReference<ExitResult?>()
+        val waiter = Thread { waitResult.set(process.waitFor(100)) }
+        val stopper = Thread { process.stop(100) }
+        waiter.start(); stopper.start()
+        waiter.join(3000); stopper.join(3000)
+        assertFalse("timed wait should complete", waiter.isAlive)
+        assertFalse("stop should complete", stopper.isAlive)
+        assertNotNull(waitResult.get())
+        assertFalse("process should be terminated after concurrent wait and stop", process.process.isAlive)
+        assertFalse("stdout reader should stop", process.stdoutThread.isAlive)
+        assertFalse("stderr reader should stop", process.stderrThread.isAlive)
+    }
+
     @Test fun stopAfterNaturalExitDoesNotReportUserTermination() {
         available()
         val process = RuntimeProcess(RuntimeDiagnostics()).start(shell, listOf("-c", "exit 0"))
