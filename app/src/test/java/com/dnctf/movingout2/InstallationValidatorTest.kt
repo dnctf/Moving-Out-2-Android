@@ -28,7 +28,7 @@ class InstallationValidatorTest {
         File(root, "mo2.exe").writeBytes(pe)
         val metadata = File(root, "MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat")
         metadata.parentFile?.mkdirs()
-        metadata.writeBytes(byteArrayOf(0xaf.toByte(), 0x1b, 0xb1.toByte(), 0xfa.toByte(), 29, 0, 0, 0))
+        metadata.writeBytes(byteArrayOf(0xaf.toByte(), 0x1b.toByte(), 0xb1.toByte(), 0xfa.toByte(), 29.toByte(), 0.toByte(), 0.toByte(), 0.toByte()))
         File(root, "MovingOut2_Data/globalgamemanagers").apply { parentFile.mkdirs(); writeText("Unity 2021.3.16f1 synthetic fixture") }
         return root
     }
