@@ -135,11 +135,12 @@ class VirtualControllerView(context: Context, private val onState: (ControllerSt
                     if (engine.claimTrigger(id, right)) { engine.setTrigger(id, 1f, right); haptic() }
                 } else {
                     val button = buttonRects.entries.firstOrNull { it.value.contains(x,y) }?.key
-                    if (button != null) engine.claimButton(id, button)
-                    else if (insideStick(x,y,leftCenter)) {
-                        if (engine.claimStick(id, false)) moveStick(id, x, y, false)
+                    if (button != null) {
+                        if (engine.claimButton(id, button)) haptic()
+                    } else if (insideStick(x,y,leftCenter)) {
+                        if (engine.claimStick(id, false)) { moveStick(id, x, y, false); haptic() }
                     } else if (insideStick(x,y,rightCenter)) {
-                        if (engine.claimStick(id, true)) moveStick(id, x, y, true)
+                        if (engine.claimStick(id, true)) { moveStick(id, x, y, true); haptic() }
                     }
                 }
                 emit(); invalidate()
