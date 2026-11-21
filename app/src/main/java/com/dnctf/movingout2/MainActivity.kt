@@ -21,7 +21,6 @@ import com.dnctf.movingout2.input.GamepadTranslator
 import com.dnctf.movingout2.input.RuntimeInputBridge
 import com.dnctf.movingout2.input.VirtualControllerView
 import com.dnctf.movingout2.installation.GameInstallationManager
-import com.dnctf.movingout2.installation.GameZipImporter
 import com.dnctf.movingout2.installation.InstallationRepository
 import com.dnctf.movingout2.runtime.RuntimeBundleImporter
 import com.dnctf.movingout2.runtime.RuntimeLaunchConfig
@@ -290,33 +289,27 @@ class MainActivity : Activity() {
                     setButton(android.content.DialogInterface.BUTTON_NEGATIVE, "Cancel") { _, _ -> cancelled.set(true); setMessage("Cancelling safely…") }
                 }
                 progressDialog.show()
-                Thread({
-                    val result = runCatching {
-                        GameZipImporter(this).importZip(uri, cancelled = { cancelled.get() }, onProgress = { progress ->
-                            runOnUiThread {
-                                progressDialog.setProgress(progress.percent)
-                                val mibDone = progress.bytesDone / (1024 * 1024)
-                                val mibTotal = progress.totalBytes / (1024 * 1024)
-                                progressDialog.setMessage("${progress.phase}: ${progress.percent}% (${progress.entriesDone}/${progress.totalEntries} entries, ${mibDone}/${mibTotal} MiB)")
-                            }
-                        })
-                    }
-                    runOnUiThread {
+                com.dnctf.movingout2.installation.GameZipImportCoordinator(this, repository)
+                    .importAsync(uri, cancelled = { cancelled.get() }, onProgress = { progress ->
+                        progressDialog.setProgress(progress.percent)
+                        val mibDone = progress.bytesDone / (1024 * 1024)
+                        val mibTotal = progress.totalBytes / (1024 * 1024)
+                        progressDialog.setMessage("${progress.phase}: ${progress.percent}% (${progress.entriesDone}/${progress.totalEntries} entries, ${mibDone}/${mibTotal} MiB)")
+                    }) { result ->
                         progressDialog.dismiss()
-                        status.text = result.fold({ imported ->
+                        status.text = result.fold({ summary ->
                             buildString {
-                                append("ZIP import successful. Files: ").append(imported.fileCount)
-                                append("\nExpanded: ").append(imported.bytesWritten / (1024 * 1024)).append(" MiB")
-                                append("\nImported game root: ").append(imported.gameRoot.absolutePath)
-                                repository.registerImported(imported.gameRoot.absolutePath)
-                                val report = com.dnctf.movingout2.installation.InstallationValidator().validate(imported.gameRoot)
-                                append("\n\nGame validation: ").append(report.status)
-                                report.stages.forEach { stage -> append("\n").append(stage.stage).append(": ").append(if (stage.passed) "PASS" else "FAIL") }
+                                append("ZIP import successful. Files: ").append(summary.imported.fileCount)
+                                append("\nExpanded: ").append(summary.imported.bytesWritten / (1024 * 1024)).append(" MiB")
+                                append("\nImported game root: ").append(summary.imported.gameRoot.absolutePath)
+                                append("\n\nGame validation: ").append(summary.validation.status)
+                                summary.validation.stages.forEach { stage ->
+                                    append("\n").append(stage.stage).append(": ").append(if (stage.passed) "PASS" else "FAIL")
+                                }
                                 append("\nRuntime: RUNTIME_NOT_INSTALLED")
                             }
                         }, { "ZIP import failed safely: ${it.message ?: it.javaClass.simpleName}" })
                     }
-                }, "game-zip-import").apply { isDaemon = true; start() }
             }
         }
     }
