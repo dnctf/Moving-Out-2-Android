@@ -23,7 +23,7 @@ data class ProcessResult(val process: Process, val pid: Long?, val stdoutThread:
                 process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             }
         }
-        return ExitResult(exitCodeSafely(), pid, false, true, elapsed())
+        return ExitResult(exitCodeSafely(), pid, process.isAlive, true, elapsed())
     }
     private fun terminate(grace: Long): Boolean {
         if (!process.isAlive) return true

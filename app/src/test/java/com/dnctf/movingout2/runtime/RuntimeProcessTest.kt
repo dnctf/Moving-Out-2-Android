@@ -34,6 +34,24 @@ class RuntimeProcessTest {
         assertFalse(process.process.isAlive)
         assertNotNull("Terminated process should have an exit code after reaping", result.exitCode)
     }
+    @Test fun stopReportsTimeoutWhenProcessCannotBeReaped() {
+        val stubborn = object : Process() {
+            override fun getOutputStream() = java.io.ByteArrayOutputStream()
+            override fun getInputStream() = java.io.ByteArrayInputStream(byteArrayOf())
+            override fun getErrorStream() = java.io.ByteArrayInputStream(byteArrayOf())
+            override fun waitFor(): Int = 0
+            override fun waitFor(timeout: Long, unit: java.util.concurrent.TimeUnit): Boolean = false
+            override fun exitValue(): Int = throw IllegalThreadStateException("still running")
+            override fun destroy() {}
+            override fun destroyForcibly(): Process = this
+            override fun isAlive(): Boolean = true
+        }
+        val result = ProcessResult(stubborn, 123L, Thread {}, Thread {}, System.nanoTime()).stop(10)
+        assertTrue(result.terminatedByUser)
+        assertTrue(result.timedOut)
+        assertNull(result.exitCode)
+    }
+
     @Test fun stopMarksUserTerminationAndStopsProcess() {
         available()
         val process = RuntimeProcess(RuntimeDiagnostics()).start(shell, listOf("-c", "sleep 10"))
