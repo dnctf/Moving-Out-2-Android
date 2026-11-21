@@ -17,7 +17,7 @@ class PhysicalGamepadManager(
 ) : InputManager.InputDeviceListener {
     private val inputManager = context.getSystemService(Context.INPUT_SERVICE) as InputManager
     private val translators = mutableMapOf<Int, GamepadTranslator>()
-    private val states = mutableMapOf<Int, ControllerState>()
+    private val stateStore = PhysicalGamepadStateStore()
     private val profiles = mutableMapOf<Int, PhysicalGamepadDeviceProfile>()
     private var registered = false
 
@@ -35,7 +35,7 @@ class PhysicalGamepadManager(
         registered = false
         translators.values.forEach { it.releaseAll() }
         translators.clear()
-        states.clear()
+        stateStore.clear()
         profiles.clear()
         emit()
     }
@@ -43,7 +43,7 @@ class PhysicalGamepadManager(
     fun handleKey(event: KeyEvent): ControllerState? {
         val translator = translators[event.deviceId] ?: return null
         val next = translator.onKey(event) ?: return null
-        states[event.deviceId] = next
+        stateStore.update(event.deviceId, next)
         return emit()
     }
 
@@ -62,7 +62,7 @@ class PhysicalGamepadManager(
         val device = InputDevice.getDevice(deviceId)
         if (isGamepad(device)) {
             translators[deviceId]?.releaseAll()
-            states[deviceId] = ControllerState()
+            stateStore.resetDevice(deviceId)
             device?.let { profiles[deviceId] = PhysicalGamepadAxisLayout.fromDevice(it) }
         } else removeDevice(deviceId)
         emit()
@@ -73,28 +73,19 @@ class PhysicalGamepadManager(
         val device = InputDevice.getDevice(deviceId) ?: return
         if (!isGamepad(device)) return
         translators.putIfAbsent(deviceId, GamepadTranslator())
-        states.putIfAbsent(deviceId, ControllerState())
+        stateStore.register(deviceId)
         profiles[deviceId] = PhysicalGamepadAxisLayout.fromDevice(device)
     }
     private fun removeDevice(deviceId: Int) {
         translators.remove(deviceId)?.releaseAll()
-        states.remove(deviceId)
+        stateStore.remove(deviceId)
         profiles.remove(deviceId)
     }
     private fun isGamepad(device: InputDevice?): Boolean = device != null &&
         (device.sources and (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK)) != 0
 
     @Synchronized private fun emit(): ControllerState {
-        val all = states.values
-        val buttons = all.flatMap { it.buttons }.toSet()
-        fun strongest(selector: (ControllerState) -> Float): Float = all.maxByOrNull { kotlin.math.abs(selector(it)) }?.let(selector) ?: 0f
-        val merged = ControllerState(
-            buttons = buttons,
-            leftX = strongest { it.leftX }, leftY = strongest { it.leftY },
-            rightX = strongest { it.rightX }, rightY = strongest { it.rightY },
-            leftTrigger = all.maxOfOrNull { it.leftTrigger } ?: 0f,
-            rightTrigger = all.maxOfOrNull { it.rightTrigger } ?: 0f
-        )
+        val merged = stateStore.aggregate()
         onAggregateState(merged)
         return merged
     }
