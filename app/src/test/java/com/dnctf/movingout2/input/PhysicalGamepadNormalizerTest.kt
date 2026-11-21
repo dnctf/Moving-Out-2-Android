@@ -1,6 +1,7 @@
 package com.dnctf.movingout2.input
 
 import android.view.KeyEvent
+import android.view.MotionEvent
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -22,6 +23,14 @@ class PhysicalGamepadNormalizerTest {
     @Test fun hatProducesIndependentDirections() {
         assertEquals(setOf(ControllerButton.LEFT, ControllerButton.UP), PhysicalGamepadNormalizer.hatButtons(-1f, -1f))
         assertTrue(PhysicalGamepadNormalizer.hatButtons(0f, 0f).isEmpty())
+    }
+    @Test fun axisLayoutUsesAdvertisedAxesAndFallbacks() {
+        val standard = PhysicalGamepadAxisLayout.resolve(setOf(MotionEvent.AXIS_RX, MotionEvent.AXIS_RY, MotionEvent.AXIS_LTRIGGER, MotionEvent.AXIS_RTRIGGER))
+        assertEquals(MotionEvent.AXIS_RX, standard.rightX); assertEquals(MotionEvent.AXIS_RY, standard.rightY)
+        assertEquals(MotionEvent.AXIS_LTRIGGER, standard.leftTrigger); assertEquals(MotionEvent.AXIS_RTRIGGER, standard.rightTrigger)
+        val fallback = PhysicalGamepadAxisLayout.resolve(setOf(MotionEvent.AXIS_Z, MotionEvent.AXIS_RZ, MotionEvent.AXIS_BRAKE, MotionEvent.AXIS_GAS))
+        assertEquals(MotionEvent.AXIS_Z, fallback.rightX); assertEquals(MotionEvent.AXIS_RZ, fallback.rightY)
+        assertEquals(MotionEvent.AXIS_BRAKE, fallback.leftTrigger); assertEquals(MotionEvent.AXIS_GAS, fallback.rightTrigger)
     }
     @Test fun standardAndroidButtonsMapToCanonicalButtons() {
         assertEquals(ControllerButton.A, GamepadKeyMapping.mapKeyCode(KeyEvent.KEYCODE_BUTTON_A))
