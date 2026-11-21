@@ -76,7 +76,7 @@ class InstallationValidator {
         }
         stages += StageResult(ValidationStage.LAUNCH_READINESS, false,
             listOf("BLOCKED: native runtime is not installed/validated; file presence is not launch readiness."))
-        return InstallationReport(status, stages, missing.distinct(), errors.distinct(), exeArch, null,
+        return InstallationReport(status, stages, missing.distinct(), errors.distinct(), exeArch, unityVersion,
             metadataVersion, hardwareBlockers.toList())
     }
 
@@ -109,8 +109,13 @@ class InstallationValidator {
             val optionalSize = readUInt16(b, offset+20) ?: return@use null
             val optionalOffset = offset + 24
             if (optionalSize < 2 || optionalOffset > b.size - 2 || optionalOffset + optionalSize > b.size) return@use null
-            if (readUInt16(b, optionalOffset) != 0x20b) return@use null
-            when (machine) { 0x8664 -> "x86_64"; 0x14c -> "x86"; 0xaa64 -> "arm64"; else -> "unknown" }
+            val optionalMagic = readUInt16(b, optionalOffset) ?: return@use null
+            when {
+                machine == 0x8664 && optionalMagic == 0x20b -> "x86_64"
+                machine == 0x14c && optionalMagic == 0x10b -> "x86"
+                machine == 0xaa64 && optionalMagic == 0x20b -> "arm64"
+                else -> null
+            }
         }
     }.getOrNull()
 
