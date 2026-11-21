@@ -15,6 +15,7 @@ import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.ArrayAdapter
 import android.widget.Toast
+import android.widget.CheckBox
 import com.dnctf.movingout2.runtime.RuntimeDiagnostics
 import com.dnctf.movingout2.input.RuntimeInputBridge
 import com.dnctf.movingout2.input.VirtualControllerView
@@ -92,11 +93,16 @@ class MainActivity : Activity() {
             touchControllerState = state
             sendCombinedInput()
             val readback = inputBridge.packet(state, physicalControllerState).serializeLittleEndian().joinToString(" ") { byte -> "%02X".format(byte.toInt() and 0xFF) }
-            stateText.text = "Input: buttons=" + state.buttons.joinToString() + " | left=(" + state.leftX.toInt() + ", " + state.leftY.toInt() + ")\nMO2X packet: " + readback
+            stateText.text = "Input: buttons=" + state.buttons.joinToString() + " | left=(" + state.leftX + ", " + state.leftY + ") | right=(" + state.rightX + ", " + state.rightY + ")\nMO2X packet: " + readback
         }
+        val overlay = LauncherSettings.load(this)
+        pad.configure(overlay.controllerScale / 100f, overlay.controllerOpacity / 100f, (overlay.controllerOffsetX - 50) / 100f, (overlay.controllerOffsetY - 50) / 100f)
+        pad.setHapticsEnabled(overlay.controllerHaptics)
+        pad.setOverlayVisible(overlay.controllerEnabled)
         container.addView(info)
         container.addView(stateText)
-        container.addView(pad, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 460))
+        val padHeight = (resources.displayMetrics.heightPixels * .52f).toInt().coerceIn(260, 520)
+        container.addView(pad, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, padHeight))
         dialog.setContentView(container)
         dialog.setTitle("Controller test")
         dialog.setOnDismissListener {
@@ -173,10 +179,10 @@ class MainActivity : Activity() {
     private fun showSettings() {
         val current = LauncherSettings.load(this)
         val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(36, 12, 36, 8) }
-        fun slider(label: String, value: Int): SeekBar {
+        fun slider(label: String, value: Int, max: Int = 100): SeekBar {
             val labelView = TextView(this).apply { text = "$label: $value%"; textSize = 16f }
             panel.addView(labelView)
-            val bar = SeekBar(this).apply { max = 100; progress = value }
+            val bar = SeekBar(this).apply { this.max = max; progress = value.coerceIn(0, max) }
             panel.addView(bar)
             bar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) { labelView.text = "$label: $progress%" }
@@ -189,6 +195,13 @@ class MainActivity : Activity() {
         val master = slider("Master volume", current.masterVolume)
         val music = slider("Music volume", current.musicVolume)
         val sfx = slider("SFX volume", current.sfxVolume)
+        val controllerScale = slider("Controller size (%)", current.controllerScale, 150)
+        val controllerOpacity = slider("Controller opacity (%)", current.controllerOpacity)
+        val controllerOffsetX = slider("Controller horizontal position (35–65)", current.controllerOffsetX)
+        val controllerOffsetY = slider("Controller vertical position (35–65)", current.controllerOffsetY)
+        val controllerEnabled = CheckBox(this).apply { text = "Show virtual controller"; isChecked = current.controllerEnabled }
+        val controllerHaptics = CheckBox(this).apply { text = "Touch haptics"; isChecked = current.controllerHaptics }
+        panel.addView(controllerEnabled); panel.addView(controllerHaptics)
         panel.addView(TextView(this).apply { text = "FPS cap target"; textSize = 16f })
         val fpsOptions = listOf("30 FPS (recommended minimum)", "45 FPS", "60 FPS")
         val fps = Spinner(this).apply {
@@ -210,7 +223,7 @@ class MainActivity : Activity() {
             .setPositiveButton("Save") { _, _ ->
                 val selectedFps = listOf(30, 45, 60)[fps.selectedItemPosition.coerceIn(0, 2)]
                 val selectedPreset = presetOptions[preset.selectedItemPosition.coerceIn(0, presetOptions.lastIndex)]
-                LauncherSettings.save(this, LauncherSettings(resolution.progress.coerceIn(50, 100), selectedFps, selectedPreset, master.progress, music.progress, sfx.progress))
+                LauncherSettings.save(this, LauncherSettings(resolutionScale = resolution.progress.coerceIn(50, 100), fpsTarget = selectedFps, graphicsPreset = selectedPreset, masterVolume = master.progress, musicVolume = music.progress, sfxVolume = sfx.progress, controllerScale = controllerScale.progress.coerceIn(65, 150), controllerOpacity = controllerOpacity.progress.coerceIn(15, 100), controllerOffsetX = controllerOffsetX.progress.coerceIn(35, 65), controllerOffsetY = controllerOffsetY.progress.coerceIn(35, 65), controllerEnabled = controllerEnabled.isChecked, controllerHaptics = controllerHaptics.isChecked))
                 Toast.makeText(this, "Settings saved (runtime application pending).", Toast.LENGTH_SHORT).show()
             }.show()
     }
