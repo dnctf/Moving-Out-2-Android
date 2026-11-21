@@ -50,7 +50,7 @@ class PhysicalGamepadManager(
     fun handleMotion(event: MotionEvent): ControllerState? {
         val translator = translators[event.deviceId] ?: return null
         val next = translator.onMotion(event) ?: return null
-        states[event.deviceId] = next
+        stateStore.update(event.deviceId, next)
         return emit()
     }
 
