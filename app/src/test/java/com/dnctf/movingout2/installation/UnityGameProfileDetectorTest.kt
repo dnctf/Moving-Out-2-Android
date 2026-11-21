@@ -10,7 +10,7 @@ class UnityGameProfileDetectorTest {
     }
 
     @Test fun metadataVersionRequiresMagicAndReadsLittleEndian() {
-        val valid = byteArrayOf(0xaf.toByte(), 0x1b, 0xb1.toByte(), 0xfa.toByte(), 0x29, 0, 0, 0)
+        val valid = byteArrayOf(0xaf.toByte(), 0x1b.toByte(), 0xb1.toByte(), 0xfa.toByte(), 0x29.toByte(), 0.toByte(), 0.toByte(), 0.toByte())
         assertEquals(41, UnityGameProfileDetector.detectMetadataVersion(valid))
         assertNull(UnityGameProfileDetector.detectMetadataVersion(byteArrayOf(0, 1, 2, 3, 41, 0, 0, 0)))
     }
