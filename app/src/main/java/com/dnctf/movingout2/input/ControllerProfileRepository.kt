@@ -49,7 +49,7 @@ data class ControllerProfile(
         val r = PhysicalGamepadNormalizer.normalizeStick(axis("RIGHT_X", state.rightX), axis("RIGHT_Y", state.rightY), deadzone)
         val lt = (axis("LEFT_TRIGGER", state.leftTrigger) * sensitivity).coerceIn(0f, 1f)
         val rt = (axis("RIGHT_TRIGGER", state.rightTrigger) * sensitivity).coerceIn(0f, 1f)
-        return ControllerState(buttons, l.x * sensitivity, l.y * sensitivity, r.x * sensitivity, r.y * sensitivity, lt, rt)
+        return ControllerState(buttons, (l.x * sensitivity).coerceIn(-1f, 1f), (l.y * sensitivity).coerceIn(-1f, 1f), (r.x * sensitivity).coerceIn(-1f, 1f), (r.y * sensitivity).coerceIn(-1f, 1f), lt, rt)
     }
 
     companion object {
