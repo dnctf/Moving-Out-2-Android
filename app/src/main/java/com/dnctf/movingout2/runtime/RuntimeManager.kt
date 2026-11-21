@@ -16,7 +16,7 @@ class RuntimeManager(
     @Volatile var state: RuntimeState = RuntimeState.NOT_INSTALLED
         private set
     @Volatile private var activeProcess: ProcessResult? = null
-    @Volatile private var activeCleanupGuard: AtomicBoolean? = null
+    @Volatile private var activeCleanupGuard: RuntimeCleanupGuard? = null
 
     fun diagnostics(): RuntimeDiagnostics = diagnostics
     fun bundleReport(): RuntimeBundleReport? = bundleRoot?.let(bundleValidator::validate)
@@ -73,7 +73,7 @@ class RuntimeManager(
                 return try {
                     val running = launcher.launch(prepared.plan)
                     activeProcess = running
-                    val cleanupGuard = AtomicBoolean(false)
+                    val cleanupGuard = RuntimeCleanupGuard()
                     activeCleanupGuard = cleanupGuard
                     state = RuntimeStateTransitions.transition(state, RuntimeState.RUNNING)
                     Thread({
@@ -87,7 +87,7 @@ class RuntimeManager(
                                 else -> state
                             }
                             if (next != state) state = RuntimeStateTransitions.transition(state, next)
-                            if (cleanupGuard.compareAndSet(false, true)) launcher.stop(running, 0)
+                            cleanupGuard.runOnce { launcher.stop(running, 0) }
                             diagnostics.record(RuntimeDiagnostic(
                                 if (state == RuntimeState.STOPPED) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.WARNING,
                                 "runtime",
@@ -118,8 +118,8 @@ class RuntimeManager(
         if (state == RuntimeState.RUNNING) state = RuntimeStateTransitions.transition(state, RuntimeState.STOPPING)
         else if (state != RuntimeState.STOPPING) return false
         val launcher = wineLauncher
-        val guard = activeCleanupGuard ?: AtomicBoolean(false)
-        if (guard.compareAndSet(false, true)) runCatching { launcher?.stop(process, 1000) } else runCatching { process.stop(1000) }
+        val guard = activeCleanupGuard ?: RuntimeCleanupGuard()
+        if (!guard.runOnce { runCatching { launcher?.stop(process, 1000) }.getOrThrow() }) runCatching { process.stop(1000) }
         activeProcess = null
         activeCleanupGuard = null
         if (state == RuntimeState.STOPPING) state = RuntimeStateTransitions.transition(state, RuntimeState.STOPPED)
@@ -150,4 +150,15 @@ class RuntimeManager(
 internal fun runtimeBundleRootsMatch(managerRoot: File?, launcherRoot: File?): Boolean {
     if (managerRoot == null || launcherRoot == null) return false
     return runCatching { managerRoot.canonicalFile == launcherRoot.canonicalFile }.getOrDefault(false)
+}
+
+/** Per-session cleanup gate shared by manual stop and the process watchdog. */
+internal class RuntimeCleanupGuard {
+    private val completed = AtomicBoolean(false)
+    fun runOnce(cleanup: () -> Unit): Boolean {
+        if (!completed.compareAndSet(false, true)) return false
+        cleanup()
+        return true
+    }
+    fun isCompleted() = completed.get()
 }
