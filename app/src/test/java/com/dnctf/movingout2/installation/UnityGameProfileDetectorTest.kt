@@ -22,7 +22,7 @@ class UnityGameProfileDetectorTest {
         pe[64] = 'P'.code.toByte(); pe[65] = 'E'.code.toByte()
         pe[68] = 0x64.toByte(); pe[69] = 0x86.toByte()
         pe[84] = 224.toByte(); pe[85] = 0.toByte()
-        pe[88] = 0x0b.toByte(); pe[89] = 0x02.toByte
+        pe[88] = 0x0b.toByte(); pe[89] = 0x02.toByte()
         assertEquals("x86_64", UnityGameProfileDetector.detectPeArchitecture(pe))
         assertNull(UnityGameProfileDetector.detectPeArchitecture(byteArrayOf(1, 2, 3))
         )
