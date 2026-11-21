@@ -2,72 +2,161 @@ package com.dnctf.movingout2
 
 import com.dnctf.movingout2.installation.InstallationStatus
 import com.dnctf.movingout2.installation.InstallationValidator
+import com.dnctf.movingout2.installation.ValidationStage
 import java.io.File
 import java.nio.file.Files
 import org.junit.Assert.*
 import org.junit.Test
 
 class InstallationValidatorTest {
+    private fun peFixture(machine: Int = 0x8664, optionalMagic: Int = 0x20b): ByteArray {
+        val pe = ByteArray(512)
+        pe[0] = 'M'.code.toByte(); pe[1] = 'Z'.code.toByte()
+        pe[0x3c] = 64
+        pe[64] = 'P'.code.toByte(); pe[65] = 'E'.code.toByte()
+        pe[68] = (machine and 0xff).toByte(); pe[69] = ((machine ushr 8) and 0xff).toByte()
+        // COFF SizeOfOptionalHeader and PE32/PE32+ magic
+        pe[84] = 224; pe[85] = 0
+        pe[88] = (optionalMagic and 0xff).toByte(); pe[89] = ((optionalMagic ushr 8) and 0xff).toByte()
+        return pe
+    }
+
     private fun fixture(): File {
         val root = Files.createTempDirectory("mo2-fixture").toFile()
-        val pe = ByteArray(512)
-        pe[0] = 0x4d; pe[1] = 0x5a
-        pe[0x3c] = 64
-        pe[64] = 0x50; pe[65] = 0x45
-        pe[68] = 0x64.toByte(); pe[69] = 0x86.toByte()
+        val pe = peFixture()
         listOf("GameAssembly.dll", "UnityPlayer.dll", "baselib.dll").forEach { File(root, it).writeBytes(pe) }
         File(root, "mo2.exe").writeBytes(pe)
         val metadata = File(root, "MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat")
         metadata.parentFile?.mkdirs()
-        metadata.writeBytes(byteArrayOf(0xAF.toByte(), 0x1B, 0xB1.toByte(), 0xFA.toByte(), 0x29, 0, 0, 0))
+        metadata.writeBytes(byteArrayOf(0xaf.toByte(), 0x1b, 0xb1.toByte(), 0xfa.toByte(), 29, 0, 0, 0))
         return root
     }
-    @Test fun validX64InstallationIsDetected() {
+
+    @Test fun validX64FilesAreDetectedButRuntimeIsNeverImplied() {
         val root = fixture()
         val report = InstallationValidator().validate(root)
         assertEquals(InstallationStatus.VALID, report.status)
         assertEquals("x86_64", report.detectedArchitecture)
+        assertEquals(29, report.metadataVersion)
         assertEquals("RUNTIME_NOT_INSTALLED", report.runtimeStatus)
         assertFalse(report.isReadyForRuntime)
+        assertFalse(report.stages.first { it.stage == ValidationStage.LAUNCH_READINESS }.passed)
         root.deleteRecursively()
     }
-    @Test fun missingCoreFilesAreReported() {
-        val root = fixture(); File(root, "GameAssembly.dll").delete()
+
+    @Test fun missingRequiredFilesAreReported() {
+        val root = fixture()
+        listOf("GameAssembly.dll", "mo2.exe", "MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat").forEach { path ->
+            File(root, path).delete()
+        }
         val report = InstallationValidator().validate(root)
         assertEquals(InstallationStatus.INCOMPLETE, report.status)
         assertTrue(report.missingFiles.any { it.contains("GameAssembly.dll") })
+        assertTrue(report.missingFiles.any { it.contains("mo2.exe") })
+        assertTrue(report.missingFiles.any { it.contains("global-metadata.dat") })
+        assertFalse(report.stages.last().passed)
         root.deleteRecursively()
     }
-    @Test fun zeroByteCoreFileIsReported() {
-        val root = fixture(); File(root, "baselib.dll").writeBytes(byteArrayOf())
+
+    @Test fun zeroByteRequiredFileIsBlocked() {
+        val root = fixture()
+        File(root, "baselib.dll").writeBytes(byteArrayOf())
         val report = InstallationValidator().validate(root)
         assertTrue(report.accessErrors.any { it.contains("0 bytes") })
-        assertEquals(InstallationStatus.INCOMPLETE, report.status); root.deleteRecursively()
+        assertEquals(InstallationStatus.INCOMPLETE, report.status)
+        assertFalse(report.stages.last().passed)
+        root.deleteRecursively()
     }
-    @Test fun missingMetadataDirectoryIsReported() {
-        val root = fixture(); File(root, "MovingOut2_Data").deleteRecursively()
+
+    @Test fun missingMetadataStructureIsBlocked() {
+        val root = fixture()
+        File(root, "MovingOut2_Data").deleteRecursively()
         val report = InstallationValidator().validate(root)
         assertTrue(report.missingFiles.any { it.contains("global-metadata.dat") })
-        assertFalse(report.stages.first { it.stage.name == "STRUCTURE" }.passed); root.deleteRecursively()
+        assertFalse(report.stages.first { it.stage == ValidationStage.STRUCTURE }.passed)
+        assertEquals(InstallationStatus.INCOMPLETE, report.status)
+        root.deleteRecursively()
     }
-    @Test fun revokedSafPermissionIsReported() {
-        val root = fixture(); val report = InstallationValidator().validate(root, persistablePermission = false)
+
+    @Test fun revokedSafPermissionBlocksFolderAccessAndReadiness() {
+        val root = fixture()
+        val report = InstallationValidator().validate(root, persistablePermission = false)
         assertEquals(InstallationStatus.ACCESS_ERROR, report.status)
-        assertTrue(report.accessErrors.any { it.contains("SAF") }); root.deleteRecursively()
+        assertTrue(report.accessErrors.any { it.contains("SAF") })
+        assertFalse(report.stages.first { it.stage == ValidationStage.FOLDER_ACCESS }.passed)
+        assertFalse(report.stages.last().passed)
+        root.deleteRecursively()
     }
-    @Test fun invalidPeHeaderIsRejected() {
-        val root = fixture(); File(root, "mo2.exe").writeBytes(byteArrayOf(0, 1, 2, 3))
+
+    @Test fun invalidOrTruncatedPeHeaderIsRejectedWithoutCrash() {
+        val root = fixture()
+        File(root, "mo2.exe").writeBytes(byteArrayOf(0, 1, 2, 3))
         val report = InstallationValidator().validate(root)
-        assertNull(report.detectedArchitecture); assertEquals(InstallationStatus.INVALID_STRUCTURE, report.status); root.deleteRecursively()
+        assertNull(report.detectedArchitecture)
+        assertEquals(InstallationStatus.INVALID_STRUCTURE, report.status)
+        assertFalse(report.stages.first { it.stage == ValidationStage.VERSION_ARCH }.passed
+        )
+        root.deleteRecursively()
     }
-    @Test fun pathLookupIsCaseInsensitive() {
-        val root = fixture(); File(root, "GameAssembly.dll").renameTo(File(root, "gameassembly.DLL"))
-        assertEquals(InstallationStatus.VALID, InstallationValidator().validate(root).status); root.deleteRecursively()
+
+    @Test fun x86Pe32ExecutableIsRejected() {
+        val root = fixture()
+        File(root, "mo2.exe").writeBytes(peFixture(machine = 0x14c, optionalMagic = 0x10b))
+        val report = InstallationValidator().validate(root)
+        assertEquals("x86", report.detectedArchitecture)
+        assertEquals(InstallationStatus.INVALID_STRUCTURE, report.status)
+        assertFalse(report.stages.first { it.stage == ValidationStage.VERSION_ARCH }.passed)
+        root.deleteRecursively()
     }
-    @Test fun corruptPeDllIsRejected() {
-        val root = fixture(); File(root, "baselib.dll").writeBytes(byteArrayOf(1, 2, 3, 4))
+
+    @Test fun caseInsensitiveLookupSupportsUnityMetadataPath() {
+        val root = fixture()
+        File(root, "GameAssembly.dll").renameTo(File(root, "gameassembly.DLL"))
+        val data = File(root, "MovingOut2_Data")
+        val lowerData = File(root, "movingout2_data")
+        assertTrue(data.renameTo(lowerData))
+        val il2cpp = File(lowerData, "il2cpp_data")
+        val lowerIl2cpp = File(lowerData, "IL2CPP_DATA")
+        assertTrue(il2cpp.renameTo(lowerIl2cpp))
+        val metadata = File(lowerIl2cpp, "Metadata")
+        val upperMetadata = File(lowerIl2cpp, "METADATA")
+        assertTrue(metadata.renameTo(upperMetadata))
+        val file = File(upperMetadata, "global-metadata.dat")
+        assertTrue(file.renameTo(File(upperMetadata, "GLOBAL-METADATA.DAT")))
+        assertEquals(InstallationStatus.VALID, InstallationValidator().validate(root).status)
+        root.deleteRecursively()
+    }
+
+    @Test fun symlinkEscapingSelectedRootIsBlocked() {
+        val root = fixture()
+        val outside = Files.createTempFile("outside-game-file", ".dll")
+        Files.write(outside, peFixture())
+        File(root, "GameAssembly.dll").delete()
+        Files.createSymbolicLink(File(root, "GameAssembly.dll").toPath(), outside)
+        val report = InstallationValidator().validate(root)
+        assertEquals(InstallationStatus.INCOMPLETE, report.status)
+        assertTrue(report.accessErrors.any { it.contains("escapes selected game root") })
+        assertFalse(report.stages.last().passed)
+        root.deleteRecursively()
+        Files.deleteIfExists(outside)
+    }
+
+    @Test fun invalidMetadataMagicBlocksValidation() {
+        val root = fixture()
+        File(root, "MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat")
+            .writeBytes(byteArrayOf(1, 2, 3, 4, 29, 0, 0, 0))
         val report = InstallationValidator().validate(root)
         assertEquals(InstallationStatus.INVALID_STRUCTURE, report.status)
-        assertFalse(report.stages.first { it.stage.name == "VERSION_ARCH" }.passed); root.deleteRecursively()
+        assertNull(report.metadataVersion)
+        assertFalse(report.stages.last().passed)
+        root.deleteRecursively()
+    }
+
+    @Test fun compatibilityStageCannotPassWithoutDeviceAssessment() {
+        val root = fixture()
+        val report = InstallationValidator().validate(root)
+        assertFalse(report.stages.first { it.stage == ValidationStage.COMPATIBILITY }.passed)
+        assertTrue(report.stages.first { it.stage == ValidationStage.COMPATIBILITY }.details.any { it.contains("not provided") })
+        root.deleteRecursively()
     }
 }
