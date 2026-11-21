@@ -9,6 +9,7 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.util.Locale
 import java.util.zip.ZipFile
+import com.dnctf.movingout2.core.logging.ImportDiagnosticJournal
 
 data class ImportProgress(val phase: String, val entriesDone: Int, val totalEntries: Int, val bytesDone: Long, val totalBytes: Long) {
     val percent: Int get() = if (totalBytes > 0) ((bytesDone * 100L) / totalBytes).toInt().coerceIn(0, 100) else if (totalEntries > 0) ((entriesDone * 100) / totalEntries).coerceIn(0, 100) else 0
@@ -22,12 +23,20 @@ class GameZipImporter(
     private val storageReserveBytes: Long = 1_610_612_736L
 ) {
     private val resolver = context.contentResolver
+    private val appContext = context.applicationContext
     private val root = File(context.filesDir, "game_import")
     private val staging = File(context.filesDir, "game_import_staging")
     private val backup = File(context.filesDir, "game_import_backup")
     private val sourceZip = File(context.cacheDir, "game_import_preflight.zip")
 
     fun importZip(uri: Uri, cancelled: () -> Boolean = { false }, onProgress: (ImportProgress) -> Unit = {}): GameZipImportResult {
+        val journal = ImportDiagnosticJournal(File(resolverContextFilesDir(), "diagnostics"))
+        val archiveName = uri.lastPathSegment
+        var entryCount = 0
+        var extractedBytes = 0L
+        val storagePath = root.parentFile?.absolutePath ?: throw IOException("Private storage unavailable.")
+        val spaceBefore = runCatching { StatFs(storagePath).availableBytes }.getOrNull()
+        journal.checkpoint("GAME_ZIP", archiveName, stage="IMPORT_START", availableBytesBefore=spaceBefore)
         val parent = root.parentFile ?: throw IOException("Private storage unavailable.")
         if (!parent.mkdirs() && !parent.isDirectory) throw IOException("Cannot create private app storage.")
         recoverPreviousImport()
@@ -36,6 +45,8 @@ class GameZipImporter(
             ZipFile(sourceZip).use { zip ->
                 val entries = zip.entries().asSequence().toList()
                 if (entries.isEmpty()) throw IOException("ZIP is empty.")
+                entryCount = entries.size
+                journal.checkpoint("GAME_ZIP", archiveName, sourceZip.length(), entryCount, stage="PREFLIGHT_COMPLETE", availableBytesBefore=spaceBefore)
                 if (entries.size > maxEntries) throw IOException("ZIP has too many entries.")
                 val names = ZipEntryPathRegistry()
                 var totalBytes = 0L
@@ -87,22 +98,29 @@ class GameZipImporter(
                     onProgress(ImportProgress("Extracting", entriesDone, normalized.size, bytesWritten, totalBytes))
                 }
                 val candidate = File(staging, candidateRootPrefix).canonicalFile
+                extractedBytes = bytesWritten
+                journal.checkpoint("GAME_ZIP", archiveName, sourceZip.length(), entryCount, bytesWritten, spaceBefore, runCatching { StatFs(storagePath).availableBytes }.getOrNull(), stage="STAGING_VALIDATION")
                 val validation = InstallationValidator().validate(candidate)
                 if (validation.status != InstallationStatus.VALID) throw IOException("Staging validation failed: missing=${validation.missingFiles.joinToString()}, errors=${validation.accessErrors.joinToString()}")
                 activateWithRollback(candidateRootPrefix)
                 val active = findGameRoot(root) ?: throw IOException("Activated game root could not be resolved.")
                 backup.deleteRecursively()
+                journal.checkpoint("GAME_ZIP", archiveName, sourceZip.length(), entryCount, bytesWritten, spaceBefore, runCatching { StatFs(storagePath).availableBytes }.getOrNull(), stage="ACTIVATED", activationStatus="SUCCESS", rollbackStatus="NOT_REQUIRED")
                 onProgress(ImportProgress("Complete", normalized.size, normalized.size, bytesWritten, totalBytes))
                 return GameZipImportResult(entriesDone, bytesWritten, active)
             }
         } catch (e: Exception) {
             staging.deleteRecursively()
-            rollbackActivation()
+            val rollback = runCatching { rollbackActivation() }
+            journal.checkpoint("GAME_ZIP", archiveName, sourceZip.length().takeIf { sourceZip.exists() }, entryCount, extractedBytes, spaceBefore, runCatching { StatFs(storagePath).availableBytes }.getOrNull(), stage="IMPORT_FAILED", activationStatus="FAILED", rollbackStatus=if (rollback.isSuccess) "ROLLBACK_COMPLETED" else "ROLLBACK_FAILED", error=rollback.exceptionOrNull() ?: e)
+            if (rollback.isFailure) throw IOException("Import failed and rollback failed.", rollback.exceptionOrNull())
             throw e
         } finally {
             sourceZip.delete()
         }
     }
+
+    private fun resolverContextFilesDir() = appContext.filesDir
 
     private fun copyUriToPreflight(uri: Uri, cancelled: () -> Boolean) {
         sourceZip.delete()
