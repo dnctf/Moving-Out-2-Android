@@ -391,6 +391,17 @@ class MainActivity : Activity() {
             report.stageSummary.forEach { append(it).append('\n') }
             if (report.missing.isNotEmpty()) append("\nMissing:\n- ").append(report.missing.joinToString("\n- "))
             if (report.accessErrors.isNotEmpty()) append("\nAccess errors:\n- ").append(report.accessErrors.joinToString("\n- "))
+            if (report.staticImports.isNotEmpty()) {
+                append("\n\nPE static imports:")
+                report.staticImports.toSortedMap().forEach { (file, imports) ->
+                    append("\n").append(file).append(": ")
+                    append(if (imports.isEmpty()) "no import directory / no imports" else imports.sorted().joinToString(", "))
+                }
+            }
+            if (report.importErrors.isNotEmpty()) {
+                append("\nPE import analysis notes:")
+                report.importErrors.toSortedMap().forEach { (file, notes) -> append("\n").append(file).append(": ").append(notes.joinToString("; ")) }
+            }
             append("\n\nRuntime: RUNTIME_NOT_INSTALLED")
         }
 }
