@@ -122,7 +122,7 @@ class WineRuntimeLauncher(
         } catch (error: Exception) {
             runRuntimeCleanupSequence(
                 neutralize = { neutralizeInputBridge() },
-                stopProcess = {},
+                stopProcess = { true },
                 destroyBridge = { destroyInputBridge() },
                 stopServer = { stopWineserver() }
             )
