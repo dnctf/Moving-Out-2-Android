@@ -57,12 +57,14 @@ static BOOL read_slot(DWORD user,Slot*out){
  if(user>=4||!init_mapping()||!view)return FALSE;
  const volatile BYTE *p=(const volatile BYTE*)&view->slots[user];
  for(int tries=0;tries<1000;tries++){
-  LONG a=InterlockedCompareExchange((volatile LONG*)p,0,0); if(a&1)continue;
-  BYTE b[24]; for(int i=4;i<24;i++)b[i]=p[i]; MemoryBarrier();
-  LONG z=InterlockedCompareExchange((volatile LONG*)p,0,0);
-  if(a!=z||(z&1)) continue;
+  /* InterlockedCompareExchange is a read-modify-write and faults on FILE_MAP_READ.
+     Use atomic loads only; the mapped protocol is intentionally read-only here. */
+  uint32_t a=mo2x_seq_load((const volatile uint32_t*)p); if(a&1u)continue;
+  BYTE b[24]={0}; for(int i=4;i<24;i++)b[i]=p[i]; mo2x_read_fence();
+  uint32_t z=mo2x_seq_load((const volatile uint32_t*)p);
+  if(a!=z||(z&1u)) continue;
   memcpy(out,b,24);
-  out->seq=(uint32_t)z;
+  out->seq=z;
   return out->connected!=0;
  }
  return FALSE;
