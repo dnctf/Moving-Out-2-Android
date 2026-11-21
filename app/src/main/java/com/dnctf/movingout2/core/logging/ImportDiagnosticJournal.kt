@@ -4,12 +4,16 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /** Bounded persistent import telemetry. */
 class ImportDiagnosticJournal(private val diagnosticsDirectory: File, private val maxEntries: Int = 10) {
     init { require(maxEntries > 0) }
     private val journalFile = File(diagnosticsDirectory, "import-diagnostic-journal.json")
     private val errorsFile = File(diagnosticsDirectory, "last-import-errors.log")
+    private val temporaryJournalFile = File(diagnosticsDirectory, "import-diagnostic-journal.json.tmp")
+    private val maxErrorLogBytes = 256 * 1024
 
     @Synchronized
     fun checkpoint(type: String, archiveName: String?, archiveBytes: Long? = null, entryCount: Int? = null,
@@ -26,8 +30,20 @@ class ImportDiagnosticJournal(private val diagnosticsDirectory: File, private va
         entries.put(record)
         val bounded = JSONArray()
         for (i in maxOf(0, entries.length() - maxEntries) until entries.length()) bounded.put(entries.getJSONObject(i))
-        journalFile.writeText(bounded.toString(2))
-        if (error != null) errorsFile.appendText("\n--- ${System.currentTimeMillis()} $type $stage ---\n${error.stackTraceToString()}\n")
+        temporaryJournalFile.writeText(bounded.toString(2))
+        runCatching {
+            Files.move(temporaryJournalFile.toPath(), journalFile.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        }.getOrElse {
+            Files.move(temporaryJournalFile.toPath(), journalFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
+        if (error != null) appendBoundedErrorLog("\n--- ${System.currentTimeMillis()} $type $stage ---\n${error.stackTraceToString()}\n")
+    }
+    private fun appendBoundedErrorLog(text: String) {
+        errorsFile.appendText(text)
+        if (errorsFile.length() > maxErrorLogBytes) {
+            val tail = errorsFile.readText().takeLast(maxErrorLogBytes)
+            errorsFile.writeText(tail)
+        }
     }
     fun journalFile() = journalFile
     fun errorsFile() = errorsFile

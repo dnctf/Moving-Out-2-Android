@@ -35,3 +35,16 @@ class ImportDiagnosticJournalTest {
         root.deleteRecursively()
     }
 }
+
+    @Test fun errorLogRemainsBoundedAfterRepeatedLargeErrors() {
+        val root = Files.createTempDirectory("bounded-import-errors").toFile()
+        val journal = ImportDiagnosticJournal(root)
+        val largeError = IllegalStateException("x".repeat(40_000))
+        repeat(12) {
+            journal.checkpoint("RUNTIME_BUNDLE", "runtime", stage="FAILED", error=largeError)
+        }
+        val file = File(root, "last-import-errors.log")
+        assertTrue(file.length() <= 256L * 1024L)
+        assertTrue(file.readText().contains("RUNTIME_BUNDLE"))
+        root.deleteRecursively()
+    }
