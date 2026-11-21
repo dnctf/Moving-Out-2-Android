@@ -63,7 +63,13 @@ class RuntimeManager(
 
         if (state == RuntimeState.NOT_INSTALLED) state = RuntimeStateTransitions.transition(state, RuntimeState.READY)
         state = RuntimeStateTransitions.transition(state, RuntimeState.STARTING)
-        when (val prepared = launcher.prepare(gameExe, options)) {
+        val prepared = safeRuntimePreparation { launcher.prepare(gameExe, options) }
+        if (prepared is LaunchPreparationResult.MissingPayload && prepared.blockers.any { it.startsWith("Launch preparation failed:") }) {
+            state = RuntimeStateTransitions.transition(state, RuntimeState.FAILED)
+            prepared.blockers.forEach { diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime", it)) }
+            return prepared
+        }
+        when (prepared) {
             is LaunchPreparationResult.MissingPayload -> {
                 state = RuntimeStateTransitions.transition(state, RuntimeState.FAILED)
                 prepared.blockers.forEach { diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime", it)) }
@@ -171,3 +177,10 @@ internal class RuntimeCleanupGuard {
 
 /** Session identity check prevents an old watchdog from mutating a newer launch. */
 internal fun <T : Any> isRuntimeSessionCurrent(activeProcess: T?, activeGuard: RuntimeCleanupGuard?, expectedProcess: T, expectedGuard: RuntimeCleanupGuard): Boolean = activeProcess === expectedProcess && activeGuard === expectedGuard
+
+/** Converts unexpected preparation exceptions into fail-closed launch results. */
+internal fun safeRuntimePreparation(prepare: () -> LaunchPreparationResult): LaunchPreparationResult = try {
+    prepare()
+} catch (error: Exception) {
+    LaunchPreparationResult.MissingPayload(listOf("Launch preparation failed: ${error.message ?: error.javaClass.simpleName}"))
+}
