@@ -41,7 +41,7 @@ class GameBinaryAnalyzerTest {
     }
     @Test fun unterminatedImportNameIsRejected() {
         val bytes = peWithImport(dll="xinput.dll")
-        bytes.fill(65, 0x250, 0x250+4097.coerceAtMost(bytes.size-0x250))
+        bytes.fill(65.toByte(), 0x250, 0x250+4097.coerceAtMost(bytes.size-0x250))
         val result = GameBinaryAnalyzer.analyze(bytes)
         assertTrue(result.errors.isNotEmpty())
     }
