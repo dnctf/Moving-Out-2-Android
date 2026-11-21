@@ -54,12 +54,7 @@ class GamepadTranslator(private val deadzone: Float = 0.18f) {
         device?.getMotionRange(axis) != null
 
     private fun normalizeTrigger(raw: Float, range: InputDevice.MotionRange?): Float {
-        if (!raw.isFinite()) return 0f
-        if (range != null && range.max > range.min) {
-            val normalized = if (range.min < 0f) (raw - range.min) / (range.max - range.min)
-                else raw / range.max
-            return normalized.coerceIn(0f, 1f)
-        }
+        if (range != null) return PhysicalGamepadNormalizer.normalizeTriggerInRange(raw, range.min, range.max)
         return PhysicalGamepadNormalizer.normalizeTrigger(raw)
     }
 
