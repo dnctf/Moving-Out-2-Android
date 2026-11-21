@@ -73,12 +73,12 @@ class VirtualControllerView(context: Context, private val onState: (ControllerSt
         buttonRects[ControllerButton.A] = rect(faceCenter.first, faceCenter.second + fOffset, fr)
         buttonRects[ControllerButton.X] = rect(faceCenter.first - fOffset, faceCenter.second, fr)
         buttonRects[ControllerButton.B] = rect(faceCenter.first + fOffset, faceCenter.second, fr)
-        buttonRects[ControllerButton.LB] = rect(w * .18f + ox, h * .10f + oy, u * .82f, u * .30f)
-        buttonRects[ControllerButton.RB] = rect(w * .82f + ox, h * .10f + oy, u * .82f, u * .30f)
+        buttonRects[ControllerButton.LB] = rect(w * .18f + ox, h * .10f + oy, u * .55f, u * .30f)
+        buttonRects[ControllerButton.RB] = rect(w * .82f + ox, h * .10f + oy, u * .55f, u * .30f)
         buttonRects[ControllerButton.BACK] = rect(w * .45f + ox, h * .12f + oy, u * .50f, u * .22f)
         buttonRects[ControllerButton.START] = rect(w * .55f + ox, h * .12f + oy, u * .50f, u * .22f)
-        triggerRects[false] = rect(w * .30f + ox, h * .10f + oy, u * .60f, u * .30f)
-        triggerRects[true] = rect(w * .70f + ox, h * .10f + oy, u * .60f, u * .30f)
+        triggerRects[false] = rect(w * .30f + ox, h * .10f + oy, u * .25f, u * .30f)
+        triggerRects[true] = rect(w * .70f + ox, h * .10f + oy, u * .25f, u * .30f)
     }
     private fun rect(cx: Float, cy: Float, radius: Float): RectF = RectF(cx-radius, cy-radius, cx+radius, cy+radius)
     private fun rect(cx: Float, cy: Float, halfWidth: Float, halfHeight: Float): RectF = RectF(cx-halfWidth, cy-halfHeight, cx+halfWidth, cy+halfHeight)
@@ -111,14 +111,14 @@ class VirtualControllerView(context: Context, private val onState: (ControllerSt
         val knobRadius = stickRadius * .28f
         val knob = RectF(center.first+x*stickRadius*.68f-knobRadius, center.second+y*stickRadius*.68f-knobRadius,
             center.first+x*stickRadius*.68f+knobRadius, center.second+y*stickRadius*.68f+knobRadius)
-        paint.color = 0xAAFFFFFF.toInt(); canvas.drawOval(knob, paint)
+        paint.color = ((alpha * .7f).toInt().coerceIn(0,255) shl 24) or 0xFFFFFF; canvas.drawOval(knob, paint)
         paint.color = (alpha shl 24) or 0xFFFFFF; paint.textSize = knobRadius*.85f; paint.textAlign = Paint.Align.CENTER
         canvas.drawText(if (right) "R" else "L", center.first, center.second+stickRadius*1.45f, paint)
     }
     private fun drawButton(canvas: Canvas, r: RectF, label: String, down: Boolean, alpha: Int, textSize: Float) {
         paint.color = if (down) 0xCCFFFFFF.toInt() else (alpha shl 24) or 0xFFFFFF
         canvas.drawRoundRect(r, r.height()*.25f, r.height()*.25f, paint)
-        paint.color = if (down) 0xFF222222.toInt() else 0xCCFFFFFF.toInt()
+        paint.color = if (down) 0xFF222222.toInt() else (alpha shl 24) or 0xFFFFFF
         paint.textSize = textSize; paint.textAlign = Paint.Align.CENTER
         canvas.drawText(label, r.centerX(), r.centerY()+paint.textSize*.34f, paint)
     }
