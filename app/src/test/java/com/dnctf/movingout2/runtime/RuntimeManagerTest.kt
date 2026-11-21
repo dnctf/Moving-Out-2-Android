@@ -58,10 +58,11 @@ class RuntimeManagerTest {
         File(root, "lib/lib.so").writeBytes(byteArrayOf(1))
         return root
     }
-}
-
     @Test fun unexpectedPreparationFailureIsConvertedIntoFailureResult() {
         val result = safeRuntimePreparation { throw IllegalStateException("simulated preparation crash") }
         assertTrue(result is LaunchPreparationResult.MissingPayload)
         assertTrue((result as LaunchPreparationResult.MissingPayload).blockers.single().contains("simulated preparation crash"))
     }
+
+}
+
