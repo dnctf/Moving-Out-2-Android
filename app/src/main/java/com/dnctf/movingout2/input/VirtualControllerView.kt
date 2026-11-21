@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.view.MotionEvent
+import android.view.HapticFeedbackConstants
 import android.view.View
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -23,6 +24,7 @@ class VirtualControllerView(context: Context, private val onState: (ControllerSt
     private var offsetX = 0f
     private var offsetY = 0f
     private var overlayVisible = true
+    private var hapticsEnabled = false
 
     fun configure(scale: Float = this.scale, opacity: Float = this.opacity, offsetX: Float = this.offsetX, offsetY: Float = this.offsetY) {
         this.scale = scale.takeIf { it.isFinite() }?.coerceIn(.65f, 1.5f) ?: 1f
@@ -37,6 +39,8 @@ class VirtualControllerView(context: Context, private val onState: (ControllerSt
         invalidate()
     }
     fun isOverlayVisible() = overlayVisible
+    fun setHapticsEnabled(enabled: Boolean) { hapticsEnabled = enabled }
+    private fun haptic() { if (hapticsEnabled) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY) }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -128,7 +132,7 @@ class VirtualControllerView(context: Context, private val onState: (ControllerSt
                 val trigger = triggerRects.entries.firstOrNull { it.value.contains(x,y) }
                 if (trigger != null) {
                     val right = trigger.key
-                    if (engine.claimTrigger(id, right)) engine.setTrigger(id, 1f, right)
+                    if (engine.claimTrigger(id, right)) { engine.setTrigger(id, 1f, right); haptic() }
                 } else {
                     val button = buttonRects.entries.firstOrNull { it.value.contains(x,y) }?.key
                     if (button != null) engine.claimButton(id, button)
