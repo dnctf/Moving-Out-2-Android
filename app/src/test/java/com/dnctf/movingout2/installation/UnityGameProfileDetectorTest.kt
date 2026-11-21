@@ -18,7 +18,7 @@ class UnityGameProfileDetectorTest {
     @Test fun detectsX64PeArchitecture() {
         val pe = ByteArray(512)
         pe[0] = 'M'.code.toByte(); pe[1] = 'Z'.code.toByte()
-        pe[0x3c] = 64
+        pe[0x3c] = 64.toByte()
         pe[64] = 'P'.code.toByte(); pe[65] = 'E'.code.toByte()
         pe[68] = 0x64.toByte(); pe[69] = 0x86.toByte()
         pe[84] = 224.toByte(); pe[85] = 0.toByte()
