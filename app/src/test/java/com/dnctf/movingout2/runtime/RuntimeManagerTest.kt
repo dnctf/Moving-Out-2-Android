@@ -76,6 +76,35 @@ class RuntimeManagerTest {
     }
 
 
+    @Test fun cleanupGuardConcurrentCallersExecuteCleanupAtMostOnce() {
+        val guard = RuntimeCleanupGuard()
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val calls = java.util.concurrent.atomic.AtomicInteger(0)
+        val firstResult = java.util.concurrent.atomic.AtomicReference<Boolean?>()
+        val secondResult = java.util.concurrent.atomic.AtomicReference<Boolean?>()
+        val first = Thread {
+            firstResult.set(guard.runOnce {
+                calls.incrementAndGet()
+                entered.countDown()
+                release.await()
+            })
+        }
+        first.start()
+        assertTrue("first cleanup should enter", entered.await(2, java.util.concurrent.TimeUnit.SECONDS))
+        val second = Thread { secondResult.set(guard.runOnce { calls.incrementAndGet() }) }
+        second.start()
+        second.join(2000)
+        assertFalse("contending caller should return without waiting for cleanup", second.isAlive)
+        assertEquals(false, secondResult.get())
+        release.countDown()
+        first.join(2000)
+        assertFalse("first cleanup should complete", first.isAlive)
+        assertEquals(true, firstResult.get())
+        assertEquals(1, calls.get())
+        assertTrue(guard.isCompleted())
+    }
+
     @Test fun cleanupFailureIsLoggedAndReportedAsUnsuccessful() {
         val diagnostics = RuntimeDiagnostics()
         val success = safeRuntimeCleanup("test-cleanup", diagnostics) { throw IllegalStateException("native teardown fault") }
