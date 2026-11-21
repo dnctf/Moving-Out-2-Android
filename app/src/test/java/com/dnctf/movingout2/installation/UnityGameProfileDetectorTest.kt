@@ -16,12 +16,15 @@ class UnityGameProfileDetectorTest {
     }
 
     @Test fun detectsX64PeArchitecture() {
-        val pe = ByteArray(128)
+        val pe = ByteArray(512)
         pe[0] = 'M'.code.toByte(); pe[1] = 'Z'.code.toByte()
         pe[0x3c] = 64
         pe[64] = 'P'.code.toByte(); pe[65] = 'E'.code.toByte()
         pe[68] = 0x64; pe[69] = 0x86.toByte()
+        pe[84] = 224; pe[85] = 0
+        pe[88] = 0x0b; pe[89] = 0x02
         assertEquals("x86_64", UnityGameProfileDetector.detectPeArchitecture(pe))
-        assertNull(UnityGameProfileDetector.detectPeArchitecture(byteArrayOf(1, 2, 3)))
+        assertNull(UnityGameProfileDetector.detectPeArchitecture(byteArrayOf(1, 2, 3))
+        )
     }
 }
