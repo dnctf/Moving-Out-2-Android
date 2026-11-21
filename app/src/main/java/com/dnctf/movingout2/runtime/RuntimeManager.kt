@@ -140,7 +140,7 @@ class RuntimeManager(
 
     @Synchronized fun stop(): Boolean {
         val process = activeProcess ?: return false
-        if (state == RuntimeState.RUNNING) state = RuntimeStateTransitions.transition(state, RuntimeState.STOPPING)
+        if (state == RuntimeState.RUNNING || state == RuntimeState.FAILED) state = RuntimeStateTransitions.transition(state, RuntimeState.STOPPING)
         else if (state != RuntimeState.STOPPING) return false
         val launcher = wineLauncher
         val guard = activeCleanupGuard ?: RuntimeCleanupGuard()
