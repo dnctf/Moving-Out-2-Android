@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include "xinput_shm_protocol.h"
 
 #define MO2X_MAGIC 0x4D4F3258u
 #define MO2X_VERSION 1u
