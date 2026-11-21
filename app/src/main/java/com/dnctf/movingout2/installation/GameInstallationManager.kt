@@ -4,24 +4,39 @@ import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 
-data class SafInstallationReport(val missing: List<String>, val accessErrors: List<String>, val stageSummary: List<String>, val detectedUnityVersion: String? = null, val metadataVersion: Int? = null, val architecture: String? = null) {
-    val isComplete: Boolean get() = missing.isEmpty() && accessErrors.isEmpty()
+data class SafInstallationReport(
+    val missing: List<String>,
+    val accessErrors: List<String>,
+    val stageSummary: List<String>,
+    val detectedUnityVersion: String? = null,
+    val metadataVersion: Int? = null,
+    val architecture: String? = null
+) {
+    val isComplete: Boolean get() = missing.isEmpty() && accessErrors.isEmpty() &&
+        architecture == "x86_64" && metadataVersion != null
 }
 
 class GameInstallationManager(private val context: Context) {
-    private val required = listOf("mo2.exe", "GameAssembly.dll", "UnityPlayer.dll", "baselib.dll",
-        "MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat")
+    private val required = listOf(
+        "mo2.exe", "GameAssembly.dll", "UnityPlayer.dll", "baselib.dll",
+        "MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat"
+    )
+    private val peFiles = required.dropLast(1)
 
     fun validate(uri: Uri): SafInstallationReport {
         val errors = mutableListOf<String>()
         val missing = mutableListOf<String>()
         val persisted = context.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
-        if (!persisted) errors += "Persistable SAF read permission is not held."
+        if (!persisted) errors += "Persistable SAF read permission is not held (permission may have been revoked)."
         val root = runCatching { DocumentFile.fromTreeUri(context, uri) }.getOrNull()
         if (root == null || !root.isDirectory || !root.canRead()) {
             errors += "Selected tree cannot be opened/read."
-            return SafInstallationReport(required, errors, listOf("Folder access: FAIL", "Core file detection: NOT RUN", "Structural validation: NOT RUN", "Version/architecture: NOT RUN", "Compatibility: NOT RUN", "Launch readiness: BLOCKED"))
+            return SafInstallationReport(required, errors, listOf(
+                "Folder access: FAIL", "Core file detection: NOT RUN", "Structural validation: NOT RUN",
+                "Version/architecture: NOT RUN", "Compatibility: NOT_ASSESSED", "Launch readiness: BLOCKED"
+            ))
         }
+
         val resolved = mutableMapOf<String, DocumentFile>()
         required.forEach { path ->
             val file = find(root, path)
@@ -33,25 +48,35 @@ class GameInstallationManager(private val context: Context) {
             }
         }
         val metadataDir = find(root, "MovingOut2_Data/il2cpp_data/Metadata")
-        val structural = metadataDir?.isDirectory == true
+        val metadataDirOk = metadataDir?.isDirectory == true && metadataDir.canRead()
+        val metadataBytes = resolved[required.last()]?.let { read(it, 8) }
+        val metadataVersion = metadataBytes?.let(UnityGameProfileDetector::detectMetadataVersion)
+        if (metadataDirOk.not()) missing.add("MovingOut2_Data/il2cpp_data/Metadata/")
+        if (metadataVersion == null && required.last() !in missing) errors += "IL2CPP global-metadata.dat header is invalid or truncated."
+
+        val peResults = peFiles.map { path ->
+            path to resolved[path]?.let { file -> read(file, 64 * 1024)?.let(UnityGameProfileDetector::detectPeArchitecture) }
+        }
+        val architecture = peResults.firstOrNull { it.first == "mo2.exe" }?.second
+        val allPeX64 = peResults.all { it.second == "x86_64" }
         val globalManagers = find(root, "MovingOut2_Data/globalgamemanagers")
         val unityVersion = globalManagers?.let { read(it, 256 * 1024) }?.let(UnityGameProfileDetector::detectUnityVersion)
-        val metadata = resolved[required.last()]?.let { read(it, 8) }?.let(UnityGameProfileDetector::detectMetadataVersion)
-        val architecture = resolved["mo2.exe"]?.let { read(it, 4096) }?.let(UnityGameProfileDetector::detectPeArchitecture)
         val corePass = missing.isEmpty() && errors.isEmpty()
-        val profilePass = architecture == "x86_64" && unityVersion != null && metadata != null
-        val launchFiles = corePass && structural && architecture == "x86_64"
-        return SafInstallationReport(missing.distinct(), errors.distinct(), listOf(
+        val structurePass = metadataDirOk
+        val versionPass = allPeX64 && metadataVersion != null
+        val stageSummary = listOf(
             "Folder access: ${if (persisted && root.canRead()) "PASS" else "FAIL"}",
-            "Core file detection: ${if (missing.isEmpty() && errors.isEmpty()) "PASS" else "INCOMPLETE"}",
-            "Structural validation: ${if (structural) "PASS" else "FAIL"}",
-            "Version/architecture: ${architecture ?: "not detected"}",
-            "Unity version: ${unityVersion ?: "not detected"}",
-            "IL2CPP metadata version: ${metadata ?: "not detected"}",
-            "Unity profile confidence: ${if (profilePass) "PARTIAL" else "LOW"} (file evidence only; compatibility not proven)",
-            "Compatibility: NOT YET ASSESSED",
-            "Launch readiness: ${if (launchFiles) "FILES_PRESENT; RUNTIME_NOT_INSTALLED" else "BLOCKED"}"
-        ), unityVersion, metadata, architecture)
+            "Core file detection: ${if (corePass) "PASS" else "INCOMPLETE"}",
+            "Structural validation: ${if (structurePass) "PASS" else "FAIL"}",
+            "Version/architecture: ${peResults.joinToString { "${it.first}=${it.second ?: "INVALID"}" }}; Unity: ${unityVersion ?: "not detected"}; IL2CPP: ${metadataVersion ?: "invalid/unknown"}",
+            "Compatibility: NOT_ASSESSED (device/GPU/runtime capabilities must be checked separately)",
+            "Launch readiness: BLOCKED (native runtime is not installed/validated)"
+        )
+        // Persisted SAF access, core files, structure, PE32+ x64, and IL2CPP header
+        // must all pass before reporting installation complete. Runtime is never implied.
+        if (!persisted) errors += "SAF permission revoked or not persisted."
+        if (!allPeX64) errors += "One or more required PE files are invalid or not x86_64 PE32+."
+        return SafInstallationReport(missing.distinct(), errors.distinct(), stageSummary, unityVersion, metadataVersion, architecture)
     }
 
     private fun read(file: DocumentFile, limit: Int): ByteArray? = runCatching {
