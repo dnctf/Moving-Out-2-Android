@@ -317,6 +317,25 @@ class MainActivity : Activity() {
             return
         }
         when (requestCode) {
+            pickControllerProfileImport -> runCatching {
+                val raw = contentResolver.openInputStream(uri)?.use { stream ->
+                    val bytes = stream.readBytes()
+                    require(bytes.size <= 65536) { "Controller profile exceeds 64 KiB." }
+                    String(bytes, Charsets.UTF_8)
+                } ?: error("Profile file could not be opened.")
+                val imported = ControllerProfileRepository.importFromJson(raw)
+                ControllerProfileRepository.save(this, "moving-out-2", imported)
+                controllerProfile = imported
+                sendCombinedInput()
+                Toast.makeText(this, "Controller profile imported: ${imported.name}", Toast.LENGTH_LONG).show()
+            }.onFailure { Toast.makeText(this, "Profile import rejected: ${it.message}", Toast.LENGTH_LONG).show() }
+            pickControllerProfileExport -> runCatching {
+                val json = pendingProfileExport ?: error("No controller profile prepared.")
+                contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+                    ?: error("Destination stream unavailable.")
+                Toast.makeText(this, "Controller profile exported.", Toast.LENGTH_LONG).show()
+            }.onFailure { Toast.makeText(this, "Profile export failed: ${it.message}", Toast.LENGTH_LONG).show() }
+                .also { pendingProfileExport = null }
             pickFolder -> try {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 repository.saveUri(uri)
