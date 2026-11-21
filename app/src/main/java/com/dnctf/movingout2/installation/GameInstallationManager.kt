@@ -3,6 +3,7 @@ package com.dnctf.movingout2.installation
 import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
+import com.dnctf.movingout2.compatibility.GameBinaryAnalyzer
 
 data class SafInstallationReport(
     val missing: List<String>,
@@ -10,7 +11,9 @@ data class SafInstallationReport(
     val stageSummary: List<String>,
     val detectedUnityVersion: String? = null,
     val metadataVersion: Int? = null,
-    val architecture: String? = null
+    val architecture: String? = null,
+    val staticImports: Map<String, Set<String>> = emptyMap(),
+    val importErrors: Map<String, List<String>> = emptyMap()
 ) {
     val isComplete: Boolean get() = missing.isEmpty() && accessErrors.isEmpty() &&
         architecture == "x86_64" && metadataVersion != null
@@ -59,6 +62,18 @@ class GameInstallationManager(private val context: Context) {
         }
         val architecture = peResults.firstOrNull { it.first == "mo2.exe" }?.second
         val allPeX64 = peResults.all { it.second == "x86_64" }
+        val importAnalyses = peFiles.mapNotNull { path ->
+            resolved[path]?.let { file ->
+                path to runCatching {
+                    context.contentResolver.openInputStream(file.uri)?.use(GameBinaryAnalyzer::analyze)
+                        ?: GameBinaryAnalyzer.analyze(byteArrayOf())
+                }.getOrElse { GameBinaryAnalyzer.Analysis(-1, false, emptySet(), listOf(it.message ?: "Import analysis failed")) }
+            }
+        }.toMap()
+        val staticImports = importAnalyses.mapValues { it.value.imports }
+        val importErrors = importAnalyses.mapNotNull { (path, analysis) ->
+            analysis.errors.takeIf { it.isNotEmpty() }?.let { path to it }
+        }.toMap()
         val globalManagers = find(root, "MovingOut2_Data/globalgamemanagers")
         val unityVersion = globalManagers?.let { read(it, 256 * 1024) }?.let(UnityGameProfileDetector::detectUnityVersion)
         val corePass = missing.isEmpty() && errors.isEmpty()
@@ -76,7 +91,7 @@ class GameInstallationManager(private val context: Context) {
         // must all pass before reporting installation complete. Runtime is never implied.
         if (!persisted) errors += "SAF permission revoked or not persisted."
         if (!allPeX64) errors += "One or more required PE files are invalid or not x86_64 PE32+."
-        return SafInstallationReport(missing.distinct(), errors.distinct(), stageSummary, unityVersion, metadataVersion, architecture)
+        return SafInstallationReport(missing.distinct(), errors.distinct(), stageSummary, unityVersion, metadataVersion, architecture, staticImports, importErrors)
     }
 
     private fun read(file: DocumentFile, limit: Int): ByteArray? = runCatching {
