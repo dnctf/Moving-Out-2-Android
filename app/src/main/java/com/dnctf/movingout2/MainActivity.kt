@@ -16,8 +16,6 @@ import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.ArrayAdapter
 import android.widget.Toast
-import org.json.JSONObject
-import com.dnctf.movingout2.core.logging.CrashDiagnosticExporter
 import com.dnctf.movingout2.runtime.RuntimeDiagnostics
 import com.dnctf.movingout2.input.GamepadTranslator
 import com.dnctf.movingout2.input.RuntimeInputBridge
@@ -77,45 +75,19 @@ class MainActivity : Activity() {
 
     private fun exportDiagnostics() {
         Toast.makeText(this, "Preparing diagnostics ZIP…", Toast.LENGTH_SHORT).show()
-        Thread({
-            val device = runCatching { com.dnctf.movingout2.compatibility.DeviceDiagnosticsProvider.collect(this) }
-            val vulkan = runCatching { com.dnctf.movingout2.graphics.VulkanCapabilities.probe(this) }
-            val deviceObject = device.getOrNull()?.let { d -> JSONObject()
-                .put("manufacturer",d.manufacturer).put("model",d.model).put("soc",d.soc)
-                .put("abi",d.abi).put("ramBytes",d.ramBytes).put("availableRamBytes",d.availableRamBytes)
-                .put("gpuVendorHint",d.gpuVendorHint).put("availableProcessors",d.availableProcessors)
-                .put("lowMemory",d.lowMemory).put("vulkanFeatures",d.vulkanFeatures).put("blockers",d.blockers)
-            } ?: JSONObject().put("error",device.exceptionOrNull()?.message)
-            val vulkanObject = vulkan.getOrNull()?.let { v -> JSONObject()
-                .put("available",v.available).put("apiVersion",v.apiVersion)
-                .put("gpuVendor",v.gpuVendor).put("gpuName",v.gpuName).put("extensions",v.extensions)
-                .put("nativeProbeStatus",v.nativeProbeStatus).put("blockers",v.blockers)
-            } ?: JSONObject().put("error",vulkan.exceptionOrNull()?.message)
-            val deviceJson = JSONObject().put("device",deviceObject).put("vulkan",vulkanObject)
-            val gameJson = JSONObject().put("status","not_selected")
-            repository.savedUri()?.let { uri -> runCatching { GameInstallationManager(this).validate(uri) }.onSuccess { report ->
-                gameJson.put("missing",report.missing).put("accessErrors",report.accessErrors).put("stageSummary",report.stageSummary)
-                    .put("unityVersion",report.detectedUnityVersion).put("metadataVersion",report.metadataVersion).put("architecture",report.architecture)
-                    .put("status",if(report.isComplete) "files_present" else "incomplete")
-            }.onFailure { gameJson.put("error",it.message) } }
-            val runtimeRoot=File(filesDir,"native_runtime/bundle")
-            val runtime=RuntimeBundleValidator().validate(runtimeRoot)
-            val runtimeJson=JSONObject().put("status",runtime.status.name).put("manifestVersion",runtime.manifestVersion)
-                .put("root",runtime.root?.absolutePath).put("box64",runtime.box64?.absolutePath)
-                .put("wine64",runtime.wine64?.absolutePath).put("wineserver",runtime.wineserver?.absolutePath)
-                .put("libraryDirectory",runtime.libraryDirectory?.absolutePath).put("blockers",runtime.blockers)
-            val manifest=File(runtimeRoot,"runtime-manifest.json")
-            if(manifest.isFile) runCatching { runtimeJson.put("manifest",JSONObject(manifest.readText())) }
-            diagnosticLog.record(com.dnctf.movingout2.runtime.RuntimeDiagnostic(com.dnctf.movingout2.runtime.RuntimeDiagnostic.Severity.INFO,"diagnostics","Diagnostic ZIP export requested"))
-            val zip=runCatching { CrashDiagnosticExporter(File(cacheDir,"diagnostics")).export(deviceJson.toString(2),gameJson.toString(2),runtimeJson.toString(2),diagnosticLog.snapshot()) }
-            runOnUiThread { zip.onSuccess { file ->
-                pendingDiagnosticZip=file
-                startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE);type="application/zip"
-                    putExtra(Intent.EXTRA_TITLE,file.name)
-                },pickDiagnosticDestination)
-            }.onFailure { Toast.makeText(this,"Diagnostic export failed: " + it.message,Toast.LENGTH_LONG).show() } }
-        },"diagnostic-export").apply { isDaemon=true;start() }
+        com.dnctf.movingout2.core.logging.DiagnosticExportCoordinator(this, repository, diagnosticLog)
+            .exportAsync { result ->
+                result.onSuccess { file ->
+                    pendingDiagnosticZip = file
+                    startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "application/zip"
+                        putExtra(Intent.EXTRA_TITLE, file.name)
+                    }, pickDiagnosticDestination)
+                }.onFailure {
+                    Toast.makeText(this, "Diagnostic export failed: " + it.message, Toast.LENGTH_LONG).show()
+                }
+            }
     }
 
     private fun showControllerTest() {
