@@ -32,7 +32,7 @@ data class WineLaunchOptions(
 /** Prepares an isolated prefix and builds a Box64 -> Wine launch plan. Presence checks do not prove runtime compatibility. */
 class WineRuntimeLauncher(
     private val context: Context,
-    private val bundleRoot: File,
+    val bundleRoot: File,
     private val diagnostics: RuntimeDiagnostics = RuntimeDiagnostics()
 ) {
     private val prefix = File(context.filesDir, "runtime/wineprefix")
