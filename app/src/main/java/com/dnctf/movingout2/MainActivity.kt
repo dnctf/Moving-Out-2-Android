@@ -16,6 +16,7 @@ import android.widget.Spinner
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import android.widget.CheckBox
+import android.widget.ScrollView
 import com.dnctf.movingout2.runtime.RuntimeDiagnostics
 import com.dnctf.movingout2.input.RuntimeInputBridge
 import com.dnctf.movingout2.input.VirtualControllerView
@@ -179,6 +180,7 @@ class MainActivity : Activity() {
     private fun showSettings() {
         val current = LauncherSettings.load(this)
         val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(36, 12, 36, 8) }
+        val scroll = ScrollView(this).apply { addView(panel) }
         fun slider(label: String, value: Int, max: Int = 100): SeekBar {
             val labelView = TextView(this).apply { text = "$label: $value%"; textSize = 16f }
             panel.addView(labelView)
@@ -218,7 +220,7 @@ class MainActivity : Activity() {
         panel.addView(preset)
         AlertDialog.Builder(this).setTitle("Performance & audio")
             .setMessage("Baseline target: Snapdragon 855+, Low graphics, 70–75% resolution scale, 30 FPS. Saved values are preferences only; runtime application is not implemented yet.")
-            .setView(panel)
+            .setView(scroll)
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Save") { _, _ ->
                 val selectedFps = listOf(30, 45, 60)[fps.selectedItemPosition.coerceIn(0, 2)]
