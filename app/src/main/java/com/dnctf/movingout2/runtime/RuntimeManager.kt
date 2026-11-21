@@ -1,6 +1,7 @@
 package com.dnctf.movingout2.runtime
 
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Coordinates a launch only when the manager's bundle and the launcher's bundle
@@ -15,6 +16,7 @@ class RuntimeManager(
     @Volatile var state: RuntimeState = RuntimeState.NOT_INSTALLED
         private set
     @Volatile private var activeProcess: ProcessResult? = null
+    @Volatile private var activeCleanupGuard: AtomicBoolean? = null
 
     fun diagnostics(): RuntimeDiagnostics = diagnostics
     fun bundleReport(): RuntimeBundleReport? = bundleRoot?.let(bundleValidator::validate)
@@ -71,6 +73,8 @@ class RuntimeManager(
                 return try {
                     val running = launcher.launch(prepared.plan)
                     activeProcess = running
+                    val cleanupGuard = AtomicBoolean(false)
+                    activeCleanupGuard = cleanupGuard
                     state = RuntimeStateTransitions.transition(state, RuntimeState.RUNNING)
                     Thread({
                         val result = runCatching { running.waitFor() }.getOrNull()
@@ -83,7 +87,7 @@ class RuntimeManager(
                                 else -> state
                             }
                             if (next != state) state = RuntimeStateTransitions.transition(state, next)
-                            launcher.stop(running, 0)
+                            if (cleanupGuard.compareAndSet(false, true)) launcher.stop(running, 0)
                             diagnostics.record(RuntimeDiagnostic(
                                 if (state == RuntimeState.STOPPED) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.WARNING,
                                 "runtime",
@@ -94,6 +98,7 @@ class RuntimeManager(
                     prepared
                 } catch (error: Exception) {
                     activeProcess = null
+                    activeCleanupGuard = null
                     state = RuntimeStateTransitions.transition(state, RuntimeState.FAILED)
                     diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime", "Launch failed: ${error.message}"))
                     LaunchPreparationResult.MissingPayload(listOf("Process launch failed: ${error.message}"))
@@ -113,10 +118,10 @@ class RuntimeManager(
         if (state == RuntimeState.RUNNING) state = RuntimeStateTransitions.transition(state, RuntimeState.STOPPING)
         else if (state != RuntimeState.STOPPING) return false
         val launcher = wineLauncher
-        runCatching { process.stop(1000) }
-        runCatching { launcher?.neutralizeInputBridge() }
-        runCatching { launcher?.stopWineserver() }
+        val guard = activeCleanupGuard ?: AtomicBoolean(false)
+        if (guard.compareAndSet(false, true)) runCatching { launcher?.stop(process, 1000) } else runCatching { process.stop(1000) }
         activeProcess = null
+        activeCleanupGuard = null
         if (state == RuntimeState.STOPPING) state = RuntimeStateTransitions.transition(state, RuntimeState.STOPPED)
         diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "runtime", "Runtime stopped by user."))
         return true
