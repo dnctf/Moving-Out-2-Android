@@ -28,7 +28,7 @@ class RuntimeProcessTest {
     }
     @Test fun timeoutTerminatesProcess() {
         available()
-        val process = RuntimeProcess(RuntimeDiagnostics()).start(shell, listOf("-c", "sleep 10"))
+        val process = RuntimeProcess(RuntimeDiagnostics()).start(shell, listOf("-c", "exec sleep 10"))
         val result = process.waitFor(100)
         assertTrue(result.timedOut)
         assertFalse(process.process.isAlive)
