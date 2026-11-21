@@ -58,6 +58,17 @@ class RuntimeManagerTest {
         File(root, "lib/lib.so").writeBytes(byteArrayOf(1))
         return root
     }
+    @Test fun launchIsBlockedWhilePreviousSessionCleanupIsPending() {
+        val first = Any()
+        val guard = RuntimeCleanupGuard()
+        assertFalse(guard.isCompleted())
+        assertFalse(isRuntimeSessionCurrent(null, guard, first, guard))
+        // A retained process reference is the manager's cleanup-pending sentinel.
+        assertTrue(first !== null)
+        assertTrue(guard.runOnce {})
+        assertTrue(guard.isCompleted())
+    }
+
     @Test fun unexpectedPreparationFailureIsConvertedIntoFailureResult() {
         val result = safeRuntimePreparation { throw IllegalStateException("simulated preparation crash") }
         assertTrue(result is LaunchPreparationResult.MissingPayload)

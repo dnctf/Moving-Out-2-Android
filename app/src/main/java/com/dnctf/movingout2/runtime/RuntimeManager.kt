@@ -32,8 +32,14 @@ class RuntimeManager(
     }
 
     @Synchronized fun start(gameExe: File, options: WineLaunchOptions = WineLaunchOptions()): LaunchPreparationResult {
-        if (activeProcess?.process?.isAlive == true) {
-            return LaunchPreparationResult.MissingPayload(listOf("A runtime process is already active."))
+        if (activeProcess != null) {
+            val processAlive = activeProcess?.process?.isAlive == true
+            val message = if (processAlive) {
+                "A runtime process is already active."
+            } else {
+                "The previous runtime session is still awaiting cleanup; retry after watchdog cleanup completes."
+            }
+            return LaunchPreparationResult.MissingPayload(listOf(message))
         }
         if (state == RuntimeState.STARTING || state == RuntimeState.STOPPING) {
             return LaunchPreparationResult.MissingPayload(listOf("Runtime state $state does not permit a new launch."))
