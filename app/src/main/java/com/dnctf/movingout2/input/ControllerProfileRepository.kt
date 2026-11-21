@@ -101,3 +101,11 @@ data class ControllerProfile(
         }
     }
 }
+
+/** Thin persistence/import facade used by launcher UI and per-game registry. */
+object ControllerProfileRepository {
+    fun importFromJson(json: String): ControllerProfile = ControllerProfile.importFromJson(json)
+    fun save(context: android.content.Context, gameKey: String, profile: ControllerProfile) = ControllerProfile.save(context, gameKey, profile)
+    fun load(context: android.content.Context, gameKey: String): ControllerProfile? = ControllerProfile.load(context, gameKey)
+    fun delete(context: android.content.Context, gameKey: String) = ControllerProfile.delete(context, gameKey)
+}
