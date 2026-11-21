@@ -2,6 +2,7 @@ package com.dnctf.movingout2.installation
 
 import java.io.File
 import java.io.InputStream
+import java.io.IOException
 
 enum class ValidationStage { FOLDER_ACCESS, CORE_FILES, STRUCTURE, VERSION_ARCH, COMPATIBILITY, LAUNCH_READINESS }
 enum class InstallationStatus { VALID, INCOMPLETE, ACCESS_ERROR, INVALID_STRUCTURE, INCOMPATIBLE, RUNTIME_NOT_INSTALLED }
@@ -16,18 +17,23 @@ class InstallationValidator {
     private val required = listOf("mo2.exe", "GameAssembly.dll", "UnityPlayer.dll", "baselib.dll",
         "MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat")
     private val peFiles = required.dropLast(1)
+    private val metadataMagic = byteArrayOf(0xaf.toByte(), 0x1b, 0xb1.toByte(), 0xfa.toByte())
 
     fun validate(root: File, persistablePermission: Boolean = true, hardwareBlockers: List<String> = emptyList()): InstallationReport {
         val missing = mutableListOf<String>()
         val errors = mutableListOf<String>()
-        val stageResults = mutableListOf<StageResult>()
+        val stages = mutableListOf<StageResult>()
+        val rootReadable = runCatching { root.isDirectory && root.canRead() }.getOrDefault(false)
         if (!persistablePermission) errors += "Persisted SAF read permission is unavailable or revoked."
-        if (!root.exists() || !root.isDirectory || !root.canRead()) errors += "Selected folder is not readable."
-        stageResults += StageResult(ValidationStage.FOLDER_ACCESS, errors.isEmpty(), errors.toList())
+        if (!rootReadable) errors += "Selected folder is not readable."
+        stages += StageResult(ValidationStage.FOLDER_ACCESS, persistablePermission && rootReadable, errors.toList())
 
         val files = mutableMapOf<String, File>()
         for (path in required) {
-            val file = findCaseInsensitive(root, path)
+            val file = try { findCaseInsensitive(root, path) } catch (e: IOException) {
+                errors += "$path: ${e.message ?: "unsafe path"}"
+                null
+            }
             when {
                 file == null || !file.isFile -> missing += path
                 file.length() <= 0 -> errors += "$path is empty (0 bytes)"
@@ -35,59 +41,80 @@ class InstallationValidator {
                 else -> files[path] = file
             }
         }
-        stageResults += StageResult(ValidationStage.CORE_FILES, missing.isEmpty() && errors.isEmpty(),
-            missing.map { "Missing: $it" } + errors)
+        stages += StageResult(ValidationStage.CORE_FILES, missing.isEmpty() && errors.isEmpty(),
+            missing.map { "Missing: $it" } + errors.toList())
 
-        val metadataDir = findCaseInsensitive(root, "MovingOut2_Data/il2cpp_data/Metadata")
-        val metadataDirOk = metadataDir?.isDirectory == true && metadataDir.canRead()
+        val metadataDir = try { findCaseInsensitive(root, "MovingOut2_Data/il2cpp_data/Metadata") } catch (e: IOException) {
+            errors += "Metadata directory: ${e.message ?: "unsafe path"}"
+            null
+        }
+        val metadataDirOk = metadataDir?.isDirectory == true && metadataDir.canRead() && isWithinRoot(root, metadataDir)
         if (!metadataDirOk && missing.none { it.endsWith("global-metadata.dat") }) missing += "MovingOut2_Data/il2cpp_data/Metadata/"
-        stageResults += StageResult(ValidationStage.STRUCTURE, metadataDirOk,
-            if (metadataDirOk) emptyList() else listOf("Metadata directory missing, not a directory, or unreadable"))
+        stages += StageResult(ValidationStage.STRUCTURE, metadataDirOk,
+            if (metadataDirOk) emptyList() else listOf("Metadata directory missing, not a directory, unreadable, or outside selected root"))
 
         val peChecks = peFiles.map { name -> name to files[name]?.let(::inspectPeArchitecture) }
         val exeArch = peChecks.firstOrNull { it.first == "mo2.exe" }?.second
         val peOk = peChecks.all { it.second == "x86_64" }
-        stageResults += StageResult(ValidationStage.VERSION_ARCH, peOk,
-            peChecks.map { (name, arch) -> "$name: ${arch ?: "invalid PE header"}" } +
-                "Unity version not detected (not parsed)" +
-                "Metadata version: ${files[required.last()]?.let(::inspectMetadataVersion) ?: "unknown"}")
-        stageResults += StageResult(ValidationStage.COMPATIBILITY, hardwareBlockers.isEmpty(), hardwareBlockers.toList())
-
+        val metadataVersion = files[required.last()]?.let(::inspectMetadataVersion)
+        stages += StageResult(ValidationStage.VERSION_ARCH, peOk,
+            peChecks.map { (name, arch) -> "$name: ${arch ?: "invalid/truncated PE32+ header"}" } +
+                "Unity version not detected (globalgamemanagers not supplied)" +
+                "IL2CPP metadata version: ${metadataVersion ?: "invalid/unknown"}")
+        val compatibilityPass = false
+        stages += StageResult(ValidationStage.COMPATIBILITY, compatibilityPass,
+            hardwareBlockers.toList() + "Compatibility/device capability assessment is not provided by this filesystem validator.")
         val status = when {
-            !persistablePermission || !root.canRead() -> InstallationStatus.ACCESS_ERROR
+            !persistablePermission || !rootReadable -> InstallationStatus.ACCESS_ERROR
             missing.isNotEmpty() || errors.isNotEmpty() -> InstallationStatus.INCOMPLETE
-            !peOk || !metadataDirOk -> InstallationStatus.INVALID_STRUCTURE
+            !peOk || !metadataDirOk || metadataVersion == null -> InstallationStatus.INVALID_STRUCTURE
             hardwareBlockers.isNotEmpty() -> InstallationStatus.INCOMPATIBLE
             else -> InstallationStatus.VALID
         }
-        stageResults += StageResult(ValidationStage.LAUNCH_READINESS, false,
-            listOf("Native runtime is not installed. Launch is blocked regardless of file validation."))
-        return InstallationReport(status, stageResults, missing.distinct(), errors.distinct(), exeArch, null,
-            files[required.last()]?.let(::inspectMetadataVersion), hardwareBlockers.toList())
+        stages += StageResult(ValidationStage.LAUNCH_READINESS, false,
+            listOf("BLOCKED: native runtime is not installed/validated; file presence is not launch readiness."))
+        return InstallationReport(status, stages, missing.distinct(), errors.distinct(), exeArch, null,
+            metadataVersion, hardwareBlockers.toList())
     }
 
     private fun findCaseInsensitive(root: File, relative: String): File? {
-        var current = root
-        for (segment in relative.split('/').filter(String::isNotBlank)) {
+        if (relative.split('/').any { it.isBlank() || it == "." || it == ".." }) throw IOException("Unsafe relative path.")
+        val base = root.canonicalFile
+        var current = base
+        for (segment in relative.split('/')) {
             if (!current.isDirectory) return null
             current = current.listFiles()?.firstOrNull { it.name.equals(segment, ignoreCase = true) } ?: return null
+            if (!isWithinRoot(base, current)) throw IOException("Resolved path escapes selected game root.")
         }
         return current
     }
 
+    private fun isWithinRoot(root: File, target: File): Boolean {
+        val base = root.canonicalFile.toPath()
+        val resolved = target.canonicalFile.toPath()
+        return resolved == base || resolved.startsWith(base)
+    }
+
     private fun inspectPeArchitecture(file: File): String? = runCatching {
         file.inputStream().use { input ->
-            val b = readUpTo(input, 4096)
-            if (b.size < 64 || b[0] != 0x4d.toByte() || b[1] != 0x5a.toByte()) return@runCatching null
-            val offset = readUInt32(b, 0x3c) ?: return@runCatching null
-            if (offset < 0 || offset + 6 > b.size) return@runCatching null
-            if (b[offset] != 0x50.toByte() || b[offset+1] != 0x45.toByte() || b[offset+2] != 0.toByte() || b[offset+3] != 0.toByte()) return@runCatching null
-            when (readUInt16(b, offset+4)) { 0x8664 -> "x86_64"; 0x14c -> "x86"; 0xaa64 -> "arm64"; else -> "unknown" }
+            val b = readUpTo(input, 64 * 1024)
+            if (b.size < 64 || b[0] != 0x4d.toByte() || b[1] != 0x5a.toByte()) return@use null
+            val offset = readUInt32(b, 0x3c) ?: return@use null
+            if (offset < 0 || offset > b.size - 26) return@use null
+            if (b[offset] != 0x50.toByte() || b[offset+1] != 0x45.toByte() || b[offset+2] != 0.toByte() || b[offset+3] != 0.toByte()) return@use null
+            val machine = readUInt16(b, offset+4) ?: return@use null
+            val optionalSize = readUInt16(b, offset+20) ?: return@use null
+            val optionalOffset = offset + 24
+            if (optionalSize < 2 || optionalOffset > b.size - 2 || optionalOffset + optionalSize > b.size) return@use null
+            if (readUInt16(b, optionalOffset) != 0x20b) return@use null
+            when (machine) { 0x8664 -> "x86_64"; 0x14c -> "x86"; 0xaa64 -> "arm64"; else -> "unknown" }
         }
     }.getOrNull()
 
-    private fun readUInt16(b: ByteArray, o: Int): Int? = if (o < 0 || o+2 > b.size) null else (b[o].toInt() and 255) or ((b[o+1].toInt() and 255) shl 8)
-    private fun readUInt32(b: ByteArray, o: Int): Int? = if (o < 0 || o+4 > b.size) null else (b[o].toInt() and 255) or ((b[o+1].toInt() and 255) shl 8) or ((b[o+2].toInt() and 255) shl 16) or ((b[o+3].toInt() and 255) shl 24)
+    private fun readUInt16(b: ByteArray, o: Int): Int? = if (o < 0 || o > b.size - 2) null else
+        (b[o].toInt() and 255) or ((b[o+1].toInt() and 255) shl 8)
+    private fun readUInt32(b: ByteArray, o: Int): Int? = if (o < 0 || o > b.size - 4) null else
+        (b[o].toInt() and 255) or ((b[o+1].toInt() and 255) shl 8) or ((b[o+2].toInt() and 255) shl 16) or ((b[o+3].toInt() and 255) shl 24)
 
     internal fun readUpTo(input: InputStream, size: Int): ByteArray {
         require(size >= 0)
@@ -103,7 +130,7 @@ class InstallationValidator {
     private fun inspectMetadataVersion(file: File): Int? = runCatching {
         file.inputStream().use { input ->
             val b = readUpTo(input, 8)
-            if (b.size < 8) null else readUInt32(b, 4)
+            if (b.size < 8 || !b.copyOfRange(0, 4).contentEquals(metadataMagic)) null else readUInt32(b, 4)
         }
     }.getOrNull()
 }
