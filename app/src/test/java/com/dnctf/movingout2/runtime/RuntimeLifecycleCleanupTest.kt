@@ -40,4 +40,21 @@ class RuntimeLifecycleCleanupTest {
         assertFalse(isRuntimeSessionCurrent(currentProcess, currentGuard, currentProcess, previousGuard))
         assertTrue(isRuntimeSessionCurrent(currentProcess, currentGuard, currentProcess, currentGuard))
     }
+    @Test fun cleanupSequenceStopsProcessBeforeDestroyingSharedInputAndKeepsGoingOnErrors() {
+        val events = mutableListOf<String>()
+        runRuntimeCleanupSequence(
+            neutralize = { events += "neutralize" },
+            stopProcess = { events += "stop-process"; throw IllegalStateException("simulated stop failure") },
+            destroyBridge = { events += "destroy-shm" },
+            stopServer = { events += "stop-wineserver" }
+        )
+        assertEquals(listOf("neutralize", "stop-process", "destroy-shm", "stop-wineserver"), events)
+    }
+
+    @Test fun runtimeImporterReserveThresholdIsEnforced() {
+        assertTrue(runtimeBundleHasReserve(512L * 1024L * 1024L, 512L * 1024L * 1024L))
+        assertFalse(runtimeBundleHasReserve(512L * 1024L * 1024L - 1, 512L * 1024L * 1024L))
+        assertFalse(runtimeBundleHasReserve(100, -1))
+    }
+
 }

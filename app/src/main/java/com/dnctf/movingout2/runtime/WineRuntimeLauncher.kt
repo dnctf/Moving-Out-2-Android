@@ -120,7 +120,12 @@ class WineRuntimeLauncher(
         return try {
             RuntimeProcess(diagnostics).start(plan.executable, plan.arguments, plan.environment, plan.workingDirectory)
         } catch (error: Exception) {
-            neutralizeInputBridge()
+            runRuntimeCleanupSequence(
+                neutralize = { neutralizeInputBridge() },
+                stopProcess = {},
+                destroyBridge = { destroyInputBridge() },
+                stopServer = { stopWineserver() }
+            )
             throw error
         }
     }
@@ -157,10 +162,12 @@ class WineRuntimeLauncher(
     }
 
     fun stop(result: ProcessResult, graceMs: Long = 1200) {
-        neutralizeInputBridge()
-        destroyInputBridge()
-        runCatching { result.stop(graceMs) }
-        stopWineserver()
+        runRuntimeCleanupSequence(
+            neutralize = { neutralizeInputBridge() },
+            stopProcess = { result.stop(graceMs) },
+            destroyBridge = { destroyInputBridge() },
+            stopServer = { stopWineserver() }
+        )
         diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "launcher", "Runtime process stopped; wineserver cleanup requested."))
     }
 
@@ -210,4 +217,9 @@ class WineRuntimeLauncher(
             false
         }
     }
+}
+
+/** Cleanup steps are ordered and failure-isolated so later resources are still released. */
+internal fun runRuntimeCleanupSequence(neutralize: () -> Unit, stopProcess: () -> Unit, destroyBridge: () -> Unit, stopServer: () -> Unit) {
+    listOf(neutralize, stopProcess, destroyBridge, stopServer).forEach { step -> runCatching { step() } }
 }

@@ -17,7 +17,8 @@ class RuntimeBundleImporter(
     private val validator: RuntimeBundleValidator = RuntimeBundleValidator(),
     private val maxBytes: Long = 6L * 1024L*1024L*1024L,
     private val maxEntries: Int = 20_000,
-    private val maxDepth: Int = 24
+    private val maxDepth: Int = 24,
+    private val storageReserveBytes: Long = 512L * 1024L * 1024L
 ) {
     private val resolver = context.contentResolver
     private val parent = File(context.filesDir, "native_runtime")
@@ -34,6 +35,10 @@ class RuntimeBundleImporter(
         val source = DocumentFile.fromTreeUri(resolverContext(), uri)
         if (source == null || !source.isDirectory || !source.canRead()) throw IOException("Selected SAF tree is not readable.")
         if (!parent.mkdirs() && !parent.isDirectory) throw IOException("Unable to create private runtime storage.")
+        if (storageReserveBytes < 0) throw IOException("Runtime storage reserve must not be negative.")
+        if (availableBefore != null && !runtimeBundleHasReserve(availableBefore, storageReserveBytes)) {
+            throw IOException("Insufficient storage: preserve at least ${storageReserveBytes} bytes before runtime import.")
+        }
         // Validate both sides before cleanup: a crash can leave an invalid new target beside the old backup.
         recoverRuntimeBundle(target, backup) { bundle -> validator.validate(bundle).isReady }
         staging.deleteRecursively()
@@ -86,11 +91,19 @@ class RuntimeBundleImporter(
                 input.use { stream ->
                     FileOutputStream(output).use { out ->
                         val buffer = ByteArray(64 * 1024)
+                        var lastSpaceCheckBytes = counter.bytes
                         while (true) {
                             val read = stream.read(buffer)
                             if (read < 0) break
                             counter.bytes += read.toLong()
                             if (counter.bytes > maxBytes) throw IOException("Runtime bundle exceeds configured import size limit.")
+                            if (counter.bytes - lastSpaceCheckBytes >= 4L * 1024L * 1024L) {
+                                val available = StatFs(parent.absolutePath).availableBytes
+                                if (!runtimeBundleHasReserve(available, storageReserveBytes)) {
+                                    throw IOException("Runtime import aborted: free storage fell below the configured reserve.")
+                                }
+                                lastSpaceCheckBytes = counter.bytes
+                            }
                             out.write(buffer, 0, read)
                         }
                     }
@@ -158,3 +171,6 @@ internal object RuntimeExecutablePermissions {
         if (!file.canExecute()) throw IOException("Runtime executable permission verification failed for $relativePath.")
     }
 }
+
+/** Pure reserve threshold used by import preflight and regression tests. */
+internal fun runtimeBundleHasReserve(availableBytes: Long, reserveBytes: Long): Boolean = reserveBytes >= 0 && availableBytes >= reserveBytes
