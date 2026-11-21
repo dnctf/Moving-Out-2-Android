@@ -39,7 +39,8 @@ class ImportDiagnosticJournal(private val diagnosticsDirectory: File, private va
         if (error != null) appendBoundedErrorLog("\n--- ${System.currentTimeMillis()} $type $stage ---\n${error.stackTraceToString()}\n")
     }
     private fun appendBoundedErrorLog(text: String) {
-        errorsFile.appendText(text)
+        val boundedEntry = text.takeLast(maxErrorLogBytes)
+        errorsFile.appendText(boundedEntry)
         if (errorsFile.length() > maxErrorLogBytes) {
             val tail = errorsFile.readText().takeLast(maxErrorLogBytes)
             errorsFile.writeText(tail)
