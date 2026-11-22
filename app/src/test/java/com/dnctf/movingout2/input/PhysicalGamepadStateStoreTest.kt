@@ -43,4 +43,19 @@ class PhysicalGamepadStateStoreTest {
         assertEquals(0, store.deviceCount())
         assertEquals(ControllerState(), store.aggregate())
     }
+    @Test fun reclassifiedDeviceGetsTranslatorAndNeutralState() {
+        val translators = mutableMapOf<Int, GamepadTranslator>()
+        val store = PhysicalGamepadStateStore()
+        // Unknown devices are ignored until the source is recognized and registered.
+        store.update(42, ControllerState(buttons = setOf(ControllerButton.A), leftX = .8f))
+        assertEquals(0, store.deviceCount())
+        val first = rebindGamepadAfterDeviceChange(42, translators, store)
+        assertTrue(42 in translators)
+        assertEquals(1, store.deviceCount())
+        store.update(42, ControllerState(buttons = setOf(ControllerButton.B), leftY = -.7f))
+        val second = rebindGamepadAfterDeviceChange(42, translators, store)
+        assertSame(first, second)
+        assertEquals(ControllerState(), store.aggregate())
+        assertEquals(1, store.deviceCount())
+    }
 }

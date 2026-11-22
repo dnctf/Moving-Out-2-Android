@@ -1,6 +1,8 @@
 package com.dnctf.movingout2.input
 
 import android.content.Context
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import org.json.JSONObject
 
 data class ControllerProfile(
@@ -120,4 +122,29 @@ object ControllerProfileRepository {
     fun save(context: android.content.Context, gameKey: String, profile: ControllerProfile) = ControllerProfile.save(context, gameKey, profile)
     fun load(context: android.content.Context, gameKey: String): ControllerProfile? = ControllerProfile.load(context, gameKey)
     fun delete(context: android.content.Context, gameKey: String) = ControllerProfile.delete(context, gameKey)
+}
+
+/** Reads UTF-8 profile input with a hard byte limit before allocating unbounded memory. */
+internal fun readBoundedUtf8Profile(input: InputStream, maxBytes: Int = 65536): String {
+    require(maxBytes in 0..65536) { "Profile byte limit must be between 0 and 64 KiB." }
+    val output = ByteArrayOutputStream(minOf(maxBytes, 8192))
+    val buffer = ByteArray(8192)
+    var total = 0
+    while (true) {
+        val readLimit = minOf(buffer.size, maxBytes - total + 1)
+        val count = input.read(buffer, 0, readLimit)
+        if (count < 0) break
+        if (count == 0) {
+            val next = input.read()
+            if (next < 0) break
+            if (total >= maxBytes) throw IllegalArgumentException("Controller profile exceeds 64 KiB.")
+            output.write(next)
+            total++
+            continue
+        }
+        if (count > maxBytes - total) throw IllegalArgumentException("Controller profile exceeds 64 KiB.")
+        output.write(buffer, 0, count)
+        total += count
+    }
+    return output.toString(Charsets.UTF_8.name())
 }

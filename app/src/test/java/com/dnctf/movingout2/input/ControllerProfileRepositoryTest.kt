@@ -61,4 +61,22 @@ class ControllerProfileRepositoryTest {
             ControllerProfile.importFromJson(" ".repeat(65537))
         }
     }
+    @Test fun boundedStreamImportAcceptsExactLimitAndRejectsOneByteOver() {
+        val exact = "x".repeat(1024)
+        assertEquals(exact, readBoundedUtf8Profile(exact.byteInputStream(), 1024))
+        assertThrows(IllegalArgumentException::class.java) {
+            readBoundedUtf8Profile(("x".repeat(1025)).byteInputStream(), 1024)
+        }
+    }
+    @Test fun boundedStreamDoesNotConsumeUnboundedOversizeInput() {
+        val oversized = "x".repeat(200000).byteInputStream()
+        assertThrows(IllegalArgumentException::class.java) {
+            readBoundedUtf8Profile(oversized, 64)
+        }
+        assertTrue("Reader stops after detecting overflow", oversized.available() > 0)
+    }
+    @Test fun invalidByteLimitIsRejected() {
+        assertThrows(IllegalArgumentException::class.java) { readBoundedUtf8Profile("".byteInputStream(), -1) }
+        assertThrows(IllegalArgumentException::class.java) { readBoundedUtf8Profile("".byteInputStream(), 65537) }
+    }
 }

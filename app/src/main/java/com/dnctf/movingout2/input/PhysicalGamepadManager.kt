@@ -61,8 +61,9 @@ class PhysicalGamepadManager(
     @Synchronized override fun onInputDeviceChanged(deviceId: Int) {
         val device = InputDevice.getDevice(deviceId)
         if (isGamepad(device)) {
-            translators[deviceId]?.releaseAll()
-            stateStore.resetDevice(deviceId)
+            // A device may be reclassified as a gamepad after its initial add callback.
+            // Rebind ensures a translator and state slot exist, then neutralizes stale state.
+            rebindGamepadAfterDeviceChange(deviceId, translators, stateStore)
             device?.let { profiles[deviceId] = PhysicalGamepadAxisLayout.fromDevice(it) }
         } else removeDevice(deviceId)
         emit()
@@ -91,4 +92,17 @@ class PhysicalGamepadManager(
     }
 
     private fun contextMainLooper() = android.os.Looper.getMainLooper()
+}
+
+/** Reclassifies/rebinds a device after Android reports its source capabilities changed. */
+internal fun rebindGamepadAfterDeviceChange(
+    deviceId: Int,
+    translators: MutableMap<Int, GamepadTranslator>,
+    stateStore: PhysicalGamepadStateStore
+): GamepadTranslator {
+    val translator = translators.getOrPut(deviceId) { GamepadTranslator() }
+    translator.releaseAll()
+    stateStore.register(deviceId)
+    stateStore.resetDevice(deviceId)
+    return translator
 }

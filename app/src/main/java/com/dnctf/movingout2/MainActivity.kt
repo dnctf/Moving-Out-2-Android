@@ -319,9 +319,7 @@ class MainActivity : Activity() {
         when (requestCode) {
             pickControllerProfileImport -> runCatching {
                 val raw = contentResolver.openInputStream(uri)?.use { stream ->
-                    val bytes = stream.readBytes()
-                    require(bytes.size <= 65536) { "Controller profile exceeds 64 KiB." }
-                    String(bytes, Charsets.UTF_8)
+                    readBoundedUtf8Profile(stream)
                 } ?: error("Profile file could not be opened.")
                 val imported = ControllerProfileRepository.importFromJson(raw)
                 ControllerProfileRepository.save(this, "moving-out-2", imported)
