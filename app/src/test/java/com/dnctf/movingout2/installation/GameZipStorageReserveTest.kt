@@ -28,4 +28,16 @@ class GameZipStorageReserveTest {
     @Test fun spaceRequirementOverflowIsRejected() {
         assertThrows(ArithmeticException::class.java) { gameZipRequiredSpace(Long.MAX_VALUE, 1) }
     }
+
+    @Test fun extractionReserveChecksAccumulateAcrossSmallEntries() {
+        val interval = 4L * 1024L * 1024L
+        assertFalse(gameZipStorageCheckDue(3L * 1024L * 1024L, 0, interval))
+        assertTrue(gameZipStorageCheckDue(4L * 1024L * 1024L, 0, interval))
+    }
+
+    @Test fun invalidStorageCheckCountersAreRejected() {
+        assertFalse(gameZipStorageCheckDue(-1, 0, 4))
+        assertFalse(gameZipStorageCheckDue(4, 5, 1))
+        assertFalse(gameZipStorageCheckDue(5, 0, 0))
+    }
 }

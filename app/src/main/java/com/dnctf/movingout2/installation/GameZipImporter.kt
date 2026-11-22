@@ -69,6 +69,7 @@ class GameZipImporter(
                 if (!staging.mkdirs()) throw IOException("Cannot create staging directory.")
                 var bytesWritten = 0L
                 var entriesDone = 0
+                var lastSpaceCheckBytes = 0L
                 onProgress(ImportProgress("Extracting", 0, normalized.size, 0, totalBytes))
                 for ((entry, name) in normalized) {
                     checkCancellation(cancelled)
@@ -82,14 +83,13 @@ class GameZipImporter(
                         zip.getInputStream(entry).use { input ->
                             FileOutputStream(out).use { sink ->
                                 val buffer = ByteArray(64 * 1024)
-                                var lastSpaceCheckBytes = bytesWritten
                                 while (true) {
                                     checkCancellation(cancelled)
                                     val n = input.read(buffer)
                                     if (n < 0) break
                                     bytesWritten = Math.addExact(bytesWritten, n.toLong())
                                     if (bytesWritten > maxExpandedBytes || bytesWritten > totalBytes) throw IOException("ZIP expansion exceeded preflight size.")
-                                    if (bytesWritten - lastSpaceCheckBytes >= 4L * 1024L * 1024L) {
+                                    if (gameZipStorageCheckDue(bytesWritten, lastSpaceCheckBytes, 4L * 1024L * 1024L)) {
                                         val available = StatFs(parentDir.absolutePath).availableBytes
                                         if (!gameZipStorageReserveSatisfied(available, storageReserveBytes)) throw IOException("ZIP extraction aborted: free storage fell below reserve.")
                                         lastSpaceCheckBytes = bytesWritten
@@ -137,8 +137,13 @@ class GameZipImporter(
             if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0).takeIf { it >= 0 } else null
         }
         val stat = StatFs(root.parentFile?.absolutePath ?: throw IOException("Private storage unavailable."))
-        if (advertisedSize != null && stat.availableBytes < advertisedSize + storageReserveBytes) {
-            throw IOException("Not enough free space to stage the ZIP safely.")
+        if (advertisedSize != null) {
+            val requiredSpace = try {
+                gameZipRequiredSpace(advertisedSize, storageReserveBytes)
+            } catch (error: ArithmeticException) {
+                throw IOException("ZIP staging space requirement overflowed.", error)
+            }
+            if (stat.availableBytes < requiredSpace) throw IOException("Not enough free space to stage the ZIP safely.")
         }
         val input = resolver.openInputStream(uri) ?: throw IOException("Unable to open selected ZIP.")
         input.use { raw ->
@@ -242,6 +247,12 @@ internal object GameZipRootLocator {
 internal fun gameZipRequiredSpace(expandedBytes: Long, reserveBytes: Long): Long {
     if (expandedBytes < 0 || reserveBytes < 0) throw IllegalArgumentException("Storage requirements cannot be negative.")
     return Math.addExact(expandedBytes, reserveBytes)
+}
+
+/** True when the extraction reserve should be rechecked; callers keep the counter global across entries. */
+internal fun gameZipStorageCheckDue(bytesWritten: Long, lastCheckBytes: Long, intervalBytes: Long): Boolean {
+    if (bytesWritten < 0 || lastCheckBytes < 0 || bytesWritten < lastCheckBytes || intervalBytes <= 0) return false
+    return bytesWritten - lastCheckBytes >= intervalBytes
 }
 
 /** Pure free-space threshold used by the ZIP importer and tests. */
