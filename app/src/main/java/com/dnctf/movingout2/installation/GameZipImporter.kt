@@ -63,9 +63,8 @@ class GameZipImporter(
                 val candidateRootPrefix = GameZipRootLocator.findRootPrefix(normalized.map { it.second })
                     ?: throw IOException("ZIP central directory does not contain the required Unity game files.")
                 val stat = StatFs(parent.absolutePath)
-                val archiveBytes = sourceZip.length()
-                val requiredSpace = Math.addExact(Math.addExact(totalBytes, archiveBytes), storageReserveBytes)
-                if (!gameZipStorageReserveSatisfied(stat.availableBytes, requiredSpace)) throw IOException("Insufficient storage. ZIP copy, extraction ($totalBytes bytes), and reserve require approximately $requiredSpace bytes.")
+                val requiredSpace = gameZipRequiredSpace(totalBytes, storageReserveBytes)
+                if (!gameZipStorageReserveSatisfied(stat.availableBytes, requiredSpace)) throw IOException("Insufficient storage. Extraction ($totalBytes bytes) and reserve require approximately $requiredSpace bytes after ZIP staging.")
                 staging.deleteRecursively()
                 if (!staging.mkdirs()) throw IOException("Cannot create staging directory.")
                 var bytesWritten = 0L
@@ -102,6 +101,10 @@ class GameZipImporter(
                     }
                     entriesDone++
                     onProgress(ImportProgress("Extracting", entriesDone, normalized.size, bytesWritten, totalBytes))
+                }
+                val availableAfterExtraction = StatFs(parent.absolutePath).availableBytes
+                if (!gameZipStorageReserveSatisfied(availableAfterExtraction, storageReserveBytes)) {
+                    throw IOException("ZIP extraction aborted: free storage fell below the configured reserve.")
                 }
                 val candidate = File(staging, candidateRootPrefix).canonicalFile
                 extractedBytes = bytesWritten
@@ -233,6 +236,12 @@ internal object GameZipRootLocator {
         }
         return null
     }
+}
+
+/** Space required after the ZIP has already been staged in cache. */
+internal fun gameZipRequiredSpace(expandedBytes: Long, reserveBytes: Long): Long {
+    if (expandedBytes < 0 || reserveBytes < 0) throw IllegalArgumentException("Storage requirements cannot be negative.")
+    return Math.addExact(expandedBytes, reserveBytes)
 }
 
 /** Pure free-space threshold used by the ZIP importer and tests. */
