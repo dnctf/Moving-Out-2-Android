@@ -15,12 +15,28 @@ data class PhysicalGamepadAxisLayout(
     val hatY: Int = MotionEvent.AXIS_HAT_Y
 ) {
     companion object {
-        fun resolve(axes: Set<Int>): PhysicalGamepadAxisLayout = PhysicalGamepadAxisLayout(
-            rightX = if (MotionEvent.AXIS_RX in axes) MotionEvent.AXIS_RX else MotionEvent.AXIS_Z,
-            rightY = if (MotionEvent.AXIS_RY in axes) MotionEvent.AXIS_RY else MotionEvent.AXIS_RZ,
-            leftTrigger = if (MotionEvent.AXIS_LTRIGGER in axes) MotionEvent.AXIS_LTRIGGER else MotionEvent.AXIS_BRAKE,
-            rightTrigger = if (MotionEvent.AXIS_RTRIGGER in axes) MotionEvent.AXIS_RTRIGGER else MotionEvent.AXIS_GAS
-        )
+        fun resolve(axes: Set<Int>): PhysicalGamepadAxisLayout {
+            // Select a complete stick pair when available. Avoid mixing RX with RZ
+            // (or Z with RY) on partially advertised/vendor-specific devices.
+            val standardRight = MotionEvent.AXIS_RX in axes && MotionEvent.AXIS_RY in axes
+            val legacyRight = MotionEvent.AXIS_Z in axes && MotionEvent.AXIS_RZ in axes
+            val useStandard = standardRight || (!legacyRight &&
+                (MotionEvent.AXIS_RX in axes || MotionEvent.AXIS_RY in axes))
+            val rightX = if (useStandard) MotionEvent.AXIS_RX else MotionEvent.AXIS_Z
+            val rightY = if (useStandard) MotionEvent.AXIS_RY else MotionEvent.AXIS_RZ
+
+            // Triggers likewise prefer the standard pair, then the legacy pair.
+            val standardTriggers = MotionEvent.AXIS_LTRIGGER in axes && MotionEvent.AXIS_RTRIGGER in axes
+            val legacyTriggers = MotionEvent.AXIS_BRAKE in axes && MotionEvent.AXIS_GAS in axes
+            val useStandardTriggers = standardTriggers || (!legacyTriggers &&
+                (MotionEvent.AXIS_LTRIGGER in axes || MotionEvent.AXIS_RTRIGGER in axes))
+            return PhysicalGamepadAxisLayout(
+                rightX = rightX,
+                rightY = rightY,
+                leftTrigger = if (useStandardTriggers) MotionEvent.AXIS_LTRIGGER else MotionEvent.AXIS_BRAKE,
+                rightTrigger = if (useStandardTriggers) MotionEvent.AXIS_RTRIGGER else MotionEvent.AXIS_GAS
+            )
+        }
         fun fromDevice(device: InputDevice): PhysicalGamepadDeviceProfile {
             val axes = device.motionRanges.map { it.axis }.toSet()
             return PhysicalGamepadDeviceProfile(device.id, device.name, device.descriptor, resolve(axes))

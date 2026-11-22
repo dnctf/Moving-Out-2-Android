@@ -34,12 +34,12 @@ Moving Out 2 is a commercial Unity IL2CPP game. Static recompilation would requi
 
 Wine + Box64 is therefore the more plausible first *general compatibility experiment*: it can reuse the Windows executable and its existing runtime interfaces rather than requiring a new native port. That does **not** imply this game is compatible, performant, or launchable on Snapdragon 855. Unity/D3D11, x64 translation, memory pressure, Vulkan driver, anti-cheat/platform services and audio all remain untested. A static port may be preferable only if a legally compatible game-specific reimplementation or recompilation project becomes available and its licensing/build prerequisites are met.
 
-## Controller research references (source-level audit pending)
+## Controller research references (source-level review completed 2026-11-22)
 
 - [flipendo-droid](https://github.com/Ihor-Ihorevych/flipendo-droid): candidate reference for a native game-port controller overlay.
 - [pop-t2t-android](https://github.com/Cleverdee/pop-t2t-android): candidate reference for a touch overlay connected to a game's own native input layer.
 
-Repository metadata/tree requests were attempted during this run, but the connector did not return readable source or license file contents. Therefore no source-level feature claims or license conclusions are made here; these repositories remain research leads until their source and licenses can be reviewed directly. No code or artwork from either repository was copied.
+Source and license review covered `src/hp1/HP1Touch.cpp` in flipendo-droid and `TouchOverlay.java` plus `web/touch.js` in pop-t2t-android. Flipendo is GPL-3.0; POP T2T is MIT. The first is a game-specific native touch bridge (its controls send actions into the port's own engine); the latter demonstrates pointer-owned controls, dynamic layouts, per-layout edit/persistence, classic fallback and touch/gamepad arbitration. These are not generic global Android input APIs. No code or artwork from either repository was copied.
 
 The architecture here follows the project's own requirements: configurable touch controls, physical input normalization, one canonical state, and a runtime adapter owned by this app. These references do not provide a generic Android API for injecting a gamepad into another app. Android global input injection is restricted; the supported route here is the app's own runtime adapter, not system-wide virtual HID.
 

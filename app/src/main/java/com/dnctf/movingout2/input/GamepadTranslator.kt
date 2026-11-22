@@ -27,16 +27,13 @@ class GamepadTranslator(private val deadzone: Float = 0.18f) {
         val left = PhysicalGamepadNormalizer.normalizeStick(
             axisValue(event, device, MotionEvent.AXIS_X), axisValue(event, device, MotionEvent.AXIS_Y), deadzone
         )
-        val rightX = if (supports(device, MotionEvent.AXIS_RX)) MotionEvent.AXIS_RX else MotionEvent.AXIS_Z
-        val rightY = if (supports(device, MotionEvent.AXIS_RY)) MotionEvent.AXIS_RY else MotionEvent.AXIS_RZ
+        val axisLayout = PhysicalGamepadAxisLayout.resolve(device?.motionRanges?.map { it.axis }?.toSet() ?: emptySet())
         val right = PhysicalGamepadNormalizer.normalizeStick(
-            axisValue(event, device, rightX), axisValue(event, device, rightY), deadzone
+            axisValue(event, device, axisLayout.rightX), axisValue(event, device, axisLayout.rightY), deadzone
         )
         lx = left.x; ly = left.y; rx = right.x; ry = right.y
-        val lAxis = if (supports(device, MotionEvent.AXIS_LTRIGGER)) MotionEvent.AXIS_LTRIGGER else MotionEvent.AXIS_BRAKE
-        val rAxis = if (supports(device, MotionEvent.AXIS_RTRIGGER)) MotionEvent.AXIS_RTRIGGER else MotionEvent.AXIS_GAS
-        lt = normalizeTrigger(event.getAxisValue(lAxis), device?.getMotionRange(lAxis))
-        rt = normalizeTrigger(event.getAxisValue(rAxis), device?.getMotionRange(rAxis))
+        lt = normalizeTrigger(event.getAxisValue(axisLayout.leftTrigger), device?.getMotionRange(axisLayout.leftTrigger))
+        rt = normalizeTrigger(event.getAxisValue(axisLayout.rightTrigger), device?.getMotionRange(axisLayout.rightTrigger)
         hatButtons = PhysicalGamepadNormalizer.hatButtons(
             event.getAxisValue(MotionEvent.AXIS_HAT_X), event.getAxisValue(MotionEvent.AXIS_HAT_Y)
         )
@@ -55,9 +52,6 @@ class GamepadTranslator(private val deadzone: Float = 0.18f) {
         return if (range != null) PhysicalGamepadNormalizer.normalizeAxisInRange(raw, range.min, range.max)
         else raw.takeIf { it.isFinite() }?.coerceIn(-1f, 1f) ?: 0f
     }
-    private fun supports(device: InputDevice?, axis: Int): Boolean =
-        device?.getMotionRange(axis) != null
-
     private fun normalizeTrigger(raw: Float, range: InputDevice.MotionRange?): Float {
         if (range != null) return PhysicalGamepadNormalizer.normalizeTriggerInRange(raw, range.min, range.max)
         return PhysicalGamepadNormalizer.normalizeTrigger(raw)

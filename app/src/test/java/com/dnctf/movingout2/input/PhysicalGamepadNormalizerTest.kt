@@ -42,6 +42,17 @@ class PhysicalGamepadNormalizerTest {
         assertEquals(MotionEvent.AXIS_Z, fallback.rightX); assertEquals(MotionEvent.AXIS_RZ, fallback.rightY)
         assertEquals(MotionEvent.AXIS_BRAKE, fallback.leftTrigger); assertEquals(MotionEvent.AXIS_GAS, fallback.rightTrigger)
     }
+    @Test fun incompleteRightStickAxesNeverMixStandardAndLegacyPairs() {
+        val rxAndRz = PhysicalGamepadAxisLayout.resolve(setOf(MotionEvent.AXIS_RX, MotionEvent.AXIS_RZ))
+        assertEquals(MotionEvent.AXIS_RX, rxAndRz.rightX)
+        assertEquals(MotionEvent.AXIS_RY, rxAndRz.rightY)
+        val zAndRy = PhysicalGamepadAxisLayout.resolve(setOf(MotionEvent.AXIS_Z, MotionEvent.AXIS_RY))
+        assertEquals(MotionEvent.AXIS_RX, zAndRy.rightX)
+        assertEquals(MotionEvent.AXIS_RY, zAndRy.rightY)
+        val legacyPair = PhysicalGamepadAxisLayout.resolve(setOf(MotionEvent.AXIS_Z, MotionEvent.AXIS_RZ))
+        assertEquals(MotionEvent.AXIS_Z, legacyPair.rightX)
+        assertEquals(MotionEvent.AXIS_RZ, legacyPair.rightY)
+    }
     @Test fun standardAndroidButtonsMapToCanonicalButtons() {
         assertEquals(ControllerButton.A, GamepadKeyMapping.mapKeyCode(KeyEvent.KEYCODE_BUTTON_A))
         assertEquals(ControllerButton.RB, GamepadKeyMapping.mapKeyCode(KeyEvent.KEYCODE_BUTTON_R1))

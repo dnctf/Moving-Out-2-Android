@@ -24,6 +24,7 @@ import com.dnctf.movingout2.input.VirtualControllerView
 import com.dnctf.movingout2.input.PhysicalGamepadManager
 import com.dnctf.movingout2.input.ControllerProfile
 import com.dnctf.movingout2.input.ControllerProfileRepository
+import com.dnctf.movingout2.input.readBoundedUtf8Profile
 import com.dnctf.movingout2.installation.GameInstallationManager
 import com.dnctf.movingout2.installation.InstallationRepository
 import com.dnctf.movingout2.runtime.RuntimeBundleImporter
