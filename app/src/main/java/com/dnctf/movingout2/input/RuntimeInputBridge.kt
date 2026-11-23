@@ -45,15 +45,16 @@ class RuntimeInputBridge(private val transport: XInputTransport = NativeXInputTr
     fun setNativeRuntimeConnected(connected: Boolean) = updateStatus(connected)
 
     fun packet(virtualState: ControllerState, physicalState: ControllerState = ControllerState(), merge: Boolean = true): XInputPacket {
-        val state = if (merge) ControllerState(
-            virtualState.buttons + physicalState.buttons,
-            choose(virtualState.leftX, physicalState.leftX),
-            choose(virtualState.leftY, physicalState.leftY),
-            choose(virtualState.rightX, physicalState.rightX),
-            choose(virtualState.rightY, physicalState.rightY),
-            maxOf(virtualState.leftTrigger, physicalState.leftTrigger),
-            maxOf(virtualState.rightTrigger, physicalState.rightTrigger)
-        ) else virtualState
+        val state = if (merge) {
+            val left = dominantStick(virtualState.leftX, virtualState.leftY, physicalState.leftX, physicalState.leftY)
+            val right = dominantStick(virtualState.rightX, virtualState.rightY, physicalState.rightX, physicalState.rightY)
+            ControllerState(
+                virtualState.buttons + physicalState.buttons,
+                left.first, left.second, right.first, right.second,
+                maxTrigger(virtualState.leftTrigger, physicalState.leftTrigger),
+                maxTrigger(virtualState.rightTrigger, physicalState.rightTrigger)
+            )
+        } else virtualState
         val buttonMap = mapOf(
             ControllerButton.UP to 0x0001, ControllerButton.DOWN to 0x0002,
             ControllerButton.LEFT to 0x0004, ControllerButton.RIGHT to 0x0008,
@@ -109,7 +110,20 @@ class RuntimeInputBridge(private val transport: XInputTransport = NativeXInputTr
     }
 
     companion object {
-        private fun choose(a: Float, b: Float) = if (a != 0f) a else b
+        /**
+         * Choose a whole stick vector, not independent axes. Touch wins equal-strength ties;
+         * the stronger source wins when both sources move the same stick.
+         */
+        private fun dominantStick(vx: Float, vy: Float, px: Float, py: Float): Pair<Float, Float> {
+            val virtual = safeAxis(vx) to safeAxis(vy)
+            val physical = safeAxis(px) to safeAxis(py)
+            val virtualMagnitude = virtual.first * virtual.first + virtual.second * virtual.second
+            val physicalMagnitude = physical.first * physical.first + physical.second * physical.second
+            return if (physicalMagnitude > virtualMagnitude) physical else virtual
+        }
+        private fun safeAxis(value: Float) = if (value.isFinite()) value.coerceIn(-1f, 1f) else 0f
+        private fun safeTrigger(value: Float) = if (value.isFinite()) value.coerceIn(0f, 1f) else 0f
+        private fun maxTrigger(a: Float, b: Float) = maxOf(safeTrigger(a), safeTrigger(b))
         fun axisShort(value: Float): Short {
             val n = if (value.isFinite()) value.coerceIn(-1f, 1f) else 0f
             return if (n <= -1f) (-32768).toShort() else (n * 32767f).toInt().coerceIn(-32767, 32767).toShort()
