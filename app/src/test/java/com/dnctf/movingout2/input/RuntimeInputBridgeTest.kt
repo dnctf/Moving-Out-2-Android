@@ -34,15 +34,35 @@ class RuntimeInputBridgeTest {
         assertEquals(127.toByte(), RuntimeInputBridge.triggerByte(.5f))
         assertEquals(255.toByte(), RuntimeInputBridge.triggerByte(1f))
     }
-    @Test fun mergedVirtualAndPhysicalStateUsesButtonUnionAndVirtualAxisPriority() {
+    @Test fun mergedVirtualAndPhysicalStateUsesButtonUnionAndDominantStickVector() {
         val bridge = RuntimeInputBridge(FakeTransport())
         val v = ControllerState(buttons=setOf(ControllerButton.A), leftX=.25f, leftTrigger=.3f)
         val p = ControllerState(buttons=setOf(ControllerButton.B), leftX=-.8f, rightY=.5f, rightTrigger=.7f)
         val packet = bridge.packet(v,p)
         assertEquals(0x3000.toShort(), packet.buttonsBitmask)
-        assertEquals(RuntimeInputBridge.axisShort(.25f), packet.thumbLX)
+        assertEquals(RuntimeInputBridge.axisShort(-.8f), packet.thumbLX)
         assertEquals(RuntimeInputBridge.axisShort(-.5f), packet.thumbRY)
         assertEquals(178.toByte(), packet.rightTrigger)
+    }
+    @Test fun stickMergeNeverCombinesAxesFromDifferentSources() {
+        val bridge = RuntimeInputBridge(FakeTransport())
+        // Touch moves horizontally, physical device vertically. The larger physical
+        // vector wins as a whole, rather than producing a diagonal from two devices.
+        val touch = ControllerState(leftX=.35f, leftY=0f)
+        val physical = ControllerState(leftX=0f, leftY=.9f)
+        val packet = bridge.packet(touch, physical)
+        assertEquals(0.toShort(), packet.thumbLX)
+        assertEquals(RuntimeInputBridge.axisShort(-.9f), packet.thumbLY)
+    }
+    @Test fun equalStrengthStickVectorsPreferTouchAndMergedTriggersAreFinite() {
+        val bridge = RuntimeInputBridge(FakeTransport())
+        val packet = bridge.packet(
+            ControllerState(leftX=.5f, leftTrigger=Float.NaN),
+            ControllerState(leftX=-.5f, leftTrigger=.6f, rightTrigger=Float.POSITIVE_INFINITY)
+        )
+        assertEquals(RuntimeInputBridge.axisShort(.5f), packet.thumbLX)
+        assertEquals(153.toByte(), packet.leftTrigger)
+        assertEquals(0.toByte(), packet.rightTrigger)
     }
     @Test fun bridgeStatusNeverClaimsRuntimeConnectedWithoutTransport() {
         val fake = FakeTransport()
