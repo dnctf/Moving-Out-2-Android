@@ -20,6 +20,7 @@ import android.widget.Button
 import android.widget.ScrollView
 import com.dnctf.movingout2.runtime.RuntimeDiagnostics
 import com.dnctf.movingout2.input.RuntimeInputBridge
+import com.dnctf.movingout2.input.ControllerInputCoordinator
 import com.dnctf.movingout2.input.VirtualControllerView
 import com.dnctf.movingout2.input.PhysicalGamepadManager
 import com.dnctf.movingout2.input.ControllerProfile
@@ -47,8 +48,7 @@ class MainActivity : Activity() {
     private val diagnosticLog = RuntimeDiagnostics()
     private var pendingDiagnosticZip: File? = null
     private val pickDiagnosticDestination = 1004
-    private var touchControllerState = com.dnctf.movingout2.input.ControllerState()
-    private var physicalControllerState = com.dnctf.movingout2.input.ControllerState()
+    private lateinit var inputCoordinator: ControllerInputCoordinator
     private var controllerProfile = ControllerProfile.presets.first()
     private var pendingProfileExport: String? = null
     private val pickFolder = 1001
@@ -62,9 +62,9 @@ class MainActivity : Activity() {
         repository = InstallationRepository(this)
         controllerProfile = ControllerProfileRepository.load(this, "moving-out-2") ?: ControllerProfile.presets.first()
         inputBridge.initialize(RuntimeLaunchConfig(filesDir).sharedMemoryFile.absolutePath)
+        inputCoordinator = ControllerInputCoordinator(inputBridge, controllerProfile)
         physicalGamepadManager = PhysicalGamepadManager(this) { state ->
-            physicalControllerState = state
-            sendCombinedInput()
+            inputCoordinator.updatePhysicalState(state)
         }
         val views = LauncherHomeView.create(this, ::openFolderPicker, ::revalidateSavedFolder, ::openRuntimeBundlePicker, ::openGameZipPicker, ::showSettings, ::showControllerTest, ::exportDiagnostics)
         status = views.status
@@ -100,9 +100,8 @@ class MainActivity : Activity() {
         val info = TextView(this).apply { text = "Touch the controls or connect a controller.\nMO2X: " + if (inputBridge.isNativeAvailable() && inputBridge.isInitialized()) "native shared memory ready; Wine reader pending" else if (inputBridge.isInitialized()) "JVM fallback active; native shared memory unavailable" else "transport initialization failed"; textSize = 14f }
         val stateText = TextView(this).apply { text = "Input: idle"; textSize = 13f; setPadding(0, 8, 0, 8) }
         val pad = VirtualControllerView(this) { state ->
-            touchControllerState = state
-            sendCombinedInput()
-            val readback = inputBridge.packet(state, physicalControllerState).serializeLittleEndian().joinToString(" ") { byte -> "%02X".format(byte.toInt() and 0xFF) }
+            inputCoordinator.updateTouchState(state)
+            val readback = inputCoordinator.previewPacket(state).serializeLittleEndian().joinToString(" ") { byte -> "%02X".format(byte.toInt() and 0xFF) }
             stateText.text = "Input: buttons=" + state.buttons.joinToString() + " | left=(" + state.leftX + ", " + state.leftY + ") | right=(" + state.rightX + ", " + state.rightY + ")\nMO2X packet: " + readback
         }
         val overlay = LauncherSettings.load(this)
@@ -116,8 +115,7 @@ class MainActivity : Activity() {
         dialog.setContentView(container)
         dialog.setTitle("Controller test")
         dialog.setOnDismissListener {
-            touchControllerState = com.dnctf.movingout2.input.ControllerState()
-            sendCombinedInput()
+            inputCoordinator.clearTouch()
         }
         dialog.show()
         dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.96f).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -144,19 +142,13 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         physicalGamepadManager.unregister()
-        touchControllerState = com.dnctf.movingout2.input.ControllerState()
-        physicalControllerState = com.dnctf.movingout2.input.ControllerState()
-        inputBridge.disconnectPlayer(0)
+        inputCoordinator.resetAndDisconnect()
         super.onPause()
     }
 
     override fun onDestroy() {
-        inputBridge.destroy()
+        inputCoordinator.destroy()
         super.onDestroy()
-    }
-
-    private fun sendCombinedInput() {
-        inputBridge.sendCombined(0, controllerProfile.apply(touchControllerState), controllerProfile.apply(physicalControllerState), connected = true)
     }
 
     private fun openControllerProfileImport() {
@@ -263,6 +255,7 @@ class MainActivity : Activity() {
                 val selectedProfileIndex = profileSpinner.selectedItemPosition
                 if (selectedProfileIndex in ControllerProfile.presets.indices) {
                     controllerProfile = ControllerProfile.presets[selectedProfileIndex]
+                    inputCoordinator.setProfile(controllerProfile)
                     ControllerProfileRepository.save(this, "moving-out-2", controllerProfile)
                 }
                 LauncherSettings.save(this, LauncherSettings(resolutionScale = resolution.progress.coerceIn(50, 100), fpsTarget = selectedFps, graphicsPreset = selectedPreset, masterVolume = master.progress, musicVolume = music.progress, sfxVolume = sfx.progress, controllerScale = controllerScale.progress.coerceIn(65, 150), controllerOpacity = controllerOpacity.progress.coerceIn(15, 100), controllerOffsetX = controllerOffsetX.progress.coerceIn(35, 65), controllerOffsetY = controllerOffsetY.progress.coerceIn(35, 65), controllerEnabled = controllerEnabled.isChecked, controllerHaptics = controllerHaptics.isChecked))
@@ -325,7 +318,7 @@ class MainActivity : Activity() {
                 val imported = ControllerProfileRepository.importFromJson(raw)
                 ControllerProfileRepository.save(this, "moving-out-2", imported)
                 controllerProfile = imported
-                sendCombinedInput()
+                inputCoordinator.setProfile(imported)
                 Toast.makeText(this, "Controller profile imported: ${imported.name}", Toast.LENGTH_LONG).show()
             }.onFailure { Toast.makeText(this, "Profile import rejected: ${it.message}", Toast.LENGTH_LONG).show() }
             pickControllerProfileExport -> runCatching {
