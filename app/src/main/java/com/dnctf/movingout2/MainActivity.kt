@@ -137,6 +137,7 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        inputCoordinator.resume()
         physicalGamepadManager.register()
     }
 

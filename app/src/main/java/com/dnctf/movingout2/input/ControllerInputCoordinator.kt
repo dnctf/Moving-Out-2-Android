@@ -1,5 +1,4 @@
 package com.dnctf.movingout2.input
-
 /**
  * Owns merged touch/physical controller state and applies one profile consistently
  * to live XInput writes and controller-test packet previews. Android-free for JVM tests.
@@ -11,19 +10,27 @@ class ControllerInputCoordinator(
     private var touchState = ControllerState()
     private var physicalState = ControllerState()
     private var profile = initialProfile
+    private var active = true
 
     init {
         profile.validate()
     }
 
     @Synchronized
+    fun resume() {
+        active = true
+    }
+
+    @Synchronized
     fun updateTouchState(state: ControllerState): Boolean {
+        if (!active) return false
         touchState = state
         return sendCombined()
     }
 
     @Synchronized
     fun updatePhysicalState(state: ControllerState): Boolean {
+        if (!active) return false
         physicalState = state
         return sendCombined()
     }
@@ -41,8 +48,10 @@ class ControllerInputCoordinator(
         bridge.packet(profile.apply(touchOverride), profile.apply(physicalState))
 
     @Synchronized
-    fun sendCombined(connected: Boolean = true): Boolean =
-        bridge.sendCombined(0, profile.apply(touchState), profile.apply(physicalState), connected)
+    private fun sendCombined(): Boolean {
+        if (!active) return false
+        return bridge.sendCombined(0, profile.apply(touchState), profile.apply(physicalState), connected = true)
+    }
 
     @Synchronized
     fun clearTouch(): Boolean {
@@ -50,9 +59,10 @@ class ControllerInputCoordinator(
         return sendCombined()
     }
 
-    /** Pause/disconnect neutralizes state and marks the player disconnected. */
+    /** Pause/disconnect neutralizes state and ignores callbacks until resume(). */
     @Synchronized
     fun resetAndDisconnect(): Boolean {
+        active = false
         touchState = ControllerState()
         physicalState = ControllerState()
         return bridge.disconnectPlayer(0)

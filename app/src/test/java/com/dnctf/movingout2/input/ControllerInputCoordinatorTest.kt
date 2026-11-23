@@ -1,5 +1,4 @@
 package com.dnctf.movingout2.input
-
 import org.junit.Assert.*
 import org.junit.Test
 import java.nio.ByteBuffer
@@ -61,7 +60,7 @@ class ControllerInputCoordinatorTest {
     }
 
     @Test
-    fun pauseResetDisconnectsAndWritesNeutralPacket() {
+    fun pauseIgnoresCallbacksUntilResumedAndPreventsStaleReconnect() {
         val transport = RecordingTransport()
         val coordinator = ControllerInputCoordinator(bridge(transport))
         coordinator.updateTouchState(ControllerState(buttons = setOf(ControllerButton.A), leftX = 1f))
@@ -69,7 +68,15 @@ class ControllerInputCoordinatorTest {
         assertTrue(coordinator.resetAndDisconnect())
         assertFalse(transport.connected)
         assertArrayEquals(ByteArray(XInputTransport.PACKET_SIZE_BYTES), transport.packet)
-        // Reuse after pause must reconnect without stale inputs.
+
+        // Late callbacks and dialog-dismiss cleanup must not reconnect while paused.
+        assertFalse(coordinator.updateTouchState(ControllerState(buttons = setOf(ControllerButton.A))))
+        assertFalse(coordinator.updatePhysicalState(ControllerState(buttons = setOf(ControllerButton.B))))
+        assertFalse(coordinator.clearTouch())
+        assertFalse(transport.connected)
+        assertArrayEquals(ByteArray(XInputTransport.PACKET_SIZE_BYTES), transport.packet)
+
+        coordinator.resume()
         assertTrue(coordinator.updateTouchState(ControllerState(buttons = setOf(ControllerButton.X))))
         assertTrue(transport.connected)
         assertEquals(0x4000, buttonMask(transport.packet))
