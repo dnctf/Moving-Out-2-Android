@@ -29,8 +29,9 @@ class GamepadTranslatorTest {
             0f, 0f, setOf(ControllerButton.RIGHT)
         )
         assertEquals(setOf(ControllerButton.UP, ControllerButton.RIGHT), active.buttons)
-        translator.applyButton(ControllerButton.UP, false)
-        assertEquals(setOf(ControllerButton.RIGHT), translator.releaseAll().buttons.intersect(setOf(ControllerButton.RIGHT)))
+        val afterKeyRelease = translator.applyButton(ControllerButton.UP, false)
+        assertEquals(setOf(ControllerButton.RIGHT), afterKeyRelease.buttons)
+        assertEquals(ControllerState(), translator.releaseAll())
     }
 
     @Test fun invalidNormalizedSamplesCannotLeakNanOrInfinity() {
