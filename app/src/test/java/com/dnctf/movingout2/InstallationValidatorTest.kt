@@ -3,6 +3,7 @@ package com.dnctf.movingout2
 import com.dnctf.movingout2.installation.InstallationStatus
 import com.dnctf.movingout2.installation.InstallationValidator
 import com.dnctf.movingout2.installation.ValidationStage
+import com.dnctf.movingout2.installation.InstallationStagePolicy
 import java.io.File
 import java.nio.file.Files
 import org.junit.Assert.*
@@ -31,6 +32,13 @@ class InstallationValidatorTest {
         metadata.writeBytes(byteArrayOf(0xaf.toByte(), 0x1b.toByte(), 0xb1.toByte(), 0xfa.toByte(), 29.toByte(), 0.toByte(), 0.toByte(), 0.toByte()))
         File(root, "MovingOut2_Data/globalgamemanagers").apply { parentFile.mkdirs(); writeText("Unity 2021.3.16f1 synthetic fixture") }
         return root
+    }
+
+    @Test fun sharedCoreStagePolicyRequiresFolderAccessAndCleanRequiredFiles() {
+        assertTrue(InstallationStagePolicy.coreFilesPassed(emptyList(), emptyList(), folderAccessPassed = true))
+        assertFalse(InstallationStagePolicy.coreFilesPassed(emptyList(), emptyList(), folderAccessPassed = false))
+        assertFalse(InstallationStagePolicy.coreFilesPassed(listOf("missing.exe"), emptyList(), folderAccessPassed = true))
+        assertFalse(InstallationStagePolicy.coreFilesPassed(emptyList(), listOf("revoked SAF permission"), folderAccessPassed = true))
     }
 
     @Test fun validX64FilesAreDetectedButRuntimeIsNeverImplied() {
@@ -150,6 +158,9 @@ class InstallationValidatorTest {
         val report = InstallationValidator().validate(root)
         assertEquals(InstallationStatus.INVALID_STRUCTURE, report.status)
         assertNull(report.metadataVersion)
+        assertTrue("Core file stage must not absorb metadata-header failures", report.stages.first { it.stage == ValidationStage.CORE_FILES }.passed)
+        assertFalse(report.stages.first { it.stage == ValidationStage.VERSION_ARCH }.passed
+        )
         assertFalse(report.stages.last().passed)
         root.deleteRecursively()
     }
