@@ -11,6 +11,7 @@ class GameBinaryAnalyzerTest {
         bytes[0]='M'.code.toByte(); bytes[1]='Z'.code.toByte()
         put32(0x3c, 64); bytes[64]='P'.code.toByte(); bytes[65]='E'.code.toByte()
         put16(68, machine); put16(70, 1); put16(84, 240); put16(88, 0x20b)
+        put32(196, 16) // NumberOfRvaAndSizes
         put32(208, 0x1010); put32(212, 40)
         val section = 328
         put32(section+8, 0x400); put32(section+12, 0x1000); put32(section+16, 0x400); put32(section+20, 0x200)
@@ -39,6 +40,25 @@ class GameBinaryAnalyzerTest {
         assertFalse(result.isPe32Plus || result.imports.isNotEmpty())
         assertTrue(result.errors.isNotEmpty())
     }
+    @Test fun oversizedUnsignedImportDirectoryFieldsAreRejected() {
+        val bytes = peWithImport()
+        fun put32(offset: Int, value: Int) { for (i in 0..3) bytes[offset+i] = (value ushr (i*8)).toByte() }
+        put32(212, -1)
+        assertTrue(GameBinaryAnalyzer.analyze(bytes).errors.isNotEmpty())
+    }
+
+    @Test fun dataDirectoryCountCannotExceedOptionalHeaderCapacity() {
+        val bytes = peWithImport()
+        for (i in 0..3) bytes[196+i] = (17 ushr (i*8)).toByte()
+        assertTrue(GameBinaryAnalyzer.analyze(bytes).errors.any { it.contains("directory count") })
+    }
+
+    @Test fun nonAsciiImportNameIsRejected() {
+        val bytes = peWithImport()
+        bytes[0x250] = 0xff.toByte()
+        assertTrue(GameBinaryAnalyzer.analyze(bytes).errors.isNotEmpty())
+    }
+
     @Test fun unterminatedImportNameIsRejected() {
         val bytes = peWithImport(dll="xinput.dll")
         bytes.fill(65.toByte(), 0x250, 0x250+4097.coerceAtMost(bytes.size-0x250))
