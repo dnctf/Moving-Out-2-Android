@@ -66,7 +66,8 @@ class InstallationValidator {
         val unityVersion = runCatching { findCaseInsensitive(root, "MovingOut2_Data/globalgamemanagers") }
             .getOrNull()?.takeIf { it.isFile && it.canRead() && it.length() > 0 }
             ?.let { file -> runCatching { file.inputStream().use { UnityGameProfileDetector.detectUnityVersion(readUpTo(it, 256 * 1024)) } }.getOrNull() }
-        stages += StageResult(ValidationStage.VERSION_ARCH, peOk,
+        val versionArchPassed = peOk && metadataVersion != null
+        stages += StageResult(ValidationStage.VERSION_ARCH, versionArchPassed,
             peChecks.map { (name, arch) -> "$name: ${arch ?: "invalid/truncated PE32+ header"}" } +
                 "Unity version: ${unityVersion ?: "not detected (globalgamemanagers unavailable/unsupported)"}" +
                 "IL2CPP metadata version: ${metadataVersion ?: "invalid/unknown"}")

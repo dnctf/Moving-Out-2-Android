@@ -142,8 +142,10 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
-        physicalGamepadManager.unregister()
+        // Disable coordinator callbacks first: unregister() emits a final neutral device state.
+        // That callback must not reconnect the XInput slot while the Activity is pausing.
         inputCoordinator.resetAndDisconnect()
+        physicalGamepadManager.unregister()
         super.onPause()
     }
 

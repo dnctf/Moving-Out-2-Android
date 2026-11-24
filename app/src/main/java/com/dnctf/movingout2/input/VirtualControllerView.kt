@@ -18,6 +18,8 @@ class VirtualControllerView(context: Context, private val onState: (ControllerSt
     private val triggerRects = mutableMapOf<Boolean, RectF>()
     private var leftCenter = Pair(0f, 0f)
     private var rightCenter = Pair(0f, 0f)
+    private var dpadCenter = Pair(0f, 0f)
+    private var dpadRadius = 1f
     private var stickRadius = 1f
     private var scale = 1f
     private var opacity = .44f
@@ -62,8 +64,9 @@ class VirtualControllerView(context: Context, private val onState: (ControllerSt
         leftCenter = Pair(w * .16f + ox, h * .72f + oy)
         rightCenter = Pair(w * .58f + ox, h * .72f + oy)
         stickRadius = u * 1.35f
-        val dpadCenter = Pair(w * .20f + ox, h * .40f + oy)
-        val dSize = u * .50f; val dOffset = u * .52f
+        dpadCenter = Pair(w * .20f + ox, h * .40f + oy)
+        dpadRadius = u * 1.18f
+        val dSize = u * .28f; val dOffset = u * .58f
         buttonRects[ControllerButton.UP] = rect(dpadCenter.first, dpadCenter.second - dOffset, dSize)
         buttonRects[ControllerButton.DOWN] = rect(dpadCenter.first, dpadCenter.second + dOffset, dSize)
         buttonRects[ControllerButton.LEFT] = rect(dpadCenter.first - dOffset, dpadCenter.second, dSize)
@@ -84,8 +87,13 @@ class VirtualControllerView(context: Context, private val onState: (ControllerSt
     private fun rect(cx: Float, cy: Float, halfWidth: Float, halfHeight: Float): RectF = RectF(cx-halfWidth, cy-halfHeight, cx+halfWidth, cy+halfHeight)
 
     private fun drawDpad(canvas: Canvas, alpha: Int, unit: Float) {
+        val state = engine.snapshot()
+        paint.color = ((alpha * .18f).toInt().coerceIn(0, 255) shl 24) or 0xFFFFFF
+        canvas.drawCircle(dpadCenter.first, dpadCenter.second, dpadRadius, paint)
         listOf(ControllerButton.UP to "↑", ControllerButton.DOWN to "↓", ControllerButton.LEFT to "←", ControllerButton.RIGHT to "→")
-            .forEach { (button, label) -> drawButton(canvas, buttonRects.getValue(button), label, button in engine.snapshot().buttons, alpha, unit * .34f) }
+            .forEach { (button, label) ->
+                drawButton(canvas, buttonRects.getValue(button), label, button in state.buttons, alpha, unit * .34f)
+            }
     }
     private fun drawFaceButtons(canvas: Canvas, alpha: Int, unit: Float) {
         listOf(ControllerButton.Y to "Y", ControllerButton.X to "X", ControllerButton.B to "B", ControllerButton.A to "A")
@@ -130,11 +138,17 @@ class VirtualControllerView(context: Context, private val onState: (ControllerSt
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val index = event.actionIndex; val id = event.getPointerId(index); val x = event.getX(index); val y = event.getY(index)
                 val trigger = triggerRects.entries.firstOrNull { it.value.contains(x,y) }
+                val dpadDirections = VirtualDpadGeometry.hitTest(
+                    dpadCenter.first, dpadCenter.second, x, y, dpadRadius
+                )
                 if (trigger != null) {
                     val right = trigger.key
                     if (engine.claimTrigger(id, right)) { engine.setTrigger(id, 1f, right); haptic() }
+                } else if (dpadDirections != null) {
+                    if (engine.claimDpad(id, dpadDirections)) haptic()
                 } else {
-                    val button = buttonRects.entries.firstOrNull { it.value.contains(x,y) }?.key
+                    val dpadButtons = setOf(ControllerButton.UP, ControllerButton.DOWN, ControllerButton.LEFT, ControllerButton.RIGHT)
+                    val button = buttonRects.entries.firstOrNull { it.key !in dpadButtons && it.value.contains(x,y) }?.key
                     if (button != null) {
                         if (engine.claimButton(id, button)) haptic()
                     } else if (insideStick(x,y,leftCenter)) {
@@ -148,6 +162,12 @@ class VirtualControllerView(context: Context, private val onState: (ControllerSt
             MotionEvent.ACTION_MOVE -> {
                 for (i in 0 until event.pointerCount) {
                     val id = event.getPointerId(i)
+                    if (engine.ownsDpad(id)) {
+                        val directions = VirtualDpadGeometry.hitTest(
+                            dpadCenter.first, dpadCenter.second, event.getX(i), event.getY(i), dpadRadius
+                        ) ?: emptySet()
+                        engine.updateDpad(id, directions)
+                    }
                     if (engine.ownsStick(id, false)) moveStick(id, event.getX(i), event.getY(i), false)
                     if (engine.ownsStick(id, true)) moveStick(id, event.getX(i), event.getY(i), true)
                 }

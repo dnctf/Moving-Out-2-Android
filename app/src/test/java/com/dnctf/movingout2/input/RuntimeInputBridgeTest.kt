@@ -34,15 +34,43 @@ class RuntimeInputBridgeTest {
         assertEquals(127.toByte(), RuntimeInputBridge.triggerByte(.5f))
         assertEquals(255.toByte(), RuntimeInputBridge.triggerByte(1f))
     }
-    @Test fun mergedVirtualAndPhysicalStateUsesButtonUnionAndVirtualAxisPriority() {
+    @Test fun mergedVirtualAndPhysicalStateUsesButtonUnionAndDominantStickVector() {
         val bridge = RuntimeInputBridge(FakeTransport())
         val v = ControllerState(buttons=setOf(ControllerButton.A), leftX=.25f, leftTrigger=.3f)
         val p = ControllerState(buttons=setOf(ControllerButton.B), leftX=-.8f, rightY=.5f, rightTrigger=.7f)
         val packet = bridge.packet(v,p)
         assertEquals(0x3000.toShort(), packet.buttonsBitmask)
-        assertEquals(RuntimeInputBridge.axisShort(.25f), packet.thumbLX)
+        assertEquals(RuntimeInputBridge.axisShort(-.8f), packet.thumbLX)
         assertEquals(RuntimeInputBridge.axisShort(-.5f), packet.thumbRY)
         assertEquals(178.toByte(), packet.rightTrigger)
+    }
+
+    @Test fun dominantStickMergeNeverCombinesAxesFromDifferentSources() {
+        val bridge = RuntimeInputBridge(FakeTransport())
+        val touch = ControllerState(leftX=.35f, leftY=0f)
+        val physical = ControllerState(leftX=0f, leftY=.9f)
+        val packet = bridge.packet(touch, physical)
+        assertEquals(0.toShort(), packet.thumbLX)
+        assertEquals(RuntimeInputBridge.axisShort(-.9f), packet.thumbLY)
+    }
+
+    @Test fun equalMagnitudeStickMergePrefersVirtualSourceDeterministically() {
+        val bridge = RuntimeInputBridge(FakeTransport())
+        val touch = ControllerState(leftX=.6f, leftY=0f)
+        val physical = ControllerState(leftX=0f, leftY=.6f)
+        val packet = bridge.packet(touch, physical)
+        assertEquals(RuntimeInputBridge.axisShort(.6f), packet.thumbLX)
+        assertEquals(0.toShort(), packet.thumbLY)
+    }
+
+    @Test fun invalidMergedAxesAndTriggersAreNeutralizedBeforeSerialization() {
+        val bridge = RuntimeInputBridge(FakeTransport())
+        val touch = ControllerState(leftX=Float.NaN, leftY=Float.POSITIVE_INFINITY, leftTrigger=Float.NaN)
+        val physical = ControllerState(leftX=.4f, leftY=0f, leftTrigger=.7f)
+        val packet = bridge.packet(touch, physical)
+        assertEquals(RuntimeInputBridge.axisShort(.4f), packet.thumbLX)
+        assertEquals(0.toShort(), packet.thumbLY)
+        assertEquals(178.toByte(), packet.leftTrigger)
     }
     @Test fun bridgeStatusNeverClaimsRuntimeConnectedWithoutTransport() {
         val fake = FakeTransport()

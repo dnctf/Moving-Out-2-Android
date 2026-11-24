@@ -33,7 +33,7 @@ class NativeXInputTransportTest {
         t.destroy()
     }
 
-    @Test fun combinesTouchAndPhysicalButtonsAndTriggers() {
+    @Test fun combinesTouchAndPhysicalButtonsTriggersAndDominantStick() {
         val bridge = RuntimeInputBridge(NativeXInputTransport(forceFallbackForTesting = true))
         val virtual = ControllerState(buttons = setOf(ControllerButton.LB, ControllerButton.LT), leftX = 0.5f)
         val physical = ControllerState(buttons = setOf(ControllerButton.A, ControllerButton.RT), leftX = -0.8f)
@@ -41,7 +41,7 @@ class NativeXInputTransportTest {
         assertEquals((0x0100 or 0x1000).toShort(), packet.buttonsBitmask)
         assertEquals(255.toByte(), packet.leftTrigger)
         assertEquals(255.toByte(), packet.rightTrigger)
-        assertEquals(RuntimeInputBridge.axisShort(0.5f), packet.thumbLX)
+        assertEquals(RuntimeInputBridge.axisShort(-0.8f), packet.thumbLX)
     }
 
     @Test fun destroyNeutralizesFallbackSlots() {

@@ -59,4 +59,23 @@ class VirtualControllerEngineTest {
         engine.releasePointer(1)
         assertTrue(engine.claimButton(2, ControllerButton.X))
     }
+
+    @Test fun dpadPointerSupportsDiagonalAndSlidesBetweenDirections() {
+        val engine = VirtualControllerEngine()
+        assertTrue(engine.claimDpad(21, setOf(ControllerButton.UP, ControllerButton.RIGHT)))
+        assertEquals(setOf(ControllerButton.UP, ControllerButton.RIGHT), engine.snapshot().buttons)
+        assertTrue(engine.updateDpad(21, setOf(ControllerButton.DOWN)))
+        assertEquals(setOf(ControllerButton.DOWN), engine.snapshot().buttons)
+        engine.releasePointer(21)
+        assertTrue(engine.snapshot().buttons.isEmpty())
+    }
+
+    @Test fun dpadPointerOwnsOneControlGroupAndReleasesOnCancel() {
+        val engine = VirtualControllerEngine()
+        assertTrue(engine.claimDpad(31, setOf(ControllerButton.LEFT, ControllerButton.UP)))
+        assertFalse(engine.claimDpad(32, setOf(ControllerButton.RIGHT)))
+        assertFalse(engine.claimStick(31))
+        assertTrue(engine.releaseAll().buttons.isEmpty())
+        assertFalse(engine.ownsDpad(31))
+    }
 }
