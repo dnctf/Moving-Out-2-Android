@@ -4,6 +4,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class VirtualControllerEngineTest {
+    @Test fun nonFiniteDeadzoneFallsBackToSafeDefault() {
+        val result = VirtualControllerEngine.radialDeadzone(.5f, 0f, Float.NaN)
+        assertTrue(result.x.isFinite())
+        assertEquals(VirtualControllerEngine.radialDeadzone(.5f, 0f, .12f).x, result.x, 0f)
+    }
+
     @Test fun radialClampingAndDeadzoneAreStable() {
         assertEquals(0f, VirtualControllerEngine.radialDeadzone(0.05f, 0.05f).x, 0.0001f)
         val full = VirtualControllerEngine.radialDeadzone(2f, 0f)

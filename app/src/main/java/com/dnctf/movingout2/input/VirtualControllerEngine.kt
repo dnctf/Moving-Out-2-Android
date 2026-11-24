@@ -145,7 +145,7 @@ class VirtualControllerEngine(private val deadzone: Float = 0.12f) {
 
         fun radialDeadzone(x: Float, y: Float, deadzone: Float = 0.12f): Stick {
             if (!x.isFinite() || !y.isFinite()) return Stick(0f, 0f)
-            val d = deadzone.coerceIn(0f, 0.99f)
+            val d = deadzone.takeIf { it.isFinite() }?.coerceIn(0f, 0.99f) ?: 0.12f
             val magnitude = sqrt(x * x + y * y).coerceAtMost(1f)
             if (magnitude <= d) return Stick(0f, 0f)
             val scaled = ((magnitude - d) / (1f - d)).coerceIn(0f, 1f)

@@ -12,7 +12,9 @@ class PhysicalGamepadNormalizer(private val deadzone: Float = 0.12f) {
     private var state = Sample()
     fun update(leftX: Float, leftY: Float, rightX: Float, rightY: Float,
                leftTrigger: Float, rightTrigger: Float, buttons: Set<ControllerButton>): Sample {
-        state = Sample(radial(leftX,leftY).x, radial(leftX,leftY).y, radial(rightX,rightY).x, radial(rightX,rightY).y,
+        val left = radial(leftX, leftY)
+        val right = radial(rightX, rightY)
+        state = Sample(left.x, left.y, right.x, right.y,
             trigger(leftTrigger), trigger(rightTrigger), buttons.toSet())
         return state
     }
@@ -26,7 +28,7 @@ class PhysicalGamepadNormalizer(private val deadzone: Float = 0.12f) {
             if (!x.isFinite() || !y.isFinite()) return Stick(0f, 0f)
             val magnitude = sqrt(x * x + y * y)
             val clampedMagnitude = magnitude.coerceAtMost(1f)
-            val zone = deadzone.coerceIn(0f, 0.99f)
+            val zone = deadzone.takeIf { it.isFinite() }?.coerceIn(0f, 0.99f) ?: 0.12f
             if (clampedMagnitude <= zone || magnitude == 0f) return Stick(0f, 0f)
             val scaled = ((clampedMagnitude - zone) / (1f - zone)).coerceIn(0f, 1f)
             return Stick((x / magnitude * scaled).coerceIn(-1f, 1f), (y / magnitude * scaled).coerceIn(-1f, 1f))

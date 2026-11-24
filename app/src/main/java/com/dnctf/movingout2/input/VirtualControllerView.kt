@@ -33,10 +33,17 @@ class VirtualControllerView(
     private var hapticsEnabled = false
 
     fun configure(scale: Float = this.scale, opacity: Float = this.opacity, offsetX: Float = this.offsetX, offsetY: Float = this.offsetY) {
-        this.scale = scale.takeIf { it.isFinite() }?.coerceIn(.65f, 1.5f) ?: 1f
-        this.opacity = opacity.takeIf { it.isFinite() }?.coerceIn(.15f, 1f) ?: .44f
-        this.offsetX = offsetX.takeIf { it.isFinite() }?.coerceIn(-.15f, .15f) ?: 0f
-        this.offsetY = offsetY.takeIf { it.isFinite() }?.coerceIn(-.15f, .15f) ?: 0f
+        val nextScale = scale.takeIf { it.isFinite() }?.coerceIn(.65f, 1.5f) ?: 1f
+        val nextOpacity = opacity.takeIf { it.isFinite() }?.coerceIn(.15f, 1f) ?: .44f
+        val nextOffsetX = offsetX.takeIf { it.isFinite() }?.coerceIn(-.15f, .15f) ?: 0f
+        val nextOffsetY = offsetY.takeIf { it.isFinite() }?.coerceIn(-.15f, .15f) ?: 0f
+        val geometryChanged = nextScale != this.scale || nextOffsetX != this.offsetX || nextOffsetY != this.offsetY
+        this.scale = nextScale
+        this.opacity = nextOpacity
+        this.offsetX = nextOffsetX
+        this.offsetY = nextOffsetY
+        // A live layout edit must not leave a pointer owning geometry from the previous layout.
+        if (geometryChanged) emit(engine.releaseAll())
         invalidate()
     }
     fun setOverlayVisible(visible: Boolean) {
@@ -47,6 +54,16 @@ class VirtualControllerView(
     fun isOverlayVisible() = overlayVisible
     fun setHapticsEnabled(enabled: Boolean) { hapticsEnabled = enabled }
     private fun haptic() { if (hapticsEnabled) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY) }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (oldw > 0 && oldh > 0 && (w != oldw || h != oldh)) {
+            // Rotation/resizing invalidates pointer-to-control geometry; neutralize before relayout.
+            emit(engine.releaseAll())
+        }
+        if (w > 0 && h > 0) calculateGeometry()
+        else { buttonRects.clear(); triggerRects.clear() }
+    }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -137,7 +154,8 @@ class VirtualControllerView(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!overlayVisible) return false
-        if (buttonRects.isEmpty()) calculateGeometry()
+        // Recompute before hit testing so the first event after a resize uses current bounds.
+        calculateGeometry()
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val index = event.actionIndex; val id = event.getPointerId(index); val x = event.getX(index); val y = event.getY(index)
@@ -180,7 +198,7 @@ class VirtualControllerView(
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                 engine.releasePointer(event.getPointerId(event.actionIndex)); emit(); invalidate()
             }
-            MotionEvent.ACTION_CANCEL -> { engine.releaseAll(); emit(); invalidate() }
+            MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_OUTSIDE -> { engine.releaseAll(); emit(); invalidate() }
         }
         return true
     }

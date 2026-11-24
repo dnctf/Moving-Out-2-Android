@@ -3,6 +3,9 @@ package com.dnctf.movingout2.input
 import android.content.Context
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
 import org.json.JSONObject
 
 data class ControllerProfile(
@@ -77,28 +80,49 @@ data class ControllerProfile(
         )
 
         fun importFromJson(json: String): ControllerProfile {
-            require(json.length <= 65536) { "Controller profile is too large." }
-            val root = JSONObject(json)
-            require(root.optInt("schemaVersion", -1) == CURRENT_SCHEMA) { "Unsupported controller profile schema." }
-            fun readStringMap(field: String): Map<String, String> {
-                if (!root.has(field) || root.isNull(field)) return emptyMap()
-                val obj = root.optJSONObject(field) ?: throw IllegalArgumentException("$field must be a JSON object.")
-                return obj.keys().asSequence().associateWith { key ->
-                    val value = obj.get(key)
-                    require(value is String) { "$field values must be strings." }
-                    value
+            require(json.toByteArray(Charsets.UTF_8).size <= 65536) { "Controller profile is too large." }
+            try {
+                val root = JSONObject(json)
+                val allowedFields = setOf("schemaVersion", "name", "sensitivity", "deadzone", "buttonMap", "axisMap")
+                require(root.keys().asSequence().all { it in allowedFields }) { "Unknown controller profile field." }
+
+                val version = root.get("schemaVersion")
+                require(version is Number && version.toDouble() == CURRENT_SCHEMA.toDouble()) {
+                    "Unsupported controller profile schema."
                 }
+                val nameValue = root.get("name")
+                require(nameValue is String) { "Profile name must be a string." }
+
+                fun readNumber(field: String, default: Float): Float {
+                    if (!root.has(field)) return default
+                    val value = root.get(field)
+                    require(value is Number && value.toDouble().isFinite()) { "$field must be a finite number." }
+                    return value.toFloat()
+                }
+                fun readStringMap(field: String): Map<String, String> {
+                    if (!root.has(field) || root.isNull(field)) return emptyMap()
+                    val obj = root.optJSONObject(field) ?: throw IllegalArgumentException("$field must be a JSON object.")
+                    return obj.keys().asSequence().associateWith { key ->
+                        val value = obj.get(key)
+                        require(value is String) { "$field values must be strings." }
+                        value
+                    }
+                }
+                val profile = ControllerProfile(
+                    schemaVersion = version.toInt(),
+                    name = nameValue,
+                    buttonMap = readStringMap("buttonMap"),
+                    axisMap = readStringMap("axisMap"),
+                    sensitivity = readNumber("sensitivity", 1f),
+                    deadzone = readNumber("deadzone", .12f)
+                )
+                profile.validate()
+                return profile
+            } catch (error: IllegalArgumentException) {
+                throw error
+            } catch (error: Exception) {
+                throw IllegalArgumentException("Invalid controller profile JSON.", error)
             }
-            val profile = ControllerProfile(
-                schemaVersion = root.optInt("schemaVersion"),
-                name = root.optString("name"),
-                buttonMap = readStringMap("buttonMap"),
-                axisMap = readStringMap("axisMap"),
-                sensitivity = root.optDouble("sensitivity", 1.0).toFloat(),
-                deadzone = root.optDouble("deadzone", .12).toFloat()
-            )
-            profile.validate()
-            return profile
         }
 
         fun save(context: Context, gameKey: String, profile: ControllerProfile) {
@@ -151,5 +175,12 @@ internal fun readBoundedUtf8Profile(input: InputStream, maxBytes: Int = 65536): 
         output.write(buffer, 0, count)
         total += count
     }
-    return output.toString(Charsets.UTF_8.name())
+    val decoder = Charsets.UTF_8.newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT)
+    return try {
+        decoder.decode(ByteBuffer.wrap(output.toByteArray())).toString()
+    } catch (error: CharacterCodingException) {
+        throw IllegalArgumentException("Controller profile is not valid UTF-8.", error)
+    }
 }

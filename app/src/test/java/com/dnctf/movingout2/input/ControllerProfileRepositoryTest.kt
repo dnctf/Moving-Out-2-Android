@@ -68,6 +68,35 @@ class ControllerProfileRepositoryTest {
             ControllerProfile.importFromJson("""{"schemaVersion":1,"name":"bad","buttonMap":{"A":2} }""")
         }
     }
+    @Test fun importRejectsCoercibleButWrongJsonTypesAndUnknownFields() {
+        assertThrows(IllegalArgumentException::class.java) {
+            ControllerProfile.importFromJson("""{"schemaVersion":"1","name":"bad"}""")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ControllerProfile.importFromJson("""{"schemaVersion":1,"name":42}""")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ControllerProfile.importFromJson("""{"schemaVersion":1,"name":"bad","sensitivity":"1.2"}""")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ControllerProfile.importFromJson("""{"schemaVersion":1,"name":"bad","unexpected":true}""")
+        }
+    }
+
+    @Test fun importEnforcesUtf8ByteLimitRatherThanCharacterCount() {
+        val multiByte = "😀".repeat(17000)
+        assertTrue(multiByte.length < 65536)
+        assertThrows(IllegalArgumentException::class.java) {
+            ControllerProfile.importFromJson(multiByte)
+        }
+    }
+
+    @Test fun boundedReaderRejectsMalformedUtf8() {
+        assertThrows(IllegalArgumentException::class.java) {
+            readBoundedUtf8Profile(byteArrayOf(0xC3.toByte()).inputStream())
+        }
+    }
+
     @Test fun oversizeImportIsRejected() {
         assertThrows(IllegalArgumentException::class.java) {
             ControllerProfile.importFromJson(" ".repeat(65537))

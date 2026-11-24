@@ -6,6 +6,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PhysicalGamepadNormalizerTest {
+    @Test fun nonFiniteDeadzoneUsesSafeDefault() {
+        val expected = PhysicalGamepadNormalizer.normalizeStick(.5f, .1f, .12f)
+        val actual = PhysicalGamepadNormalizer.normalizeStick(.5f, .1f, Float.NaN)
+        assertEquals(expected.x, actual.x, 0f)
+        assertEquals(expected.y, actual.y, 0f)
+    }
+
     @Test fun stickUsesRadialDeadzoneAndClampsMagnitude() {
         assertEquals(0f, PhysicalGamepadNormalizer.normalizeStick(.05f, .05f).x, .00001f)
         assertEquals(1f, PhysicalGamepadNormalizer.normalizeStick(2f, 0f).x, .00001f)
