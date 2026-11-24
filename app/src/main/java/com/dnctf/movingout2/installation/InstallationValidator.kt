@@ -7,6 +7,12 @@ import java.io.IOException
 enum class ValidationStage { FOLDER_ACCESS, CORE_FILES, STRUCTURE, VERSION_ARCH, COMPATIBILITY, LAUNCH_READINESS }
 enum class InstallationStatus { VALID, INCOMPLETE, ACCESS_ERROR, INVALID_STRUCTURE, INCOMPATIBLE, RUNTIME_NOT_INSTALLED }
 data class StageResult(val stage: ValidationStage, val passed: Boolean, val details: List<String> = emptyList())
+
+/** Shared policy so filesystem and SAF validators report the core-file stage consistently. */
+object InstallationStagePolicy {
+    fun coreFilesPassed(missing: List<String>, errors: List<String>, folderAccessPassed: Boolean): Boolean =
+        folderAccessPassed && missing.isEmpty() && errors.isEmpty()
+}
 data class InstallationReport(
     val status: InstallationStatus, val stages: List<StageResult>, val missingFiles: List<String>,
     val accessErrors: List<String>, val detectedArchitecture: String?, val detectedUnityVersion: String?,
@@ -41,7 +47,7 @@ class InstallationValidator {
                 else -> files[path] = file
             }
         }
-        stages += StageResult(ValidationStage.CORE_FILES, missing.isEmpty() && errors.isEmpty(),
+        stages += StageResult(ValidationStage.CORE_FILES, InstallationStagePolicy.coreFilesPassed(missing, errors, persistablePermission && rootReadable),
             missing.map { "Missing: $it" } + errors.toList())
 
         val metadataDir = try { findCaseInsensitive(root, "MovingOut2_Data/il2cpp_data/Metadata") } catch (e: IOException) {
