@@ -25,7 +25,7 @@ class VirtualControllerEngine(private val deadzone: Float = 0.12f) {
     private var rt = 0f
 
     fun claimButton(pointerId: Int, button: ControllerButton): Boolean {
-        if (button in DPAD_BUTTONS || buttonPointers.containsKey(pointerId) || ownsAny(pointerId) ||
+        if (button in DPAD_BUTTONS || pointerButtons.containsKey(pointerId) || ownsAny(pointerId) ||
             buttonPointers.containsKey(button)) return false
         buttonPointers[button] = pointerId
         pointerButtons[pointerId] = mutableSetOf(button)
