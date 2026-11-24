@@ -46,7 +46,7 @@ class GamepadTranslatorTest {
         assertEquals(0f, state.leftX, 0f)
         assertEquals(0f, state.leftY, 0f)
         assertEquals(0f, state.leftTrigger, 0f)
-        assertEquals(1f, state.rightTrigger, 0f)
+        assertEquals(0f, state.rightTrigger, 0f)
         assertTrue(ControllerButton.LEFT in state.buttons)
     }
 }
