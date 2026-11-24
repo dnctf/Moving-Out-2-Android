@@ -53,3 +53,19 @@ The architecture here follows the project's own requirements: configurable touch
 6. Record first failure stage, logs and exact runtime provenance.
 
 Never copy the executable, proprietary game assets, user credentials, or private runtime files into the repository or CI artifact.
+
+## Controller source review and implementation notes (2026-11-24)
+
+### External reference findings (no code/assets copied)
+
+- **Flipendo Android** (`android/java/io/github/flipendo/spike/FlipendoActivity.java`, `src/hp1/HP1Touch.cpp`): a game-specific SDL activity maps Android `KeyEvent` / `MotionEvent` gamepad input into the port's SDL and native game input path. Its touch overlay uses explicit pointer ownership, layout editing and per-game behavior. The repository is GPL-3.0; this project uses it as architectural research only and does not copy source or assets.
+- **POP T2T Android** (`android/app/src/main/java/com/cleverdee/pop3/TouchOverlay.java`): the overlay tracks pointer IDs for held buttons, a separate stick pointer and a separate mouse/look pointer; `ACTION_CANCEL` clears held state; a connected physical controller hides the touch overlay and clears touch state. Control positions and sizes are stored per layout as normalized screen coordinates and reapplied from `onSizeChanged`; edit mode supports drag and two-finger resize. The Android README documents physical controller input through SDL and touch input through pad 0. The repository's root README describes a separate browser/macOS build and explicitly marks gamepad as not verified there, so those claims must not be conflated. The repository license is MIT. No code or assets were copied.
+- Both references keep game input inside the game's own engine/SDL adapter. Neither provides an Android API for injecting a virtual controller globally into unrelated applications.
+
+### MO2X mapping ownership
+
+The JNI implementation owns one process-global mapping (`g_mapping`, `g_fd`) while Kotlin can create more than one `NativeXInputTransport` (the controller screen and the Wine launcher each construct a bridge). Calling `nativeInitSharedMemory` or `nativeDestroySharedMemory` from one instance previously replaced or unmapped the mapping for every other instance. `NativeMappingLeaseRegistry` now enforces one active path, permits same-path shared leases, rejects conflicting paths, and calls JNI init/destroy only for the first/last lease. JVM tests cover shared ownership, conflicting paths, last-owner teardown and restoration after a failed native destroy.
+
+### Runtime connection status remains intentionally gated
+
+`XInputTransport` is the runtime adapter boundary and `RuntimeInputBridge` reports native transport capability. The Android controller screen initializes the shared-memory writer; `WineRuntimeLauncher` stages the XInput DLLs and supplies `MO2_XINPUT_SHM_PATH`. However, no production runtime-session callback currently invokes `setNativeRuntimeConnected`, and the Wine DLL does not publish a reader heartbeat. Therefore `BRIDGE_READY_WAITING_RUNTIME` is the evidence-backed status; `BRIDGE_CONNECTED` must not be claimed merely because the APK contains the DLL or the shared file exists. A later integration must wire the actual supervised Wine process and, ideally, a reader/session handshake before reporting connection.
