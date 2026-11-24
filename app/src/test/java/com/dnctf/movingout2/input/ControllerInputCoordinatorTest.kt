@@ -60,6 +60,29 @@ class ControllerInputCoordinatorTest {
     }
 
     @Test
+    fun touchEngineDeadzoneIsNotAppliedAgainByTheProfile() {
+        val transport = RecordingTransport()
+        val profile = ControllerProfile(name = "Touch deadzone", deadzone = .12f)
+        val coordinator = ControllerInputCoordinator(bridge(transport), profile)
+        val engineSample = VirtualControllerEngine.radialDeadzone(.13f, 0f, profile.deadzone)
+        assertTrue(engineSample.x > 0f)
+        assertTrue(coordinator.updateTouchState(ControllerState(leftX = engineSample.x)))
+        val actual = ByteBuffer.wrap(transport.packet, 4, 2).order(ByteOrder.LITTLE_ENDIAN).short
+        assertEquals(RuntimeInputBridge.axisShort(engineSample.x), actual)
+    }
+
+    @Test
+    fun physicalRawAxisReceivesTheProfileDeadzoneExactlyOnce() {
+        val transport = RecordingTransport()
+        val profile = ControllerProfile(name = "Physical deadzone", deadzone = .12f)
+        val coordinator = ControllerInputCoordinator(bridge(transport), profile)
+        assertTrue(coordinator.updatePhysicalState(ControllerState(leftX = .2f)))
+        val actual = ByteBuffer.wrap(transport.packet, 4, 2).order(ByteOrder.LITTLE_ENDIAN).short
+        val expected = PhysicalGamepadNormalizer.normalizeStick(.2f, 0f, profile.deadzone).x
+        assertEquals(RuntimeInputBridge.axisShort(expected), actual)
+    }
+
+    @Test
     fun pauseIgnoresCallbacksUntilResumedAndPreventsStaleReconnect() {
         val transport = RecordingTransport()
         val coordinator = ControllerInputCoordinator(bridge(transport))

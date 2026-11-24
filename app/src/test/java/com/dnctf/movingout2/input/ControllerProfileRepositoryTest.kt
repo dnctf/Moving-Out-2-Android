@@ -45,6 +45,18 @@ class ControllerProfileRepositoryTest {
         assertEquals(1f, out.leftX, 0f)
         assertEquals(1f, out.leftTrigger, 0f)
     }
+    @Test fun alreadyNormalizedTouchInputCanSkipProfileDeadzone() {
+        val profile = ControllerProfile(name = "Touch once", deadzone = .12f)
+        val sample = VirtualControllerEngine.radialDeadzone(.13f, 0f, profile.deadzone)
+        val output = profile.apply(ControllerState(leftX = sample.x), applyDeadzone = false)
+        assertEquals(sample.x, output.leftX, .0001f)
+    }
+    @Test fun nonFiniteTriggersAreNeutralizedByProfileApplication() {
+        val profile = ControllerProfile(name = "Safe triggers")
+        val output = profile.apply(ControllerState(leftTrigger = Float.NaN, rightTrigger = Float.POSITIVE_INFINITY))
+        assertEquals(0f, output.leftTrigger, 0f)
+        assertEquals(0f, output.rightTrigger, 0f)
+    }
     @Test fun malformedMapTypesAndCrossGroupAxesAreRejected() {
         assertThrows(IllegalArgumentException::class.java) {
             ControllerProfile.importFromJson("""{"schemaVersion":1,"name":"bad","buttonMap":"A"}""")

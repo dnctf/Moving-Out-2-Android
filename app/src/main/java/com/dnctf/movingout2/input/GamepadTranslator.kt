@@ -5,7 +5,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 
 /** Per-device Android controller translator. Hat and key D-pad states are kept separate. */
-class GamepadTranslator(private val deadzone: Float = 0.18f) {
+class GamepadTranslator(private val deadzone: Float = 0f) {
     private val keyButtons = mutableSetOf<ControllerButton>()
     private var hatButtons = emptySet<ControllerButton>()
     private var lx = 0f; private var ly = 0f; private var rx = 0f; private var ry = 0f

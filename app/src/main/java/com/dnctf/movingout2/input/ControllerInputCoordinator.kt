@@ -45,12 +45,17 @@ class ControllerInputCoordinator(
     /** Preview follows the same profile and merge order as the packet sent to the bridge. */
     @Synchronized
     fun previewPacket(touchOverride: ControllerState = touchState): XInputPacket =
-        bridge.packet(profile.apply(touchOverride), profile.apply(physicalState))
+        bridge.packet(profile.apply(touchOverride, applyDeadzone = false), profile.apply(physicalState))
 
     @Synchronized
     private fun sendCombined(): Boolean {
         if (!active) return false
-        return bridge.sendCombined(0, profile.apply(touchState), profile.apply(physicalState), connected = true)
+        return bridge.sendCombined(
+            0,
+            profile.apply(touchState, applyDeadzone = false),
+            profile.apply(physicalState),
+            connected = true
+        )
     }
 
     @Synchronized

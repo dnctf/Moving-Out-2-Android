@@ -11,9 +11,13 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 /** Responsive touch overlay. Geometry is recomputed from current view size/orientation. */
-class VirtualControllerView(context: Context, private val onState: (ControllerState) -> Unit) : View(context) {
+class VirtualControllerView(
+    context: Context,
+    deadzone: Float = 0.12f,
+    private val onState: (ControllerState) -> Unit
+) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val engine = VirtualControllerEngine()
+    private val engine = VirtualControllerEngine(deadzone)
     private val buttonRects = mutableMapOf<ControllerButton, RectF>()
     private val triggerRects = mutableMapOf<Boolean, RectF>()
     private var leftCenter = Pair(0f, 0f)

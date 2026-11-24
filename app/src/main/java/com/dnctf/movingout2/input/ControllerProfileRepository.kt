@@ -37,7 +37,7 @@ data class ControllerProfile(
     fun remapButton(button: ControllerButton): ControllerButton =
         ControllerButton.valueOf(buttonMap[button.name] ?: button.name)
 
-    fun apply(state: ControllerState): ControllerState {
+    fun apply(state: ControllerState, applyDeadzone: Boolean = true): ControllerState {
         validate()
         val buttons = state.buttons.map(::remapButton).toSet()
         fun axis(target: String, fallback: Float): Float {
@@ -50,10 +50,15 @@ data class ControllerProfile(
             }
             return raw
         }
-        val l = PhysicalGamepadNormalizer.normalizeStick(axis("LEFT_X", state.leftX), axis("LEFT_Y", state.leftY), deadzone)
-        val r = PhysicalGamepadNormalizer.normalizeStick(axis("RIGHT_X", state.rightX), axis("RIGHT_Y", state.rightY), deadzone)
-        val lt = (axis("LEFT_TRIGGER", state.leftTrigger) * sensitivity).coerceIn(0f, 1f)
-        val rt = (axis("RIGHT_TRIGGER", state.rightTrigger) * sensitivity).coerceIn(0f, 1f)
+        val zone = if (applyDeadzone) deadzone else 0f
+        val l = PhysicalGamepadNormalizer.normalizeStick(axis("LEFT_X", state.leftX), axis("LEFT_Y", state.leftY), zone)
+        val r = PhysicalGamepadNormalizer.normalizeStick(axis("RIGHT_X", state.rightX), axis("RIGHT_Y", state.rightY), zone)
+        fun scaledTrigger(raw: Float): Float {
+            val safe = raw.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
+            return (safe * sensitivity).coerceIn(0f, 1f)
+        }
+        val lt = scaledTrigger(axis("LEFT_TRIGGER", state.leftTrigger))
+        val rt = scaledTrigger(axis("RIGHT_TRIGGER", state.rightTrigger))
         return ControllerState(buttons, (l.x * sensitivity).coerceIn(-1f, 1f), (l.y * sensitivity).coerceIn(-1f, 1f), (r.x * sensitivity).coerceIn(-1f, 1f), (r.y * sensitivity).coerceIn(-1f, 1f), lt, rt)
     }
 
