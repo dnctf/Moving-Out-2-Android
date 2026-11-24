@@ -50,6 +50,8 @@ class GameInstallationManager(private val context: Context) {
                 else -> resolved[path] = file
             }
         }
+        // Compute this stage before metadata-header and PE architecture checks, matching filesystem validation.
+        val corePass = InstallationStagePolicy.coreFilesPassed(missing, errors, persisted && root.canRead())
         val metadataDir = find(root, "MovingOut2_Data/il2cpp_data/Metadata")
         val metadataDirOk = metadataDir?.isDirectory == true && metadataDir.canRead()
         val metadataBytes = resolved[required.last()]?.let { read(it, 8) }
@@ -76,7 +78,6 @@ class GameInstallationManager(private val context: Context) {
         }.toMap()
         val globalManagers = find(root, "MovingOut2_Data/globalgamemanagers")
         val unityVersion = globalManagers?.let { read(it, 256 * 1024) }?.let(UnityGameProfileDetector::detectUnityVersion)
-        val corePass = missing.isEmpty() && errors.isEmpty()
         val structurePass = metadataDirOk
         val versionPass = allPeX64 && metadataVersion != null
         val stageSummary = listOf(
