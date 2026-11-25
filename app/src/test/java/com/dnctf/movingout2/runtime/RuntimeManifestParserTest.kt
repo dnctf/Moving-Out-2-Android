@@ -29,6 +29,8 @@ class RuntimeManifestParserTest {
   put("dxgi","dxvk/x64/dxgi.dll","dxgi")
   put("xinput1_3","wine/lib/wine/x86_64-windows/xinput1_3.dll","xinput3")
   put("xinput1_4","wine/lib/wine/x86_64-windows/xinput1_4.dll","xinput4")
+  // XInput DLLs live under wineLib, so calculate its directory digest after both are staged.
+  components.put("wineLib",JSONObject().put("included",true).put("path","wine/lib/wine").put("sha256",hashDir(lib)).put("abi","DIRECTORY_SHA256_X86_64"))
   components.put("turnip",JSONObject().put("included",turnip))
   if(turnip){put("turnipSo","turnip/libvulkan_freedreno.so","vk");put("turnipIcd","turnip/freedreno_icd.aarch64.json","{}")}
   File(root,"runtime-manifest.json").writeText(JSONObject().put("schemaVersion",2).put("targetAbi","arm64-v8a").put("provenance",JSONObject().put("packager","unit-test").put("manifestFormat","role-validated-abi-v2")).put("components",components).put("defaultLaunchProfile",JSONObject()).toString())
