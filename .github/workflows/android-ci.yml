@@ -92,8 +92,10 @@ jobs:
           exit 1
       - name: Install MinGW-w64
         run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64-posix
-      - name: Validate runtime bundle packager syntax
-        run: bash -n scripts/package_runtime_bundle.sh
+      - name: Validate runtime and Box64 build scripts
+        run: |
+          bash -n scripts/package_runtime_bundle.sh
+          bash -n scripts/build_box64_android.sh
       - name: Verify MO2X protocol layout
         run: |
           set -euo pipefail
