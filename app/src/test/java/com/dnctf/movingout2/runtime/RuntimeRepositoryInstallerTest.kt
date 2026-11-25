@@ -9,20 +9,39 @@ import org.junit.Test
 
 class RuntimeRepositoryInstallerTest {
 
-    @Test fun selectsNewestPublishedRuntimePrereleaseAndIgnoresStableOrDraftReleases() {
+    private fun release(tag: String, published: String, draft: Boolean = false, complete: Boolean = true): JSONObject {
+        val assets = JSONArray()
+        if (complete) {
+            assets.put(JSONObject().put("name", "moving-out-2-runtime-arm64-v8a.zip"))
+            assets.put(JSONObject().put("name", "moving-out-2-runtime-arm64-v8a.zip.sha256"))
+        } else {
+            assets.put(JSONObject().put("name", "moving-out-2-runtime-arm64-v8a.zip.sha256"))
+        }
+        return JSONObject()
+            .put("tag_name", tag)
+            .put("prerelease", true)
+            .put("draft", draft)
+            .put("published_at", published)
+            .put("assets", assets)
+    }
+
+    @Test fun selectsNewestCompletePublishedRuntimePrerelease() {
         val releases = JSONArray()
             .put(JSONObject().put("tag_name", "v1.0.0").put("prerelease", false).put("draft", false).put("published_at", "2026-11-25T12:00:00Z"))
-            .put(JSONObject().put("tag_name", "runtime-v0.1.0-12").put("prerelease", true).put("draft", false).put("published_at", "2026-11-25T12:01:00Z"))
-            .put(JSONObject().put("tag_name", "runtime-v0.1.0-13").put("prerelease", true).put("draft", false).put("published_at", "2026-11-25T12:02:00Z"))
-            .put(JSONObject().put("tag_name", "runtime-v0.1.0-14").put("prerelease", true).put("draft", true).put("published_at", "2026-11-25T12:03:00Z"))
+            .put(release("runtime-v0.1.0-12", "2026-11-25T12:01:00Z"))
+            .put(release("runtime-v0.1.0-13", "2026-11-25T12:02:00Z"))
+            .put(release("runtime-v0.1.0-14", "2026-11-25T12:03:00Z", draft = true))
+            .put(release("runtime-v0.1.0-15", "2026-11-25T12:04:00Z", complete = false))
         assertEquals("runtime-v0.1.0-13", latestRuntimePrerelease(releases)?.optString("tag_name"))
     }
 
-    @Test fun returnsNullWhenNoPublishedRuntimePrereleaseExists() {
+    @Test fun returnsNullWhenNoCompletePublishedRuntimePrereleaseExists() {
         val releases = JSONArray()
             .put(JSONObject().put("tag_name", "v1.0.0").put("prerelease", false).put("draft", false).put("published_at", "2026-11-25T12:00:00Z"))
+            .put(release("runtime-v0.1.0-16", "2026-11-25T12:05:00Z", complete = false))
         assertEquals(null, latestRuntimePrerelease(releases))
     }
+
     @Test fun rejectsUnixAndWindowsTraversalPaths() {
         val slash = 0x5c.toChar()
         assertFalse(isSafeRuntimeArchiveEntry("../escape", false))
