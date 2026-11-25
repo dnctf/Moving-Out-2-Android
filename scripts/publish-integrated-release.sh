@@ -23,11 +23,11 @@ api() {
 }
 
 list_releases() {
-  api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" | jq -s 'add // []'
+  api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" | jq 'flatten'
 }
 
 list_assets() {
-  api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases/$RELEASE_ID/assets?per_page=100" | jq -s 'add // []'
+  api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases/$RELEASE_ID/assets?per_page=100" | jq 'flatten'
 }
 
 delete_asset() {
@@ -65,7 +65,7 @@ cleanup_old_releases_and_tags() {
   done < <(jq -r --arg target "$RELEASE_TAG" '.[] | select(.tag_name != $target) | [.id, .tag_name] | @tsv' <<<"$releases")
 
   local refs
-  refs="$(api --paginate --slurp "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/" | jq -s 'add // []')"
+  refs="$(api --paginate --slurp "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/" | jq 'flatten')"
   while IFS= read -r tag; do
     [[ -n "$tag" && "$tag" != "$RELEASE_TAG" ]] || continue
     echo "Removing obsolete Git tag $tag"
