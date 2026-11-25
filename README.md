@@ -170,9 +170,61 @@ adb shell "dumpsys SurfaceFlinger | grep -i vulkan"
 adb logcat -s MO2XInput:V MO2Runtime:V AndroidExecProbe:V [WINESERVER]:V [BOX64-WINE]:V
 ```
 
+
 ---
 
-## 6. License & Trademarks
+## 7. Downloads & Pre-Releases
+
+This project publishes the Android application and the emulation runtime as **separate release assets**. Install both components; the APK does not contain the full Wine/Box64 runtime bundle.
+
+### Latest Runtime Bundle
+
+- **Runtime release:** [Moving Out 2 Runtime 0.1.0 (pre-release)](https://github.com/dnctf/Moving-Out-2-Android/releases/tag/runtime-v0.1.0-23)
+- **Runtime archive:** [moving-out-2-runtime-arm64-v8a.zip](https://github.com/dnctf/Moving-Out-2-Android/releases/download/runtime-v0.1.0-23/moving-out-2-runtime-arm64-v8a.zip)
+- **Runtime checksums:** [SHA256SUMS.txt](https://github.com/dnctf/Moving-Out-2-Android/releases/download/runtime-v0.1.0-23/SHA256SUMS.txt)
+
+Runtime package schema v2 contains the ARM64 Box64 host binary, x86_64 Wine executables and guest libraries, DXVK D3D11/DXGI DLLs, XInput 1.3/1.4 DLLs, and a manifest with component ABI declarations and SHA-256 hashes. Optional Turnip components are included only when supplied to the packager.
+
+### Android APK Pre-Release
+
+APK pre-releases are published independently by the **Publish Android APK Pre-Release** GitHub Actions workflow. Each release includes:
+- ARM64 Android APK (release variant; currently unsigned unless signing is configured).
+- `SHA256SUMS.txt` for integrity verification.
+- Release notes describing the build, installation, limitations and test status.
+
+Open [GitHub Releases](https://github.com/dnctf/Moving-Out-2-Android/releases) and select the latest `app-v*` pre-release. The APK release workflow is manually triggered from **Actions → Publish Android APK Pre-Release → Run workflow**. The default version is `0.2.0-alpha.1`.
+
+### Installation Order
+
+1. Install the APK. If Android reports a signature conflict with an older build, uninstall the older build first; this release workflow currently produces an unsigned APK.
+2. Open the app and use its runtime setup/download flow, or download the runtime ZIP above and import it through the app if prompted.
+3. Import your own legally obtained Moving Out 2 Windows game directory/archive. The game itself is not distributed here.
+4. Connect a controller or configure the on-screen controls, then launch only after the app reports that game files and runtime validation have passed.
+
+### Compatibility & Known Limitations
+
+- APK target: Android ARM64 `arm64-v8a`; minimum Android 8.0 (API 26), target SDK 35.
+- Intended test range: Qualcomm Snapdragon 855-class and newer Adreno devices. This is a target range, not a guarantee of compatibility.
+- Huawei DBY2-W09 / Snapdragon platform validation, sustained gameplay, Vulkan presentation stability, thermal behavior and FPS are still physical-device test items unless a release explicitly reports otherwise.
+- CI success means automated compilation, package-content checks and unit tests passed. It does **not** prove the game boots or reaches playable performance on every device.
+- Users must provide their own game files. No proprietary game data is included.
+- This is an independent compatibility project and is not affiliated with Team17 or SMG Studio.
+
+### Verify an APK Download
+
+Linux:
+```bash
+sha256sum -c SHA256SUMS.txt
+```
+
+If the checksum file contains a filename different from the downloaded APK filename, compare the hash manually:
+```bash
+sha256sum Moving-Out-2-Android-*-arm64-v8a-unsigned.apk
+cat SHA256SUMS.txt
+```
+
+
+## 8. License & Trademarks
 
 - Moving Out 2 is a registered trademark of Team17 / SMG Studio.
 - Source code in this repository is licensed under the MIT License.
