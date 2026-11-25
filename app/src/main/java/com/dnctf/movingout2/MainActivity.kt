@@ -380,6 +380,17 @@ class MainActivity : Activity() {
 
     private fun revalidateSavedFolder() {
         val active = gameRegistry.getActiveGame()
+        if (active?.source == com.dnctf.movingout2.core.model.InstallationSource.SAF_DIRECTORY) {
+            startSafGameImport(Uri.parse(active.location))
+            return
+        }
+        if (active == null) {
+            repository.savedUri()?.let {
+                status.text = "Saved SAF folder detected. Starting automatic import into app storage…"
+                startSafGameImport(it)
+                return
+            }
+        }
         activateControllerProfileForGame(active)
         status.text = if (active == null) {
             val uri = repository.savedUri()
@@ -396,7 +407,7 @@ class MainActivity : Activity() {
                 if (active.metadataVersion != null) append("\nIL2CPP metadata: v").append(active.metadataVersion)
                 if (active.missingFiles.isNotEmpty()) append("\nMissing:\n- ").append(active.missingFiles.joinToString("\n- "))
                 if (active.accessErrors.isNotEmpty()) append("\nAccess errors:\n- ").append(active.accessErrors.joinToString("\n- "))
-                append("\n\nReady to launch: ").append(if (active.isReadyToLaunch) "YES (runtime integration pending)" else "NO")
+                append("\n\nGame files: ").append(if (active.isReadyToLaunch) "READY" else "NOT READY")\n                append("Runtime/exec/Vulkan readiness: shown in the Runtime panel")
             }
         }
         refreshRuntimeStatus()
