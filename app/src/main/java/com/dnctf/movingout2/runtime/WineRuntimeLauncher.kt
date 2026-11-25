@@ -235,31 +235,8 @@ class WineRuntimeLauncher(
         from.inputStream().use { input -> to.outputStream().use { output -> input.copyTo(output) } }
     }
 
-    private fun isValidX64Pe(file: File): Boolean {
-        return try {
-            if (!file.isFile || file.length() < 70) return false
-            val bytes = file.inputStream().use { stream ->
-                val buffer = ByteArray(65536)
-                var offset = 0
-                while (offset < buffer.size) {
-                    val read = stream.read(buffer, offset, buffer.size - offset)
-                    if (read <= 0) break
-                    offset += read
-                }
-                if (offset == buffer.size) buffer else buffer.copyOf(offset)
-            }
-            if (bytes.size < 64 || bytes[0] != 'M'.code.toByte() || bytes[1] != 'Z'.code.toByte()) return false
-            val pe = (bytes[0x3c].toInt() and 255) or ((bytes[0x3d].toInt() and 255) shl 8) or
-                ((bytes[0x3e].toInt() and 255) shl 16) or ((bytes[0x3f].toInt() and 255) shl 24)
-            pe >= 0 && pe <= bytes.size - 6 && bytes[pe] == 'P'.code.toByte() &&
-                bytes[pe + 1] == 'E'.code.toByte() && bytes[pe + 2] == 0.toByte() &&
-                bytes[pe + 3] == 0.toByte() && bytes[pe + 4] == 0x64.toByte() &&
-                bytes[pe + 5] == 0x86.toByte()
-        } catch (_: Exception) {
-            false
-        }
-    }
-}
+    private fun isValidX64Pe(file: File): Boolean =
+        RuntimeBinaryInspector.matches(file, RuntimeBinaryInspector.PE32_PLUS_X86_64)}
 
 /** Cleanup steps are ordered and failure-isolated so later resources are still released. */
 internal fun runRuntimeCleanupSequence(neutralize: () -> Boolean, stopProcess: () -> Boolean, destroyBridge: () -> Boolean, stopServer: () -> Boolean): Boolean {
