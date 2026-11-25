@@ -35,7 +35,7 @@ class RuntimeGraphicsComponentsTest {
         elf(File(root, "turnip/libvulkan_freedreno.so"))
         File(root, "turnip/freedreno_icd.aarch64.json").apply {
             parentFile.mkdirs()
-            writeText("{\\"library_path\\":\\"libvulkan_freedreno.so\\"}")
+            writeText("""{"library_path":"libvulkan_freedreno.so"}""")
         }
         File(root, "runtime-manifest.json").writeText(
             """{"schemaVersion":2,"components":{
