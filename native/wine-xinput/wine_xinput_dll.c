@@ -89,6 +89,6 @@ __declspec(dllexport) DWORD WINAPI XInputGetBatteryInformation(DWORD user,BYTE t
 __declspec(dllexport) DWORD WINAPI XInputGetKeystroke(DWORD user,DWORD reserved,XINPUT_KEYSTROKE*k){(void)reserved;if(!k)return ERROR_INVALID_PARAMETER;Slot x;return read_slot(user,&x)?ERROR_EMPTY:ERROR_DEVICE_NOT_CONNECTED;}
 __declspec(dllexport) DWORD WINAPI XInputGetStateEx(DWORD user,XINPUT_STATE*s){return XInputGetState(user,s);}
 __declspec(dllexport) DWORD WINAPI XInputWaitForGuideButton(DWORD user,DWORD flags,DWORD timeout){(void)user;(void)flags;(void)timeout;return ERROR_EMPTY;}
-__declspec(dllexport) DWORD WINAPI XInputCancelGuideButtonWait(DWORD user){(void)user;return ERROR_SUCCESS;}
-__declspec(dllexport) DWORD WINAPI XInputPowerOffController(DWORD user){(void)user;return ERROR_SUCCESS;}
+__declspec(dllexport) void WINAPI XInputCancelGuideButton(DWORD user){(void)user;}
+__declspec(dllexport) void WINAPI XInputPowerOffController(DWORD user){(void)user;}
 BOOL WINAPI DllMain(HINSTANCE h,DWORD reason,LPVOID reserved){(void)reserved;if(reason==DLL_PROCESS_ATTACH){DisableThreadLibraryCalls(h);/* XInput exports initialize the shared mapping lazily outside the loader lock. */}if(reason==DLL_PROCESS_DETACH){if(view)UnmapViewOfFile(view);if(mappingHandle)CloseHandle(mappingHandle);if(fileHandle!=INVALID_HANDLE_VALUE)CloseHandle(fileHandle);view=NULL;mappingHandle=NULL;fileHandle=INVALID_HANDLE_VALUE;}return TRUE;}
