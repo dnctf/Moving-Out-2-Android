@@ -36,19 +36,20 @@ internal fun latestRuntimePrerelease(releases: JSONArray): JSONObject? {
         releases.optJSONObject(index)?.takeIf { release ->
             if (!release.optBoolean("prerelease", false) ||
                 release.optBoolean("draft", false) ||
-                !release.optString("tag_name").startsWith("runtime-v") ||
+                !release.optString("tag_name").startsWith("app-v") ||
                 release.optString("published_at").isBlank()) return@takeIf false
             val assets = release.optJSONArray("assets") ?: return@takeIf false
             val names = (0 until assets.length()).mapNotNull { assets.optJSONObject(it)?.optString("name") }.toSet()
             names.contains("moving-out-2-runtime-arm64-v8a.zip") &&
-                names.contains("moving-out-2-runtime-arm64-v8a.zip.sha256")
+                names.contains("moving-out-2-runtime-arm64-v8a.zip.sha256") &&
+                names.any { it.endsWith(".apk", ignoreCase = true) }
         }
     }
     return candidates.maxByOrNull { it.optString("published_at") }
 }
 
 /**
- * Installs a runtime published as assets on the repository's latest GitHub Release.
+ * Installs the runtime asset attached to the repository's latest integrated Android APK release.
  *
  * Release contract:
  * - moving-out-2-runtime-arm64-v8a.zip
@@ -89,11 +90,11 @@ class RuntimeRepositoryInstaller(
         onProgress("Checking latest runtime release…")
         record(RuntimeDiagnostic.Severity.INFO, "Fetching GitHub runtime release metadata: https://api.github.com/repos/$repository/releases?per_page=30")
         // GitHub's /releases/latest endpoint excludes pre-releases. Select the
-        // newest published runtime pre-release explicitly so app downloads work.
+        // newest published integrated app pre-release explicitly so app downloads work.
         val releaseUrl = "https://api.github.com/repos/$repository/releases?per_page=30"
         val releases = JSONArray(readUrl(releaseUrl, 2 * 1024 * 1024))
         val release = latestRuntimePrerelease(releases)
-            ?: throw IllegalStateException("No published Moving Out 2 runtime pre-release was found.")
+            ?: throw IllegalStateException("No published integrated Moving Out 2 Android pre-release with APK and runtime assets was found.")
         val version = release.optString("tag_name").takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("Runtime pre-release has no tag_name.")
         record(RuntimeDiagnostic.Severity.INFO, "Selected complete runtime release $version; published_at=${release.optString("published_at")}")
