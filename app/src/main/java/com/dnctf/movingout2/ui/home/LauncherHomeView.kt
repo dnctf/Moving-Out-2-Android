@@ -11,7 +11,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 
-data class LauncherHomeViews(val root: ScrollView, val status: TextView, val runtimeStatus: TextView, val graphicsStatus: TextView)
+data class LauncherHomeViews(val root: ScrollView, val status: TextView, val runtimeStatus: TextView, val graphicsStatus: TextView, val playButton: Button)
 
 object LauncherHomeView {
     private const val INK = 0xFF172033.toInt()
@@ -31,7 +31,8 @@ object LauncherHomeView {
         onImportGameZip: () -> Unit,
         onOpenSettings: () -> Unit,
         onControllerTest: () -> Unit,
-        onExportDiagnostics: () -> Unit
+        onExportDiagnostics: () -> Unit,
+        onPlay: () -> Unit
     ): LauncherHomeViews {
         val density = context.resources.displayMetrics.density
         fun dp(value: Int) = (value * density + 0.5f).toInt()
@@ -96,6 +97,12 @@ object LauncherHomeView {
         hero.addView(title)
         hero.addView(text("Windows game compatibility launcher", 14f, 0xFFD9E2F0.toInt()))
         hero.addView(text("ARM64 • Box64 / Wine • Vulkan", 12f, 0xFFB9C7D9.toInt()).apply { setPadding(0, dp(14), 0, 0) })
+        val playButton = action("Play Moving Out 2", true, onPlay).apply {
+            isEnabled = false
+            alpha = 0.55f
+        }
+        val playParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(54)).apply { topMargin = dp(16) }
+        hero.addView(playButton, playParams)
         content.addView(hero)
         addGap(content, 14)
 
@@ -158,6 +165,6 @@ object LauncherHomeView {
             ))
             contentDescription = "Moving Out 2 Android launcher"
         }
-        return LauncherHomeViews(scroll, status, runtimeStatus, graphicsStatus)
+        return LauncherHomeViews(scroll, status, runtimeStatus, graphicsStatus, playButton)
     }
 }
