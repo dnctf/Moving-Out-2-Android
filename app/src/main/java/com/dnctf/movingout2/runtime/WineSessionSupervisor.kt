@@ -173,7 +173,8 @@ class WineSessionSupervisor(
         diagnostics,
         File(context.filesDir, "diagnostics/wine_session.log"),
         File(context.filesDir, "diagnostics/runtime-process.log")
-    )
+    ),
+    private val onSessionFinished: (() -> Unit)? = null
 ) {
     val prefix: File = File(context.filesDir, "wine_prefixes/$gameId")
     private val sharedInput: File = File(context.filesDir, "xinput_shm.bin")
@@ -392,6 +393,7 @@ class WineSessionSupervisor(
                     diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Wineserver process terminated unexpectedly; crash-coupling terminating game target."))
                     tProc?.stop(gracePeriodMs = 200)
                     shutdownAll(box64, wineserver, env, markFailed = true)
+                    onSessionFinished?.invoke()
                     break
                 }
 
@@ -405,6 +407,7 @@ class WineSessionSupervisor(
                         "Game target exited with code $exit; reaping wineserver."
                     ))
                     shutdownAll(box64, wineserver, env, markFailed = failed)
+                    onSessionFinished?.invoke()
                     break
                 }
 
