@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-: "\${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
-: "\${GH_TOKEN:?GH_TOKEN is required}"
-: "\${RELEASE_TAG:?RELEASE_TAG is required}"
-: "\${RELEASE_VERSION:?RELEASE_VERSION is required}"
-: "\${TARGET_SHA:?TARGET_SHA is required}"
+: "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
+: "${GH_TOKEN:?GH_TOKEN is required}"
+: "${RELEASE_TAG:?RELEASE_TAG is required}"
+: "${RELEASE_VERSION:?RELEASE_VERSION is required}"
+: "${TARGET_SHA:?TARGET_SHA is required}"
 
-API="https://api.github.com/repos/\${GITHUB_REPOSITORY}"
-UPLOAD_API="https://uploads.github.com/repos/\${GITHUB_REPOSITORY}"
+API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+UPLOAD_API="https://uploads.github.com/repos/${GITHUB_REPOSITORY}"
 API_VERSION="2022-11-28"
 BACKOFF=(5 10 20 40 60)
 ASSETS=(
-  "\${APK_PATH:?APK_PATH is required}"
+  "${APK_PATH:?APK_PATH is required}"
   "release-output/moving-out-2-runtime-arm64-v8a.zip"
   "release-output/moving-out-2-runtime-arm64-v8a.zip.sha256"
   "release-output/SHA256SUMS.txt"
@@ -24,17 +24,17 @@ api() {
 }
 
 list_releases() {
-  api --paginate --slurp "repos/\${GITHUB_REPOSITORY}/releases?per_page=100" | jq -s 'add // []'
+  api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases?per_page=100" | jq -s 'add // []'
 }
 
 list_assets() {
-  api --paginate --slurp "repos/\${GITHUB_REPOSITORY}/releases/$RELEASE_ID/assets?per_page=100" | jq -s 'add // []'
+  api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases/$RELEASE_ID/assets?per_page=100" | jq -s 'add // []'
 }
 
 delete_asset() {
   local asset_id="$1"
   echo "Deleting invalid asset ID $asset_id"
-  api --method DELETE "repos/\${GITHUB_REPOSITORY}/releases/assets/$asset_id" >/dev/null
+  api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/$asset_id" >/dev/null
 }
 
 find_asset() {
@@ -62,15 +62,15 @@ cleanup_old_releases_and_tags() {
     [[ -n "$release_id" && -n "$tag" ]] || continue
     [[ "$tag" == "$RELEASE_TAG" ]] && continue
     echo "Removing obsolete release $tag (ID $release_id)"
-    api --method DELETE "repos/\${GITHUB_REPOSITORY}/releases/$release_id" >/dev/null
+    api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/$release_id" >/dev/null
   done < <(jq -r --arg target "$RELEASE_TAG" '.[] | select(.tag_name != $target) | [.id, .tag_name] | @tsv' <<<"$releases")
 
   local refs
-  refs="$(api --paginate --slurp "repos/\${GITHUB_REPOSITORY}/git/matching-refs/tags/" | jq -s 'add // []')"
+  refs="$(api --paginate --slurp "repos/${GITHUB_REPOSITORY}/git/matching-refs/tags/" | jq -s 'add // []')"
   while IFS= read -r tag; do
     [[ -n "$tag" && "$tag" != "$RELEASE_TAG" ]] || continue
     echo "Removing obsolete Git tag $tag"
-    api --method DELETE "repos/\${GITHUB_REPOSITORY}/git/refs/tags/$tag" >/dev/null
+    api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/$tag" >/dev/null
   done < <(jq -r '.[].ref | sub("^refs/tags/"; "")' <<<"$refs")
 }
 
@@ -85,7 +85,7 @@ consolidate_target_release() {
     while IFS= read -r duplicate_id; do
       [[ -n "$duplicate_id" ]] || continue
       echo "Deleting duplicate target release ID $duplicate_id"
-      api --method DELETE "repos/\${GITHUB_REPOSITORY}/releases/$duplicate_id" >/dev/null
+      api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/$duplicate_id" >/dev/null
     done < <(jq -r '.[1:][] | .id' <<<"$matches")
   fi
 
@@ -101,7 +101,7 @@ consolidate_target_release() {
       --arg title "Moving Out 2 Android $RELEASE_VERSION (Integrated Pre-release)" \
       --arg body "$NOTES" \
       '{tag_name:$tag,target_commitish:$target,name:$title,body:$body,draft:true,prerelease:true}')"
-    response="$(api --method POST "repos/\${GITHUB_REPOSITORY}/releases" --input - <<<"$payload")"
+    response="$(api --method POST "repos/${GITHUB_REPOSITORY}/releases" --input - <<<"$payload")"
     RELEASE_ID="$(jq -r '.id // empty' <<<"$response")"
     [[ "$RELEASE_ID" =~ ^[0-9]+$ ]] || { echo "Release creation returned no valid ID: $response" >&2; exit 1; }
     echo "Created draft release ID $RELEASE_ID"
@@ -141,7 +141,7 @@ upload_one_asset() {
     if [[ "$status" =~ ^2[0-9][0-9]$ ]]; then
       rm -f "$body"
       asset_json="$(find_asset "$name")"
-      if asset_is_complete "$asset_json" "$local_size"; then
+      if asset_is_complete "$asset_json" "$local_size" "$file"; then
         echo "Uploaded and verified $name ($local_size bytes)"
         return 0
       fi
@@ -150,7 +150,7 @@ upload_one_asset() {
       echo "HTTP 422 for $name; re-querying release assets before deciding." >&2
       cat "$body" >&2
       asset_json="$(find_asset "$name")"
-      if asset_is_complete "$asset_json" "$local_size"; then
+      if asset_is_complete "$asset_json" "$local_size" "$file"; then
         rm -f "$body"
         echo "Asset $name was accepted despite HTTP 422; skipping duplicate upload."
         return 0
@@ -170,7 +170,7 @@ upload_one_asset() {
     fi
     rm -f "$body"
     if (( attempt < 6 )); then
-      sleep "\${BACKOFF[$((attempt - 1))]}"
+      sleep "${BACKOFF[$((attempt - 1))]}"
     fi
   done
   echo "Exhausted six upload attempts for $name." >&2
@@ -180,13 +180,13 @@ upload_one_asset() {
 verify_and_publish() {
   local assets name file local_size asset_json
   assets="$(list_assets)"
-  for file in "\${ASSETS[@]}"; do
+  for file in "${ASSETS[@]}"; do
     name="$(basename "$file")"
     local_size="$(stat -c%s "$file")"
     asset_json="$(jq -c --arg name "$name" '[.[] | select(.name == $name)] | first // empty' <<<"$assets")"
-    if ! asset_is_complete "$asset_json" "$local_size"; then
+    if ! asset_is_complete "$asset_json" "$local_size" "$file"; then
       echo "Release verification failed: $name missing, empty, incomplete, or size mismatch." >&2
-      echo "Expected local size: $local_size; remote asset: \${asset_json:-<missing>}" >&2
+      echo "Expected local size: $local_size; remote asset: ${asset_json:-<missing>}" >&2
       return 1
     fi
     echo "VERIFIED $name size=$local_size state=uploaded"
@@ -197,11 +197,11 @@ verify_and_publish() {
   (( count >= 4 )) || { echo "Expected at least 4 assets, found $count." >&2; return 1; }
 
   echo "All four required assets verified. Publishing release ID $RELEASE_ID."
-  api --method PATCH "repos/\${GITHUB_REPOSITORY}/releases/$RELEASE_ID" \
-    -f draft=false -F prerelease=true >/dev/null
+  api --method PATCH "repos/${GITHUB_REPOSITORY}/releases/$RELEASE_ID" \
+    -F draft=false -F prerelease=true >/dev/null
 
   local final
-  final="$(api "repos/\${GITHUB_REPOSITORY}/releases/$RELEASE_ID")"
+  final="$(api "repos/${GITHUB_REPOSITORY}/releases/$RELEASE_ID")"
   [[ "$(jq -r '.draft' <<<"$final")" == "false" ]]
   [[ "$(jq -r '.prerelease' <<<"$final")" == "true" ]]
   [[ "$(jq -r '.tag_name' <<<"$final")" == "$RELEASE_TAG" ]]
@@ -209,12 +209,12 @@ verify_and_publish() {
 }
 
 main() {
-  for file in "\${ASSETS[@]}"; do
+  for file in "${ASSETS[@]}"; do
     test -s "$file"
   done
   cleanup_old_releases_and_tags
   consolidate_target_release
-  for file in "\${ASSETS[@]}"; do
+  for file in "${ASSETS[@]}"; do
     upload_one_asset "$file"
   done
   verify_and_publish
