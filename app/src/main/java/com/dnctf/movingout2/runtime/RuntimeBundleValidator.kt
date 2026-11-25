@@ -17,9 +17,9 @@ class RuntimeBundleValidator {
    val map=parsed.componentFiles
    val box=map["box64"];val wine=map["wine64"];val server=map["wineserver"];val libs=map["wineLib"]
    val blockers=parsed.errors.toMutableList()
-   fun requireFormat(key: String, file: File?, format: String) {
+   fun requireFormat(key: String, file: File?, format: String, executable: Boolean = true) {
     if (file == null) return
-    if (!file.canExecute()) blockers += "Executable $key is not executable."
+    if (executable && !file.canExecute()) blockers += "Executable $key is not executable."
     if (!RuntimeBinaryInspector.matches(file, format)) blockers += "Executable $key does not match declared role format $format."
    }
    requireFormat("box64", box, RuntimeBinaryInspector.ELF64_AARCH64)
