@@ -32,8 +32,18 @@ class RuntimeManifestParserTest {
   // XInput DLLs live under wineLib, so calculate its directory digest after both are staged.
   components.put("wineLib",JSONObject().put("included",true).put("path","wine/lib/wine").put("sha256",hashDir(lib)).put("abi","DIRECTORY_SHA256_X86_64"))
   components.put("turnip",JSONObject().put("included",turnip))
-  if(turnip){put("turnipSo","turnip/libvulkan_freedreno.so","vk");put("turnipIcd","turnip/freedreno_icd.aarch64.json","{}")}
-  File(root,"runtime-manifest.json").writeText(JSONObject().put("schemaVersion",2).put("targetAbi","arm64-v8a").put("provenance",JSONObject().put("packager","scripts/package_runtime_bundle.sh").put("manifestFormat","role-validated-abi-v2")).put("components",components).put("defaultLaunchProfile",JSONObject()).toString())
+  if(turnip){
+   put("turnipSo","turnip/libvulkan_freedreno.so","vk")
+   put("turnipIcd","turnip/freedreno_icd.aarch64.json","{}")
+  } else {
+   components.put("turnipSo",JSONObject().put("included",false).put("path","turnip/libvulkan_freedreno.so").put("abi","ELF64_AARCH64_SHARED").put("sha256",""))
+   components.put("turnipIcd",JSONObject().put("included",false).put("path","turnip/freedreno_icd.aarch64.json").put("abi","JSON").put("sha256",""))
+  }
+  val launch=JSONObject().put("arguments",org.json.JSONArray().put("-force-d3d11"))
+   .put("environment",JSONObject().put("WINEDLLOVERRIDES","d3d11,dxgi,xinput1_3,xinput1_4=n,b")
+    .put("BOX64_DYNAREC","1").put("BOX64_DYNAREC_BIGBLOCK","1")
+    .put("BOX64_DYNAREC_STRONGMEM","1").put("BOX64_DYNAREC_SAFEFLAGS","1"))
+  File(root,"runtime-manifest.json").writeText(JSONObject().put("schemaVersion",2).put("targetAbi","arm64-v8a").put("bundleVersion","test-1").put("provenance",JSONObject().put("packager","scripts/package_runtime_bundle.sh").put("manifestFormat","role-validated-abi-v2")).put("components",components).put("defaultLaunchProfile",launch).toString())
   return root
  }
  private fun hashDir(dir:File):String{val listing=StringBuilder();dir.walkTopDown().filter{it.isFile}.sortedBy{it.relativeTo(dir).invariantSeparatorsPath}.forEach{f->listing.append(sha(f)).append("  ./").append(f.relativeTo(dir).invariantSeparatorsPath).append('\n')};val d=MessageDigest.getInstance("SHA-256");d.update(listing.toString().toByteArray(Charsets.UTF_8));return d.digest().joinToString(""){"%02x".format(it)}}
@@ -81,4 +91,36 @@ class RuntimeManifestParserTest {
  @Test fun rejectsWrongAbi(){val root=fixture();val j=JSONObject(File(root,"runtime-manifest.json").readText()).put("targetAbi","x86_64");File(root,"runtime-manifest.json").writeText(j.toString());assertFalse(RuntimeManifestParser().validate(root).valid);root.deleteRecursively()}
  @Test fun rejectsPathTraversal(){val root=fixture();val j=JSONObject(File(root,"runtime-manifest.json").readText());j.getJSONObject("components").getJSONObject("box64").put("path","../outside.so");File(root,"runtime-manifest.json").writeText(j.toString());assertTrue(RuntimeManifestParser().validate(root).errors.any{it.contains("Unsafe path")});root.deleteRecursively()}
  @Test fun rejectsChecksumMismatch(){val root=fixture();File(root,"dxvk/x64/dxgi.dll").writeText("changed");assertTrue(RuntimeManifestParser().validate(root).errors.any{it.contains("SHA-256 mismatch")});root.deleteRecursively()}
+
+ @Test fun acceptsExactNonTurnipManifestShapeWithEmptyOptionalHashes(){
+  val root=fixture(false)
+  val manifest=JSONObject(File(root,"runtime-manifest.json").readText())
+  val components=manifest.getJSONObject("components")
+  assertFalse(components.getJSONObject("turnip").getBoolean("included"))
+  for(key in listOf("turnipSo","turnipIcd")){
+   val item=components.getJSONObject(key)
+   assertFalse(item.getBoolean("included"))
+   assertEquals("",item.getString("sha256"))
+   assertTrue(item.getString("path").isNotBlank())
+   assertTrue(item.getString("abi").isNotBlank())
+  }
+  val launch=manifest.getJSONObject("defaultLaunchProfile")
+  assertEquals("-force-d3d11",launch.getJSONArray("arguments").getString(0))
+  assertTrue(launch.getJSONObject("environment").has("BOX64_DYNAREC"))
+  val result=RuntimeManifestParser().validate(root)
+  assertTrue(result.errors.toString(),result.valid)
+  root.deleteRecursively()
+ }
+ @Test fun acceptsTurnipManifestShapeAndLaunchProfile(){
+  val root=fixture(true)
+  val manifest=JSONObject(File(root,"runtime-manifest.json").readText())
+  val components=manifest.getJSONObject("components")
+  assertTrue(components.getJSONObject("turnip").getBoolean("included"))
+  assertTrue(components.getJSONObject("turnipSo").getString("sha256").matches(Regex("[a-f0-9]{64}")))
+  assertTrue(components.getJSONObject("turnipIcd").getString("sha256").matches(Regex("[a-f0-9]{64}")))
+  assertEquals("-force-d3d11",manifest.getJSONObject("defaultLaunchProfile").getJSONArray("arguments").getString(0))
+  val result=RuntimeManifestParser().validate(root)
+  assertTrue(result.errors.toString(),result.valid)
+  root.deleteRecursively()
+ }
 }
