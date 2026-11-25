@@ -174,14 +174,14 @@ class MainActivity : Activity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.source and (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK) != 0) {
-            physicalGamepadManager.handleKey(event)?.let { return true }
+            if (::physicalGamepadManager.isInitialized) physicalGamepadManager.handleKey(event)?.let { return true }
         }
         return super.dispatchKeyEvent(event)
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         if (event.source and (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK) != 0) {
-            physicalGamepadManager.handleMotion(event)?.let { return true }
+            if (::physicalGamepadManager.isInitialized) physicalGamepadManager.handleMotion(event)?.let { return true }
         }
         return super.dispatchGenericMotionEvent(event)
     }
@@ -483,13 +483,13 @@ class MainActivity : Activity() {
                         if (isFinishing || isDestroyed) return@runOnUiThread
                         result.onSuccess { imported ->
                             val graphics = RuntimeGraphicsComponents.assess(File(filesDir, "native_runtime/bundle"))
-                            runtimeStatus.text = "Runtime ZIP imported and extracted successfully.\\nFiles: ${imported.copiedFiles} | Expanded: ${imported.copiedBytes / (1024 * 1024)} MiB\\nManifest: schema v2 | ABI: ARM64 | Integrity: VALIDATED\\nDXVK: ${graphics.dxvk}\\n${graphics.notes.joinToString("\\n")}"
+                            runtimeStatus.text = "Runtime ZIP imported and extracted successfully.\nFiles: ${imported.copiedFiles} | Expanded: ${imported.copiedBytes / (1024 * 1024)} MiB\nManifest: schema v2 | ABI: ARM64 | Integrity: VALIDATED\nDXVK: ${graphics.dxvk}\n${graphics.notes.joinToString("\n")}"
                             Toast.makeText(this, "Runtime ZIP installed and validated.", Toast.LENGTH_LONG).show()
                         }.onFailure { error ->
                             val trace = java.io.StringWriter().also { error.printStackTrace(java.io.PrintWriter(it)) }.toString()
                             diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime-zip-import",
-                                "${error.javaClass.name}: ${error.message ?: "no message"}\\n$trace"))
-                            runtimeStatus.text = "Runtime ZIP import failed. Existing runtime was preserved when possible.\\n${error.javaClass.simpleName}: ${error.message ?: "no message"}"
+                                "${error.javaClass.name}: ${error.message ?: "no message"}\n$trace"))
+                            runtimeStatus.text = "Runtime ZIP import failed. Existing runtime was preserved when possible.\n${error.javaClass.simpleName}: ${error.message ?: "no message"}"
                             Toast.makeText(this, "Runtime ZIP import failed: ${error.message}", Toast.LENGTH_LONG).show()
                         }
                     }
