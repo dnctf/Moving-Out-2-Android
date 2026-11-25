@@ -23,7 +23,7 @@ class RuntimeManifestParserTest {
   put("wine64","wine/bin/wine64","wine64")
   put("wineserver","wine/bin/wineserver","server")
   val lib=File(root,"wine/lib/wine");lib.mkdirs();File(lib,"module.so").writeText("module")
-  components.put("wineLib",JSONObject().put("included",true).put("path","wine/lib/wine").put("sha256",hashDir(lib)).put("abi","DIRECTORY_SHA256"))
+  components.put("wineLib",JSONObject().put("included",true).put("path","wine/lib/wine").put("sha256",hashDir(lib)).put("abi","DIRECTORY_SHA256_X86_64"))
   put("d3d11","dxvk/x64/d3d11.dll","d3d")
   put("dxgi","dxvk/x64/dxgi.dll","dxgi")
   components.put("turnip",JSONObject().put("included",turnip))
