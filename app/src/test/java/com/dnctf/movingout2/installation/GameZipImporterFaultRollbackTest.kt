@@ -43,7 +43,7 @@ class GameZipImporterFaultRollbackTest {
             "MovingOut2/GameAssembly.dll",
             "MovingOut2/UnityPlayer.dll",
             "MovingOut2/baselib.dll",
-            "MovingOut2/MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat"
+            "MovingOut2/mo2_Data/il2cpp_data/Metadata/global-metadata.dat"
         )
         val prefix = GameZipRootLocator.findRootPrefix(validEntries)
         assertEquals("MovingOut2/", prefix)

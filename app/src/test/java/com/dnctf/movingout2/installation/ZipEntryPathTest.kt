@@ -11,7 +11,7 @@ class ZipEntryPathTest {
         "${prefix}GameAssembly.dll",
         "${prefix}UnityPlayer.dll",
         "${prefix}baselib.dll",
-        "${prefix}MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat"
+        "${prefix}mo2_Data/il2cpp_data/Metadata/global-metadata.dat"
     )
 
     @Test fun normalizesWindowsSeparators() {
@@ -41,12 +41,20 @@ class ZipEntryPathTest {
     @Test fun detectsGameAtArchiveRoot() {
         assertEquals("", GameZipRootLocator.findRootPrefix(completeGame()))
     }
+    @Test fun derivesUnityDataDirectoryFromExecutableName() {
+        assertEquals("mo2_Data", UnityDataDirectoryLocator.directoryName("mo2.exe"))
+        assertEquals("custom_Data", UnityDataDirectoryLocator.directoryName("custom.exe"))
+    }
+    @Test fun rejectsLegacyDataDirectoryThatDoesNotMatchExecutableName() {
+        val legacyEntries = completeGame().map { it.replace("mo2_Data", "MovingOut2_Data") }
+        assertNull(GameZipRootLocator.findRootPrefix(legacyEntries))
+    }
     @Test fun detectsGameInsideMultiLevelWrapperFolders() {
         assertEquals("outer/wrapper/backup/", GameZipRootLocator.findRootPrefix(completeGame("outer/wrapper/backup/")))
     }
     @Test fun rootDetectionIsCaseInsensitive() {
         val entries = listOf("Outer/MO2.EXE", "Outer/GAMEASSEMBLY.DLL", "Outer/UnityPlayer.DLL",
-            "Outer/Baselib.DLL", "Outer/MOVINGOUT2_DATA/IL2CPP_DATA/METADATA/GLOBAL-METADATA.DAT")
+            "Outer/Baselib.DLL", "Outer/MO2_DATA/IL2CPP_DATA/METADATA/GLOBAL-METADATA.DAT")
         assertEquals("Outer/", GameZipRootLocator.findRootPrefix(entries))
     }
     @Test fun incompleteArchiveCannotProduceGameRoot() {

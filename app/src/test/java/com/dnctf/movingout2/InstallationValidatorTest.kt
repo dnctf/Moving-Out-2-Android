@@ -132,7 +132,7 @@ class InstallationValidatorTest {
         val root = fixture()
         File(root, "GameAssembly.dll").renameTo(File(root, "gameassembly.DLL"))
         val data = File(root, "mo2_Data")
-        val lowerData = File(root, "movingout2_data")
+        val lowerData = File(root, "mo2_data")
         assertTrue(data.renameTo(lowerData))
         val il2cpp = File(lowerData, "il2cpp_data")
         val lowerIl2cpp = File(lowerData, "IL2CPP_DATA")
