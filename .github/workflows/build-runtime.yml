@@ -9,6 +9,10 @@ on:
       - "native/wine-xinput/**"
       - "app/src/main/java/com/dnctf/movingout2/runtime/**"
       - "app/src/test/java/com/dnctf/movingout2/runtime/**"
+      - "app/src/main/java/com/dnctf/movingout2/**"
+      - "app/src/test/java/com/dnctf/movingout2/**"
+      - "app/build.gradle.kts"
+      - "app/src/main/AndroidManifest.xml"
   workflow_dispatch:
     inputs:
       dxvk_url:
