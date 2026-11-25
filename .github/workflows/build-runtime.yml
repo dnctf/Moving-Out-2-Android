@@ -106,6 +106,13 @@ jobs:
           MINGW_CC=x86_64-w64-mingw32-gcc-posix native/wine-xinput/build_wine_xinput.sh "$RUNNER_TEMP/xinput"
           test -s "$RUNNER_TEMP/xinput/xinput1_3.dll"
           test -s "$RUNNER_TEMP/xinput/xinput1_4.dll"
+          test -s "$RUNNER_TEMP/xinput/xinput9_1_0.dll"
+          for dll in xinput1_3.dll xinput1_4.dll xinput9_1_0.dll; do
+            objdump -p "$RUNNER_TEMP/xinput/$dll" | grep -Eq '\\[[[:space:]]*100\\]'
+            objdump -p "$RUNNER_TEMP/xinput/$dll" | grep -Eq '\\[[[:space:]]*101\\]'
+            objdump -p "$RUNNER_TEMP/xinput/$dll" | grep -Eq '\\[[[:space:]]*102\\]'
+            objdump -p "$RUNNER_TEMP/xinput/$dll" | grep -Eq '\\[[[:space:]]*103\\]'
+          done
 
       - name: Build Box64 for standalone Android API 28
         shell: bash
@@ -132,6 +139,9 @@ jobs:
             -DBOX64_STANDALONE_ANDROID=ON
             -DANDROID_ABI=arm64-v8a
             -DANDROID_PLATFORM=android-28
+            -DPAGE16K=ON
+            "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384"
+            "-DCMAKE_EXE_LINKER_FLAGS=-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384"
             -DCMAKE_BUILD_TYPE=Release
           )
           "$CMAKE_BIN" "${CMAKE_ARGS[@]}"
@@ -238,6 +248,7 @@ jobs:
           BOX64="$RUNNER_TEMP/runtime-input/box64/box64"
           readelf -h "$BOX64" | grep -Eq 'Class:.*ELF64'
           readelf -h "$BOX64" | grep -Eq 'Machine:.*AArch64'
+          readelf -l "$BOX64" | awk '/LOAD/{if ($NF != "0x4000") exit 1; found=1} END{if (!found) exit 1}'
           for f in "$WINE_DIR/bin/wine64" "$WINE_DIR/bin/wineserver"; do
             readelf -h "$f" | grep -Eq 'Class:.*ELF64'
             readelf -h "$f" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
@@ -247,7 +258,7 @@ jobs:
             readelf -h "$f" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
             readelf -h "$f" | grep -Eq 'Type:.*DYN'
           done
-          for f in "$DXVK_DIR/d3d11.dll" "$DXVK_DIR/dxgi.dll" "$XINPUT_DIR/xinput1_3.dll" "$XINPUT_DIR/xinput1_4.dll"; do
+          for f in "$DXVK_DIR/d3d11.dll" "$DXVK_DIR/dxgi.dll" "$XINPUT_DIR/xinput1_3.dll" "$XINPUT_DIR/xinput1_4.dll" "$XINPUT_DIR/xinput9_1_0.dll"; do
             objdump -f "$f" | grep -q 'architecture: i386:x86-64'
             objdump -p "$f" | grep -Eqi 'Magic[[:space:]]+020b'
           done
