@@ -83,7 +83,7 @@ class InstallationValidator {
             else -> InstallationStatus.VALID
         }
         stages += StageResult(ValidationStage.LAUNCH_READINESS, false,
-            listOf("BLOCKED: native runtime is not installed/validated; file presence is not launch readiness."))
+            listOf("DEFERRED: native runtime, execProbe and Vulkan readiness are evaluated by the launcher coordinator."))
         return InstallationReport(status, stages, missing.distinct(), errors.distinct(), exeArch, unityVersion,
             metadataVersion, hardwareBlockers.toList())
     }
