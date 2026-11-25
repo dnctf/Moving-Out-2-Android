@@ -28,7 +28,7 @@ class RuntimeManifestParserTest {
   put("dxgi","dxvk/x64/dxgi.dll","dxgi")
   components.put("turnip",JSONObject().put("included",turnip))
   if(turnip){put("turnipSo","turnip/libvulkan_freedreno.so","vk");put("turnipIcd","turnip/freedreno_icd.aarch64.json","{}")}
-  File(root,"runtime-manifest.json").writeText(JSONObject().put("schemaVersion",2).put("targetAbi","arm64-v8a").put("components",components).put("defaultLaunchProfile",JSONObject()).toString())
+  File(root,"runtime-manifest.json").writeText(JSONObject().put("schemaVersion",2).put("targetAbi","arm64-v8a").put("provenance",JSONObject().put("packager","unit-test").put("manifestFormat","role-validated-abi-v2")).put("components",components).put("defaultLaunchProfile",JSONObject()).toString())
   return root
  }
  private fun hashDir(dir:File):String{val listing=StringBuilder();dir.walkTopDown().filter{it.isFile}.sortedBy{it.relativeTo(dir).invariantSeparatorsPath}.forEach{f->listing.append(sha(f)).append("  ./").append(f.relativeTo(dir).invariantSeparatorsPath).append('\n')};val d=MessageDigest.getInstance("SHA-256");d.update(listing.toString().toByteArray(Charsets.UTF_8));return d.digest().joinToString(""){"%02x".format(it)}}
