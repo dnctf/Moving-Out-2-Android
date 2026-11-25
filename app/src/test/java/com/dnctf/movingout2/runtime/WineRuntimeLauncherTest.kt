@@ -29,4 +29,25 @@ class WineRuntimeLauncherTest {
         val env = WineLaunchCommand.environment(File("/prefix"), File("/shm"), File("/lib"), 60)
         assertFalse(env.containsKey("VK_ICD_FILENAMES"))
     }
+    @Test fun neverCopiesHostArm64LibraryPathIntoBox64GuestVariables() {
+        val host = File("/host/arm64/lib")
+        val env = WineLaunchCommand.environment(File("/prefix"), File("/shm"), host, 60)
+        assertEquals(host.absolutePath, env["LD_LIBRARY_PATH"])
+        assertFalse(env.containsKey("BOX64_LD_LIBRARY_PATH"))
+        assertFalse(env.containsKey("BOX64_PATH"))
+    }
+
+    @Test fun addsBox64PathsOnlyForExistingGuestDirectories() {
+        val root = java.nio.file.Files.createTempDirectory("box64-paths").toFile()
+        val host = File(root, "host-arm64").apply { mkdirs() }
+        val guestLib = File(root, "guest-x86_64/lib").apply { mkdirs() }
+        val guestBin = File(root, "guest-x86_64/bin").apply { mkdirs() }
+        val env = WineLaunchCommand.environment(File(root, "prefix"), File(root, "shm"), host, 30,
+            guestLibraryDirectory = guestLib, guestBinaryDirectory = guestBin)
+        assertEquals(host.absolutePath, env["LD_LIBRARY_PATH"])
+        assertEquals(guestLib.absolutePath, env["BOX64_LD_LIBRARY_PATH"])
+        assertEquals(guestBin.absolutePath, env["BOX64_PATH"])
+        root.deleteRecursively()
+    }
+
 }
