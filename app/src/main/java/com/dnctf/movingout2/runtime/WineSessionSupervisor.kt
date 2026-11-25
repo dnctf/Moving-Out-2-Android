@@ -253,7 +253,10 @@ class WineSessionSupervisor(
         sharedInput.parentFile?.mkdirs()
         if (!sharedInput.exists()) sharedInput.writeBytes(ByteArray(128))
         if (!inputBridge.isNativeAvailable() || !inputBridge.initialize(sharedInput.absolutePath)) {
-            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "supervisor", "Input bridge initialized in fallback or native mode"))
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
+                "Native XInput shared-memory bridge is unavailable; refusing to start a session without controller IPC."))
+            transitionTo(WineSessionState.FAILED)
+            return false
         }
 
         // Build environment
