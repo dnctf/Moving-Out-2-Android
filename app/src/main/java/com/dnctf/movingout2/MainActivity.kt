@@ -225,7 +225,13 @@ class MainActivity : Activity() {
         // That callback must not reconnect the XInput slot while the Activity is pausing.
         if (::inputCoordinator.isInitialized) inputCoordinator.resetAndDisconnect()
         if (::physicalGamepadManager.isInitialized) physicalGamepadManager.unregister()
+        activeWineSession?.neutralizeInputForLifecycle()
         super.onPause()
+    }
+
+    override fun onStop() {
+        activeWineSession?.neutralizeInputForLifecycle()
+        super.onStop()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
