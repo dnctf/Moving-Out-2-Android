@@ -358,6 +358,7 @@ class MainActivity : Activity() {
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 result.onSuccess { installed ->
+                    probeGraphicsAsync()
                     refreshRuntimeStatus()
                     runtimeStatus.append("\nRuntime release: ${installed.version}\nFiles: ${installed.files} | Extracted: ${installed.bytes / (1024 * 1024)} MiB\nIntegrity: SHA-256 + manifest + ABI validation passed.")
                     Toast.makeText(this, "Runtime setup completed and verified.", Toast.LENGTH_LONG).show()
