@@ -282,7 +282,7 @@ class RuntimeRepositoryInstaller(
                     files += entry
                 }
             }
-            if (entries == 0 || files.none { it.name == "runtime-manifest.json" }) {
+            if (entries == 0 || files.none { normalizeRuntimeArchiveEntry(it.name, false) == "runtime-manifest.json" }) {
                 throw IllegalStateException("Runtime ZIP must contain runtime-manifest.json at its root.")
             }
             val available = StatFs(destination.absolutePath).availableBytes
