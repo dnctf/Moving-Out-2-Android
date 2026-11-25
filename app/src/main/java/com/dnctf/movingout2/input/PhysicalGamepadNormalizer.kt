@@ -55,10 +55,13 @@ class PhysicalGamepadNormalizer(private val deadzone: Float = 0.12f) {
             return ((raw - min) / (max - min)).coerceIn(0f, 1f)
         }
         fun hatButtons(x: Float, y: Float): Set<ControllerButton> = buildSet {
-            if (x < -0.5f) add(ControllerButton.LEFT)
-            if (x > 0.5f) add(ControllerButton.RIGHT)
-            if (y < -0.5f) add(ControllerButton.UP)
-            if (y > 0.5f) add(ControllerButton.DOWN)
+            // Invalid vendor samples must never synthesize a D-pad direction.
+            val safeX = x.takeIf { it.isFinite() } ?: 0f
+            val safeY = y.takeIf { it.isFinite() } ?: 0f
+            if (safeX < -0.5f) add(ControllerButton.LEFT)
+            if (safeX > 0.5f) add(ControllerButton.RIGHT)
+            if (safeY < -0.5f) add(ControllerButton.UP)
+            if (safeY > 0.5f) add(ControllerButton.DOWN)
         }
     }
 }
