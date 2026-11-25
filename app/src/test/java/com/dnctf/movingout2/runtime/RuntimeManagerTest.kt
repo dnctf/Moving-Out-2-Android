@@ -44,7 +44,7 @@ class RuntimeManagerTest {
         root.deleteRecursively()
     }
 
-    private fun validArm64Elf(): ByteArray {
+    private fun validArm64Elf(machine: Int = 183, entryPoint: Long = 0x400000L): ByteArray {
         val bytes = ByteArray(120)
         val elf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
         bytes[0] = 0x7f
@@ -55,9 +55,9 @@ class RuntimeManagerTest {
         bytes[5] = 1
         bytes[6] = 1
         elf.putShort(16, 3.toShort()) // ET_DYN
-        elf.putShort(18, 183.toShort()) // EM_AARCH64
+        elf.putShort(18, machine.toShort()) // EM_AARCH64 or EM_X86_64
         elf.putInt(20, 1)
-        elf.putLong(24, 0x400000L)
+        elf.putLong(24, entryPoint)
         elf.putLong(32, 64L)
         elf.putShort(52, 64.toShort())
         elf.putShort(54, 56.toShort())
@@ -76,12 +76,9 @@ class RuntimeManagerTest {
     private fun createValidBundle(): File {
         val root = Files.createTempDirectory("manager-bundle-").toFile()
         File(root, "runtime.properties").writeText("format_version=1\ntarget_abi=arm64-v8a\nbox64=b\nwine64=w\nwineserver=s\nlibrary_dir=lib\n")
-        listOf("b", "w", "s").forEach { name ->
-            File(root, name).apply {
-                writeBytes(validArm64Elf())
-                setExecutable(true)
-            }
-        }
+        File(root, "b").apply { writeBytes(validArm64Elf(183)); setExecutable(true) }
+        File(root, "w").apply { writeBytes(validArm64Elf(62)); setExecutable(true) }
+        File(root, "s").apply { writeBytes(validArm64Elf(62)); setExecutable(true) }
         File(root, "lib").mkdirs()
         File(root, "lib/lib.so").writeBytes(byteArrayOf(1))
         return root

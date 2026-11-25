@@ -39,12 +39,27 @@ class WineRuntimeLauncher(
     private val sharedInput = File(context.filesDir, "xinput_shm.bin")
     private val validator = RuntimeBundleValidator()
     private val inputBridge = RuntimeInputBridge()
+    private val execCapabilityProbe = AndroidExecCapabilityProbe(context, diagnostics)
+    @Volatile private var activeBox64Executable: File? = null
 
     fun prepare(gameExe: File, options: WineLaunchOptions = WineLaunchOptions()): LaunchPreparationResult {
+        activeBox64Executable = null
         val report = validator.validate(bundleRoot)
         val blockers = report.blockers.toMutableList()
         if (!report.isReady) return LaunchPreparationResult.MissingPayload(blockers)
         val root = report.root ?: return LaunchPreparationResult.MissingPayload(listOf("Runtime bundle root is unavailable."))
+        val box64Candidate = report.box64 ?: return LaunchPreparationResult.MissingPayload(listOf("Box64 host executable is unavailable."))
+        val execCapability = execCapabilityProbe.probe(box64Candidate)
+        if (!execCapability.allowed) {
+            val detail = when (execCapability.capability) {
+                AndroidExecCapability.EXEC_BLOCKED_SELINUX_EACCES ->
+                    "Android denied executable launch (EACCES/SELinux execute_no_trans). Runtime launch is blocked before wineserver startup. ${execCapability.detail}"
+                else -> "Android executable capability probe failed; runtime launch is blocked before wineserver startup. ${execCapability.detail}"
+            }
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "exec-probe", detail))
+            return LaunchPreparationResult.MissingPayload(listOf(detail))
+        }
+        activeBox64Executable = execCapability.executable ?: box64Candidate
         val properties = Properties()
         val manifestFile = File(root, "runtime-manifest.json")
         if (manifestFile.isFile) {
@@ -101,14 +116,20 @@ class WineRuntimeLauncher(
             if (!sharedInput.exists()) sharedInput.writeBytes(ByteArray(128))
             val zPath = toWineZPath(gameExe)
             val args = WineLaunchCommand.arguments(wine!!.absolutePath, zPath, options.width, options.height)
-            val env = WineLaunchCommand.environment(prefix, sharedInput, report.libraryDirectory!!, options.fpsCap, if (options.useTurnip && turnipDir != null) icd else null, dxvkDlls).toMutableMap()
+            val hostLibraryDirectory = turnipLibrary?.parentFile ?: File(context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
+            val env = WineLaunchCommand.environment(
+                prefix, sharedInput, hostLibraryDirectory, options.fpsCap,
+                if (options.useTurnip && turnipDir != null) icd else null, dxvkDlls,
+                guestLibraryDirectory = if (manifestFile.isFile) report.libraryDirectory else null,
+                guestBinaryDirectory = wine!!.parentFile
+            ).toMutableMap()
             properties.stringPropertyNames().filter { it.startsWith("profile_env_") }.forEach { p ->
                 val envKey = p.removePrefix("profile_env_")
                 if (envKey.startsWith("BOX64_DYNAREC") || envKey == "WINEDLLOVERRIDES") env[envKey] = properties.getProperty(p)
             }
 
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "launcher", "Prepared Wine prefix and launch plan; execution compatibility remains unverified."))
-            return LaunchPreparationResult.Prepared(WineLaunchPlan(box64!!, args, env, gameExe.parentFile ?: root, prefix, gameExe))
+            return LaunchPreparationResult.Prepared(WineLaunchPlan(execCapability.executable ?: box64Candidate, args, env, gameExe.parentFile ?: root, prefix, gameExe))
         } catch (e: Exception) {
             return LaunchPreparationResult.MissingPayload(listOf("Wine prefix preparation failed: ${e.message ?: e.javaClass.simpleName}"))
         }
@@ -153,13 +174,21 @@ class WineRuntimeLauncher(
             return false
         }
         val validated = validator.validate(bundleRoot)
-        val libraryPath = validated.libraryDirectory?.absolutePath.orEmpty()
+        val box64 = activeBox64Executable?.takeIf { it.isFile && it.canExecute() } ?: validated.box64
+        if (box64 == null || !validated.isReady) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "wineserver", "Cleanup blocked: validated Box64 host executable is unavailable."))
+            return false
+        }
         val environment = buildMap {
             put("WINEPREFIX", prefix.absolutePath)
-            if (libraryPath.isNotBlank()) put("LD_LIBRARY_PATH", libraryPath)
+            put("LD_LIBRARY_PATH", context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
+            if (File(bundleRoot, "runtime-manifest.json").isFile && validated.libraryDirectory != null) {
+                put("BOX64_LD_LIBRARY_PATH", validated.libraryDirectory.absolutePath)
+            }
+            put("BOX64_PATH", server.parentFile?.absolutePath.orEmpty())
         }
         return runCatching {
-            val result = RuntimeProcess(diagnostics).start(server, listOf("-k"), environment, prefix).waitFor(5000)
+            val result = RuntimeProcess(diagnostics).start(box64, listOf(server.absolutePath, "-k"), environment, prefix).waitFor(5000)
             val success = !result.timedOut && result.exitCode == 0
             diagnostics.record(RuntimeDiagnostic(if (success) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.WARNING, "wineserver", "Cleanup command exit=${result.exitCode}, timedOut=${result.timedOut}."))
             success
@@ -206,30 +235,8 @@ class WineRuntimeLauncher(
         from.inputStream().use { input -> to.outputStream().use { output -> input.copyTo(output) } }
     }
 
-    private fun isValidX64Pe(file: File): Boolean {
-        return try {
-            if (!file.isFile || file.length() < 70) return false
-            val bytes = file.inputStream().use { stream ->
-                val buffer = ByteArray(65536)
-                var offset = 0
-                while (offset < buffer.size) {
-                    val read = stream.read(buffer, offset, buffer.size - offset)
-                    if (read <= 0) break
-                    offset += read
-                }
-                if (offset == buffer.size) buffer else buffer.copyOf(offset)
-            }
-            if (bytes.size < 64 || bytes[0] != 'M'.code.toByte() || bytes[1] != 'Z'.code.toByte()) return false
-            val pe = (bytes[0x3c].toInt() and 255) or ((bytes[0x3d].toInt() and 255) shl 8) or
-                ((bytes[0x3e].toInt() and 255) shl 16) or ((bytes[0x3f].toInt() and 255) shl 24)
-            pe >= 0 && pe <= bytes.size - 6 && bytes[pe] == 'P'.code.toByte() &&
-                bytes[pe + 1] == 'E'.code.toByte() && bytes[pe + 2] == 0.toByte() &&
-                bytes[pe + 3] == 0.toByte() && bytes[pe + 4] == 0x64.toByte() &&
-                bytes[pe + 5] == 0x86.toByte()
-        } catch (_: Exception) {
-            false
-        }
-    }
+    private fun isValidX64Pe(file: File): Boolean =
+        RuntimeBinaryInspector.matches(file, RuntimeBinaryInspector.PE32_PLUS_X86_64)
 }
 
 /** Cleanup steps are ordered and failure-isolated so later resources are still released. */

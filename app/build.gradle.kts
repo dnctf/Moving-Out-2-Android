@@ -17,6 +17,13 @@ android {
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            keepDebugSymbols += "**/libbox64.so"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
