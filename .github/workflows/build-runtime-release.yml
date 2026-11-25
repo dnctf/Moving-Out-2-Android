@@ -146,6 +146,9 @@ jobs:
             --wine-dir runtime-input/wine \
             --dxvk-dir runtime-input/dxvk/x64 \
             --bundle-version "$RUNTIME_VERSION" \
+            --box64-version "${{ inputs.box64_version }}" \
+            --wine-version "${{ inputs.wine_version }}" \
+            --dxvk-version "${{ inputs.dxvk_version }}" \
             --output moving-out-2-runtime-arm64-v8a.zip
           sha256sum moving-out-2-runtime-arm64-v8a.zip > moving-out-2-runtime-arm64-v8a.zip.sha256
           unzip -t moving-out-2-runtime-arm64-v8a.zip
