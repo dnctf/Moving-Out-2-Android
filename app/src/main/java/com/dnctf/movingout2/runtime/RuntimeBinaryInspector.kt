@@ -26,7 +26,7 @@ internal object RuntimeBinaryInspector {
             input.readFully(bytes)
             val h = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
             if (bytes[0] != 0x7f.toByte() || bytes[1] != 'E'.code.toByte() ||
-                bytes[2] != 'L'.code.toByte() || bytes[3] != 'F'.code ||
+                bytes[2] != 'L'.code.toByte() || bytes[3] != 'F'.code.toByte() ||
                 bytes[4] != 2.toByte() || bytes[5] != 1.toByte() || bytes[6] != 1.toByte()) return@use false
             val type = h.getShort(16).toInt() and 0xffff
             val machine = h.getShort(18).toInt() and 0xffff
