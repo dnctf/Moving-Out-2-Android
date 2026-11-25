@@ -51,6 +51,10 @@ class RuntimeBundleValidator {
    requireFormat("dxgi", map["dxgi"], RuntimeBinaryInspector.PE32_PLUS_X86_64, executable = false)
    requireFormat("xinput1_3", map["xinput1_3"], RuntimeBinaryInspector.PE32_PLUS_X86_64, executable = false)
    requireFormat("xinput1_4", map["xinput1_4"], RuntimeBinaryInspector.PE32_PLUS_X86_64, executable = false)
+   requireFormat("xinput9_1_0", map["xinput9_1_0"], RuntimeBinaryInspector.PE32_PLUS_X86_64, executable = false)
+   requireFormat("vcruntime140", map["vcruntime140"], RuntimeBinaryInspector.PE32_PLUS_X86_64, executable = false)
+   requireFormat("vcruntime140_1", map["vcruntime140_1"], RuntimeBinaryInspector.PE32_PLUS_X86_64, executable = false)
+   requireFormat("msvcp140", map["msvcp140"], RuntimeBinaryInspector.PE32_PLUS_X86_64, executable = false)
    map["turnipSo"]?.let { requireFormat("turnipSo", it, RuntimeBinaryInspector.ELF64_AARCH64_SHARED, executable = false) }
    if (libs != null) {
     val guestLibraries = libs.walkTopDown().filter { it.isFile && (it.name.endsWith(".so", true) || it.name.contains(".so.", true)) }.toList()
