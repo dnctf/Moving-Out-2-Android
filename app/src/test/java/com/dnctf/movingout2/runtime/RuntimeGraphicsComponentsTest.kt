@@ -27,6 +27,30 @@ class RuntimeGraphicsComponentsTest {
         assertEquals("FILES_PRESENT_UNVERIFIED",result.dxvk); assertEquals("FILES_PRESENT_UNVERIFIED",result.turnip)
         root.deleteRecursively()
     }
+
+    @Test fun readsGraphicsComponentsFromManifestV2WithoutSelectingTurnipAutomatically() {
+        val root = Files.createTempDirectory("graphics-manifest-v2").toFile()
+        pe(File(root, "dxvk/x64/d3d11.dll"))
+        pe(File(root, "dxvk/x64/dxgi.dll"))
+        elf(File(root, "turnip/libvulkan_freedreno.so"))
+        File(root, "turnip/freedreno_icd.aarch64.json").apply {
+            parentFile.mkdirs()
+            writeText("{\\"library_path\\":\\"libvulkan_freedreno.so\\"}")
+        }
+        File(root, "runtime-manifest.json").writeText(
+            """{"schemaVersion":2,"components":{
+                "d3d11":{"included":true,"path":"dxvk/x64/d3d11.dll"},
+                "dxgi":{"included":true,"path":"dxvk/x64/dxgi.dll"},
+                "turnipSo":{"included":true,"path":"turnip/libvulkan_freedreno.so"},
+                "turnipIcd":{"included":true,"path":"turnip/freedreno_icd.aarch64.json"}
+            }}"""
+        )
+        val result = RuntimeGraphicsComponents.assess(root)
+        assertEquals("FILES_PRESENT_UNVERIFIED", result.dxvk)
+        assertEquals("BUNDLE_AVAILABLE_NOT_SELECTED", result.turnip)
+        root.deleteRecursively()
+    }
+
     @Test fun rejectsGraphicsDirectoryPathEscape() {
         val root=root(); File(root,"runtime.properties").appendText("turnip_dir=../outside\n")
         val result=RuntimeGraphicsComponents.assess(root)
