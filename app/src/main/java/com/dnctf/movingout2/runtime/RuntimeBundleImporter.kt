@@ -114,7 +114,9 @@ class RuntimeBundleImporter(
                     if (!isSafeRuntimeArchiveEntry(entry.name, entry.isDirectory)) {
                         throw IOException("Unsafe runtime ZIP path rejected: ${entry.name.take(160)}")
                     }
-                    val normalized = entry.name.replace('\\\\', '/').let { if (entry.isDirectory) it.removeSuffix("/") else it }
+                    val normalized = normalizeRuntimeArchiveEntry(entry.name, entry.isDirectory)
+                        ?: throw IOException("Unsafe runtime ZIP path rejected: ${entry.name.take(160)}")
+                    if (normalized.isEmpty()) { zip.closeEntry(); continue }
                     val collisionKey = Normalizer.normalize(normalized, Normalizer.Form.NFKC).lowercase(Locale.ROOT)
                     if (!seen.add(collisionKey)) throw IOException("Duplicate/colliding ZIP path: $normalized")
                     val output = File(staging, normalized).canonicalFile
