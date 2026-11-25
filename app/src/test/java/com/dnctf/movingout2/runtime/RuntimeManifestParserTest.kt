@@ -13,7 +13,8 @@ class RuntimeManifestParserTest {
   val root=Files.createTempDirectory("manifest-v1").toFile()
   val components=JSONObject()
   fun put(key:String,path:String,contents:String){val f=File(root,path);f.parentFile.mkdirs();f.writeText(contents);val abi = when (key) {
-   "box64", "turnipSo" -> RuntimeBinaryInspector.ELF64_AARCH64
+   "box64" -> RuntimeBinaryInspector.ELF64_AARCH64
+   "turnipSo" -> RuntimeBinaryInspector.ELF64_AARCH64_SHARED
    "wine64", "wineserver" -> RuntimeBinaryInspector.ELF64_X86_64
    "d3d11", "dxgi" -> RuntimeBinaryInspector.PE32_PLUS_X86_64
    else -> "JSON"
