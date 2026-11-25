@@ -27,10 +27,10 @@ class InstallationValidatorTest {
         val pe = peFixture()
         listOf("GameAssembly.dll", "UnityPlayer.dll", "baselib.dll").forEach { File(root, it).writeBytes(pe) }
         File(root, "mo2.exe").writeBytes(pe)
-        val metadata = File(root, "MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat")
+        val metadata = File(root, "mo2_Data/il2cpp_data/Metadata/global-metadata.dat")
         metadata.parentFile?.mkdirs()
         metadata.writeBytes(byteArrayOf(0xaf.toByte(), 0x1b.toByte(), 0xb1.toByte(), 0xfa.toByte(), 29.toByte(), 0.toByte(), 0.toByte(), 0.toByte()))
-        File(root, "MovingOut2_Data/globalgamemanagers").apply { parentFile.mkdirs(); writeText("Unity 2021.3.16f1 synthetic fixture") }
+        File(root, "mo2_Data/globalgamemanagers").apply { parentFile.mkdirs(); writeText("Unity 2021.3.16f1 synthetic fixture") }
         return root
     }
 
@@ -56,7 +56,7 @@ class InstallationValidatorTest {
 
     @Test fun missingRequiredFilesAreReported() {
         val root = fixture()
-        listOf("GameAssembly.dll", "mo2.exe", "MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat").forEach { path ->
+        listOf("GameAssembly.dll", "mo2.exe", "mo2_Data/il2cpp_data/Metadata/global-metadata.dat").forEach { path ->
             File(root, path).delete()
         }
         val report = InstallationValidator().validate(root)
@@ -80,7 +80,7 @@ class InstallationValidatorTest {
 
     @Test fun missingMetadataStructureIsBlocked() {
         val root = fixture()
-        File(root, "MovingOut2_Data").deleteRecursively()
+        File(root, "mo2_Data").deleteRecursively()
         val report = InstallationValidator().validate(root)
         assertTrue(report.missingFiles.any { it.contains("global-metadata.dat") })
         assertFalse(report.stages.first { it.stage == ValidationStage.STRUCTURE }.passed)
@@ -119,10 +119,22 @@ class InstallationValidatorTest {
         root.deleteRecursively()
     }
 
+    @Test fun detectsActualMovingOut2LayoutMo2Data() {
+        val root = fixture()
+        val old = File(root, "MovingOut2_Data")
+        val actual = File(root, "mo2_Data")
+        assertTrue(old.renameTo(actual))
+        val report = InstallationValidator().validate(root)
+        assertEquals(InstallationStatus.VALID, report.status)
+        assertEquals(29, report.metadataVersion)
+        assertTrue(report.missingFiles.isEmpty())
+        root.deleteRecursively()
+    }
+
     @Test fun caseInsensitiveLookupSupportsUnityMetadataPath() {
         val root = fixture()
         File(root, "GameAssembly.dll").renameTo(File(root, "gameassembly.DLL"))
-        val data = File(root, "MovingOut2_Data")
+        val data = File(root, "mo2_Data")
         val lowerData = File(root, "movingout2_data")
         assertTrue(data.renameTo(lowerData))
         val il2cpp = File(lowerData, "il2cpp_data")
@@ -153,7 +165,7 @@ class InstallationValidatorTest {
 
     @Test fun invalidMetadataMagicBlocksValidation() {
         val root = fixture()
-        File(root, "MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat")
+        File(root, "mo2_Data/il2cpp_data/Metadata/global-metadata.dat")
             .writeBytes(byteArrayOf(1, 2, 3, 4, 29, 0, 0, 0))
         val report = InstallationValidator().validate(root)
         assertEquals(InstallationStatus.INVALID_STRUCTURE, report.status)
