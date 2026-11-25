@@ -130,7 +130,7 @@ jobs:
           readelf -h app/src/main/jniLibs/arm64-v8a/libbox64.so | grep -Eq 'Machine:.*AArch64'
           test -s app/src/main/jniLibs/arm64-v8a/libbox64.so
           echo "Box64 LOAD segment alignment:"
-          readelf -l app/src/main/jniLibs/arm64-v8a/libbox64.so | awk '/LOAD/{print "  " $NF; if ($NF != "0x4000") {print "ERROR: expected 0x4000, got " $NF > "/dev/stderr"; exit 1} found=1} END{if (!found) {print "ERROR: no LOAD segments found" > "/dev/stderr"; exit 1}}'
+          readelf -Wl app/src/main/jniLibs/arm64-v8a/libbox64.so | awk '/LOAD/{print "  " $NF; if ($NF != "0x4000") {print "ERROR: expected 0x4000, got " $NF > "/dev/stderr"; exit 1} found=1} END{if (!found) {print "ERROR: no LOAD segments found" > "/dev/stderr"; exit 1}}'
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
@@ -155,7 +155,7 @@ jobs:
           for so in libbox64.so libmo2_input_bridge.so libvulkan_probe.so; do
             binary="app/src/main/jniLibs/arm64-v8a/$so"
             [[ "$so" == "libbox64.so" ]] || binary="$RUNNER_TEMP/apk-native/$so"
-            readelf -l "$binary" | awk -v name="$so" '/LOAD/{if ($NF != "0x4000") {print "Bad 16 KB LOAD alignment in " name ": " $NF; exit 1} found=1} END{if (!found) exit 1}'
+            readelf -Wl "$binary" | awk -v name="$so" '/LOAD/{if ($NF != "0x4000") {print "Bad 16 KB LOAD alignment in " name ": " $NF; exit 1} found=1} END{if (!found) exit 1}'
           done
           unzip -l "$APK_PATH" | grep -F "lib/arm64-v8a/libvulkan_probe.so"
           unzip -l "$APK_PATH" | grep -F "lib/arm64-v8a/libmo2_input_bridge.so"
