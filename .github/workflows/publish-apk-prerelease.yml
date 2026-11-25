@@ -1,5 +1,8 @@
 name: Publish Integrated Android APK Pre-Release
 on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/publish-apk-prerelease.yml"]
   workflow_run:
     workflows: ["Build Runtime Bundle"]
     types: [completed]
@@ -13,8 +16,8 @@ concurrency:
 jobs:
   build-and-publish:
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_sha == github.sha
+      github.event_name == 'push' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_sha == github.sha)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -33,10 +36,10 @@ jobs:
       - name: Download runtime artifact from successful runtime build
         uses: actions/download-artifact@v6
         with:
-          name: moving-out-2-runtime-${{ github.event.workflow_run.run_number }}
+          name: moving-out-2-runtime-${{ github.event_name == 'workflow_run' && github.event.workflow_run.run_number || '48' }}
           path: runtime-artifact
           repository: ${{ github.repository }}
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || '45634308671' }}
           github-token: ${{ github.token }}
       - name: Verify runtime archive
         run: |
