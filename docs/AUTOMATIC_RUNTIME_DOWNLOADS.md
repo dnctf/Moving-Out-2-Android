@@ -1,6 +1,6 @@
 # Automatic runtime downloads
 
-The launcher can install the runtime from the latest GitHub Release of
+The launcher can install the runtime from the newest published runtime pre-release of
 `dnctf/Moving-Out-2-Android`. Runtime payloads are not committed to the source
 repository and must be published as release assets.
 
@@ -19,7 +19,7 @@ relative to the release checksum; it is not a signed publisher attestation. The 
 
 ## Installation safety
 
-The app resolves the latest release using GitHub's public Releases API, downloads
+The app lists GitHub releases and selects the newest published, non-draft `runtime-v*` pre-release (the `/releases/latest` endpoint excludes pre-releases), then downloads
 the named assets over HTTPS, verifies the archive SHA-256, rejects traversal and
 oversized archives, validates all manifest component hashes and ABI roles, and
 activates the bundle with staging/backup/rollback. An absent release or missing
