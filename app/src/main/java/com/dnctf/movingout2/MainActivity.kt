@@ -42,6 +42,7 @@ import com.dnctf.movingout2.runtime.WineSessionSupervisor
 import com.dnctf.movingout2.runtime.WineSessionState
 import com.dnctf.movingout2.runtime.RuntimeGraphicsComponents
 import com.dnctf.movingout2.settings.LauncherSettings
+import com.dnctf.movingout2.settings.RuntimeSettingsConsumer
 import com.dnctf.movingout2.ui.home.LauncherHomeView
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
@@ -629,8 +630,15 @@ class MainActivity : Activity() {
                 }
             }
         )
+        val displayWidth = maxOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
+        val displayHeight = minOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
+        val runtimeSettings = RuntimeSettingsConsumer().consume(
+            LauncherSettings.load(this), displayWidth, displayHeight,
+            File(root, "turnip/freedreno_icd.aarch64.json").takeIf { it.isFile },
+            File(root, "dxvk/x64").takeIf { it.isDirectory }
+        )
         Thread({
-            val started = runCatching { supervisor.startSession(gameExe) }
+            val started = runCatching { supervisor.startSession(gameExe, runtimeSettings.launchOptions) }
             runOnUiThread {
                 if (isFinishing || isDestroyed) {
                     supervisor.shutdownAll()
