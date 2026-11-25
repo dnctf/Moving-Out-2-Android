@@ -17,7 +17,7 @@ EXPORTS
     XInputGetKeystroke
     XInputGetStateEx @100 NONAME
     XInputWaitForGuideButton @101
-    XInputCancelGuideButtonWait @102
+    XInputCancelGuideButton @102
     XInputPowerOffController @103
 EOF
 for name in xinput1_3 xinput1_4 xinput9_1_0; do
