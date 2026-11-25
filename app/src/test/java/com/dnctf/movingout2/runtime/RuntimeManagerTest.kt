@@ -3,6 +3,8 @@ package com.dnctf.movingout2.runtime
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.file.Files
 
 class RuntimeManagerTest {
@@ -42,15 +44,41 @@ class RuntimeManagerTest {
         root.deleteRecursively()
     }
 
+    private fun validArm64Elf(): ByteArray {
+        val bytes = ByteArray(120)
+        val elf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        bytes[0] = 0x7f
+        bytes[1] = 'E'.code.toByte()
+        bytes[2] = 'L'.code.toByte()
+        bytes[3] = 'F'.code.toByte()
+        bytes[4] = 2
+        bytes[5] = 1
+        bytes[6] = 1
+        elf.putShort(16, 3.toShort()) // ET_DYN
+        elf.putShort(18, 183.toShort()) // EM_AARCH64
+        elf.putInt(20, 1)
+        elf.putLong(24, 0x400000L)
+        elf.putLong(32, 64L)
+        elf.putShort(52, 64.toShort())
+        elf.putShort(54, 56.toShort())
+        elf.putShort(56, 1.toShort())
+        elf.putInt(64, 1) // PT_LOAD
+        elf.putInt(68, 5) // PF_R | PF_X
+        elf.putLong(72, 0L)
+        elf.putLong(80, 0x400000L)
+        elf.putLong(88, 0x400000L)
+        elf.putLong(96, bytes.size.toLong())
+        elf.putLong(104, bytes.size.toLong())
+        elf.putLong(112, 0x1000L)
+        return bytes
+    }
+
     private fun createValidBundle(): File {
         val root = Files.createTempDirectory("manager-bundle-").toFile()
         File(root, "runtime.properties").writeText("format_version=1\ntarget_abi=arm64-v8a\nbox64=b\nwine64=w\nwineserver=s\nlibrary_dir=lib\n")
         listOf("b", "w", "s").forEach { name ->
             File(root, name).apply {
-                val elf = ByteArray(64)
-                elf[0] = 0x7f; elf[1] = 'E'.code.toByte(); elf[2] = 'L'.code.toByte(); elf[3] = 'F'.code.toByte()
-                elf[4] = 2; elf[5] = 1; elf[18] = 183.toByte(); elf[19] = 0
-                writeBytes(elf)
+                writeBytes(validArm64Elf())
                 setExecutable(true)
             }
         }
