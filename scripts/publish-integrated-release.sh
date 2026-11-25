@@ -7,7 +7,6 @@ set -Eeuo pipefail
 : "${RELEASE_VERSION:?RELEASE_VERSION is required}"
 : "${TARGET_SHA:?TARGET_SHA is required}"
 
-API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
 UPLOAD_API="https://uploads.github.com/repos/${GITHUB_REPOSITORY}"
 API_VERSION="2022-11-28"
 BACKOFF=(5 10 20 40 60)
