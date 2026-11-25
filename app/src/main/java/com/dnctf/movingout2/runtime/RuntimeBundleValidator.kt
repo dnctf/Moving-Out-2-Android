@@ -29,9 +29,18 @@ class RuntimeBundleValidator {
    requireFormat("dxgi", map["dxgi"], RuntimeBinaryInspector.PE32_PLUS_X86_64)
    map["turnipSo"]?.let { requireFormat("turnipSo", it, RuntimeBinaryInspector.ELF64_AARCH64) }
    if (libs != null) {
-    libs.walkTopDown().filter { it.isFile && it.extension.equals("so", true) }.forEach { library ->
+    val guestLibraries = libs.walkTopDown().filter { it.isFile && it.extension.equals("so", true) }.toList()
+    if (guestLibraries.isEmpty()) blockers += "Wine guest library directory contains no shared ELF objects."
+    guestLibraries.forEach { library ->
      if (!RuntimeBinaryInspector.matches(library, RuntimeBinaryInspector.ELF64_X86_64)) {
       blockers += "Guest Wine library is not ELF64 x86-64: ${library.relativeTo(canonical).invariantSeparatorsPath}"
+     }
+    }
+   }
+   if (wine?.parentFile?.isDirectory == true) {
+    wine.parentFile.listFiles()?.filter { it.isFile && it.canExecute() }?.forEach { guestBinary ->
+     if (!RuntimeBinaryInspector.matches(guestBinary, RuntimeBinaryInspector.ELF64_X86_64)) {
+      blockers += "Executable in guest Wine bin directory is not ELF64 x86-64: ${guestBinary.name}"
      }
     }
    }
