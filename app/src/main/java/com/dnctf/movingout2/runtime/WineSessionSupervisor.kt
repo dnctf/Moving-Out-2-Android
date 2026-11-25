@@ -370,9 +370,9 @@ class WineSessionSupervisor(
         if (!current.contains(marker)) {
             userReg.appendText(
                 "\n[Software\\Wine\\Direct3D]\n" +
-                    "\"csmt\"=\"enabled\"\\n" +
+                    "\"csmt\"=\"enabled\"\n" +
                     "\n[Software\\Wine\\WineDbg]\n" +
-                    "\"ShowCrashDialog\"=dword:00000000\\n"
+                    "\"ShowCrashDialog\"=dword:00000000\n"
             )
         }
     }
