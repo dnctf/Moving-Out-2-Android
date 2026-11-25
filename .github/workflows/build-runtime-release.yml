@@ -6,6 +6,8 @@ on:
     paths:
       - ".github/workflows/build-runtime-release.yml"
       - "scripts/package_runtime_bundle.sh"
+      - "app/build.gradle.kts"
+      - "app/src/main/res/**"
   workflow_dispatch:
     inputs:
       runtime_version:
@@ -80,6 +82,7 @@ jobs:
             -DARM_DYNAREC=ON \
             -DBAD_SIGNAL=ON \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS=-D_GNU_SOURCE \
             -DCMAKE_INSTALL_PREFIX="$PWD/box64-install"
           cmake --build box64-build --parallel 2
           cmake --install box64-build
