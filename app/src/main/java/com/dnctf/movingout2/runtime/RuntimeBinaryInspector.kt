@@ -75,14 +75,22 @@ internal object RuntimeBinaryInspector {
             input.seek(peOffset.toLong())
             val header = ByteArray(26); input.readFully(header)
             val b = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN)
-            b.get() == 'P'.code.toByte() && b.get() == 'E'.code.toByte() &&
-                b.get() == 0.toByte() && b.get() == 0.toByte() &&
-                (b.getShort().toInt() and 0xffff) == 0x8664 &&
-                (b.getShort(20).toInt() and 0xffff) >= 2 &&
-                (b.getShort(24).toInt() and 0xffff) == 0x20b
+            if (b.get() != 'P'.code.toByte() || b.get() != 'E'.code.toByte() ||
+                b.get() != 0.toByte() || b.get() != 0.toByte()) return@use false
+            val machine = b.getShort(4).toInt() and 0xffff
+            val sectionCount = b.getShort(6).toInt() and 0xffff
+            val optionalHeaderSize = b.getShort(20).toInt() and 0xffff
+            val optionalMagic = b.getShort(24).toInt() and 0xffff
+            if (machine != 0x8664 || sectionCount !in 1..96 ||
+                optionalHeaderSize < PE32_PLUS_OPTIONAL_HEADER_SIZE || optionalMagic != 0x20b) return@use false
+            val sectionTableOffset = peOffset.toLong() + 24L + optionalHeaderSize.toLong()
+            val sectionTableBytes = sectionCount.toLong() * PE_SECTION_HEADER_SIZE
+            sectionTableOffset <= input.length() && sectionTableBytes <= input.length() - sectionTableOffset
         }
     }.getOrDefault(false)
 
+    private const val PE32_PLUS_OPTIONAL_HEADER_SIZE = 0xF0
+    private const val PE_SECTION_HEADER_SIZE = 40L
     private const val ELF_HEADER_SIZE = 64L
     private const val ET_EXEC = 2
     private const val ET_DYN = 3
