@@ -61,6 +61,7 @@ class MainActivity : Activity() {
     private val launchReadinessCoordinator = com.dnctf.movingout2.runtime.LaunchReadinessCoordinator()
     @Volatile private var vulkanAvailable = false
     @Volatile private var graphicsProbeComplete = false
+    private val graphicsProbeInProgress = AtomicBoolean(false)
     @Volatile private var lastLaunchReady = false
     private val diagnosticLog = RuntimeDiagnostics()
     private var pendingDiagnosticZip: File? = null
@@ -254,6 +255,9 @@ class MainActivity : Activity() {
 
     private fun startSafGameImport(uri: Uri) {
         if (!gameImportInProgress.compareAndSet(false, true)) return
+        lastLaunchReady = false
+        playButton.isEnabled = false
+        playButton.alpha = 0.55f
         val progress = ProgressDialog(this).apply {
             setTitle("Importing game folder")
             setMessage("Copying SAF files into private app storage…")
@@ -282,11 +286,13 @@ class MainActivity : Activity() {
                     val activeGame = gameRegistry.registerImportedZip(imported.gameRoot)
                     activateControllerProfileForGame(activeGame)
                     status.text = "SAF game folder imported automatically to ${imported.gameRoot.absolutePath}.\nFiles: ${imported.copiedFiles} | Copied: ${imported.copiedBytes / (1024 * 1024)} MiB\nGame validation: ${activeGame.validationStatus}"
+                    probeGraphicsAsync()
                     refreshRuntimeStatus()
                     Toast.makeText(this, "Game files copied and validated in app storage.", Toast.LENGTH_LONG).show()
                 }.onFailure { error ->
                     status.text = "Automatic SAF import failed safely: ${error.message ?: error.javaClass.simpleName}\nThe original SAF folder was not modified. Check free storage and permissions."
                     diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "saf-game-import", status.text.toString()))
+                    refreshRuntimeStatus()
                     Toast.makeText(this, "Game folder import failed: ${error.message}", Toast.LENGTH_LONG).show()
                 }
             }
@@ -471,6 +477,7 @@ class MainActivity : Activity() {
 
 
     private fun probeGraphicsAsync() {
+        if (!graphicsProbeInProgress.compareAndSet(false, true)) return
         graphicsProbeComplete = false
         graphicsStatus.text = "Probing Vulkan loader and physical device..."
         Thread({
@@ -478,6 +485,7 @@ class MainActivity : Activity() {
             val result = runCatching { VulkanCapabilities.probe(this) }
             vulkanAvailable = result.getOrNull()?.available == true
             graphicsProbeComplete = true
+            graphicsProbeInProgress.set(false)
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 val deviceText = device.getOrNull()?.let {
@@ -615,7 +623,7 @@ class MainActivity : Activity() {
                     supervisor.shutdownAll()
                     return@runOnUiThread
                 }
-                if (started.getOrDefault(false)) {
+                if (started.getOrDefault(false) && supervisor.state == WineSessionState.RUNNING) {
                     activeWineSession = supervisor
                     playButton.text = "Stop Game Session"
                     playButton.isEnabled = true
@@ -688,6 +696,7 @@ class MainActivity : Activity() {
                         result.onSuccess { imported ->
                             val graphics = RuntimeGraphicsComponents.assess(File(filesDir, "native_runtime/bundle"))
                             runtimeStatus.text = "Runtime ZIP imported and extracted successfully.\nFiles: ${imported.copiedFiles} | Expanded: ${imported.copiedBytes / (1024 * 1024)} MiB\nManifest: schema v2 | ABI: ARM64 | Integrity: VALIDATED\nDXVK: ${graphics.dxvk}\n${graphics.notes.joinToString("\n")}"
+                            probeGraphicsAsync()
                             refreshRuntimeStatus()
                             Toast.makeText(this, "Runtime ZIP installed and validated.", Toast.LENGTH_LONG).show()
                         }.onFailure { error ->
