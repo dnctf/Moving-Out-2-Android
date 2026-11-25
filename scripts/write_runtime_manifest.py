@@ -44,6 +44,10 @@ def main():
         "dxgi": component(root, "dxgi", "dxvk/x64/dxgi.dll", "PE32_PLUS_X86_64", True),
         "xinput1_3": component(root, "xinput1_3", "wine/lib/wine/x86_64-windows/xinput1_3.dll", "PE32_PLUS_X86_64", True),
         "xinput1_4": component(root, "xinput1_4", "wine/lib/wine/x86_64-windows/xinput1_4.dll", "PE32_PLUS_X86_64", True),
+        "xinput9_1_0": component(root, "xinput9_1_0", "wine/lib/wine/x86_64-windows/xinput9_1_0.dll", "PE32_PLUS_X86_64", True),
+        "vcruntime140": component(root, "vcruntime140", "wine/lib/wine/x86_64-windows/vcruntime140.dll", "PE32_PLUS_X86_64", True),
+        "vcruntime140_1": component(root, "vcruntime140_1", "wine/lib/wine/x86_64-windows/vcruntime140_1.dll", "PE32_PLUS_X86_64", True),
+        "msvcp140": component(root, "msvcp140", "wine/lib/wine/x86_64-windows/msvcp140.dll", "PE32_PLUS_X86_64", True),
         "turnip": {"included": has_turnip},
         "turnipSo": component(root, "turnipSo", "turnip/libvulkan_freedreno.so", "ELF64_AARCH64_SHARED", has_turnip),
         "turnipIcd": component(root, "turnipIcd", "turnip/freedreno_icd.aarch64.json", "JSON", has_turnip),
@@ -57,7 +61,7 @@ def main():
         "defaultLaunchProfile": {
             "arguments": ["-force-d3d11"],
             "environment": {
-                "WINEDLLOVERRIDES": "d3d11,dxgi,xinput1_3,xinput1_4=n,b",
+                "WINEDLLOVERRIDES": "d3d11,dxgi,xinput1_3,xinput1_4,xinput9_1_0=n,b",
                 "BOX64_DYNAREC": "1",
                 "BOX64_DYNAREC_BIGBLOCK": "1",
                 "BOX64_DYNAREC_STRONGMEM": "1",
