@@ -209,6 +209,9 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        activeWineSession?.let { session ->
+            Thread({ session.shutdownAll() }, "wine-session-destroy").apply { isDaemon = true; start() }
+        }
         if (::inputCoordinator.isInitialized) inputCoordinator.destroy()
         super.onDestroy()
     }
@@ -630,6 +633,7 @@ class MainActivity : Activity() {
                                 append("\nRuntime: RUNTIME_NOT_INSTALLED")
                             }
                         }, { "ZIP import failed safely: ${it.message ?: it.javaClass.simpleName}" })
+                        refreshRuntimeStatus()
                     }
             }
         }
