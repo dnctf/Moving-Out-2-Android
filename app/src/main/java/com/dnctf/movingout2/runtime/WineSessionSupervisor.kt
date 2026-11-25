@@ -449,6 +449,15 @@ class WineSessionSupervisor(
         }, "mo2-supervisor-watchdog").apply { isDaemon = true; start() }
     }
 
+    fun neutralizeInputForLifecycle() {
+        val neutralized = runCatching { inputBridge.neutralizeAllPlayers() }.getOrDefault(false)
+        diagnostics.record(RuntimeDiagnostic(
+            if (neutralized) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.WARNING,
+            "supervisor",
+            "Activity lifecycle input neutralization completed; success=$neutralized."
+        ))
+    }
+
     fun onAppBackgrounded() {
         diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor", "App backgrounded; initiating idempotent shutdown."))
         shutdownAll()
