@@ -12,8 +12,8 @@ android {
         applicationId = "com.dnctf.movingout2"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.2.0-alpha.3"
+        versionCode = 4
+        versionName = "0.2.0-alpha.4"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
