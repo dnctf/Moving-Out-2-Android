@@ -37,7 +37,7 @@ class RuntimeBundleValidator {
    }
    if(box==null||wine==null||server==null||libs==null)blockers+="Required runtime files/directories unresolved."
    val ready=blockers.isEmpty()
-   return RuntimeBundleReport(if(ready)RuntimeBundleStatus.READY else RuntimeBundleStatus.INCOMPLETE,canonical,box,wine,server,libs,blockers.distinct(),1)
+   return RuntimeBundleReport(if(ready)RuntimeBundleStatus.READY else RuntimeBundleStatus.INCOMPLETE,canonical,box,wine,server,libs,blockers.distinct(),2)
   }
   val manifest=File(canonical,"runtime.properties")
   if(!manifest.isFile||!manifest.canRead())return report(RuntimeBundleStatus.INVALID_MANIFEST,canonical,listOf("runtime.properties missing or unreadable."))
