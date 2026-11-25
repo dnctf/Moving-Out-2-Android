@@ -38,7 +38,7 @@ while IFS= read -r -d '' lib; do
   count=$((count+1))
 done < <(find -L "$ROOT/wine/lib/wine" -type f -name '*.so*' -print0)
 (( count > 0 )) || { echo "No Wine x86_64 shared objects found." >&2; exit 1; }
-for dll in dxvk/x64/d3d11.dll dxvk/x64/dxgi.dll wine/lib/wine/x86_64-windows/xinput1_3.dll wine/lib/wine/x86_64-windows/xinput1_4.dll; do
+for dll in dxvk/x64/d3d11.dll dxvk/x64/dxgi.dll wine/lib/wine/x86_64-windows/xinput1_3.dll wine/lib/wine/x86_64-windows/xinput1_4.dll wine/lib/wine/x86_64-windows/xinput9_1_0.dll wine/lib/wine/x86_64-windows/vcruntime140.dll wine/lib/wine/x86_64-windows/vcruntime140_1.dll wine/lib/wine/x86_64-windows/msvcp140.dll; do
   check_pe "$ROOT/$dll"
 done
 echo "Multi-ABI runtime audit passed."
