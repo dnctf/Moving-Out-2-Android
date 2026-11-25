@@ -253,8 +253,14 @@ class WineSessionSupervisor(
         }
 
         // Setup input IPC & DLLs
-        deployXInputDlls()
-        configureWinePrefixRegistry()
+        try {
+            deployXInputDlls()
+            configureWinePrefixRegistry()
+        } catch (error: Exception) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Wine prefix DLL deployment failed: ${error.message}"))
+            transitionTo(WineSessionState.FAILED)
+            return false
+        }
         sharedInput.parentFile?.mkdirs()
         if (!sharedInput.exists()) sharedInput.writeBytes(ByteArray(128))
         if (!inputBridge.isNativeAvailable() || !inputBridge.initialize(sharedInput.absolutePath)) {
