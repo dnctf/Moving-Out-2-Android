@@ -286,5 +286,5 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # Runtime is an intermediate artifact only. The integrated APK pipeline consumes
-      # this run's artifact, deletes legacy release objects and tags, then publishes one APK release.
+      # Runtime remains an intermediate artifact. The integrated APK pipeline consumes
+      # this artifact, removes old release objects/tags while preserving its new tag, and publishes one APK release.
