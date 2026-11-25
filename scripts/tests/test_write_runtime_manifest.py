@@ -12,6 +12,10 @@ class RuntimeManifestWriterTest(unittest.TestCase):
             "box64/bin/box64", "wine/bin/wine64", "wine/bin/wineserver",
             "wine/lib/wine/x86_64-windows/xinput1_3.dll",
             "wine/lib/wine/x86_64-windows/xinput1_4.dll",
+            "wine/lib/wine/x86_64-windows/xinput9_1_0.dll",
+            "wine/lib/wine/x86_64-windows/vcruntime140.dll",
+            "wine/lib/wine/x86_64-windows/vcruntime140_1.dll",
+            "wine/lib/wine/x86_64-windows/msvcp140.dll",
             "dxvk/x64/d3d11.dll", "dxvk/x64/dxgi.dll",
             "wine/lib/wine/libwine.so",
         ]
