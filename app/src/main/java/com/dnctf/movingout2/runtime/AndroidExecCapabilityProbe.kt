@@ -3,7 +3,6 @@ package com.dnctf.movingout2.runtime
 import android.content.Context
 import java.io.File
 import java.io.IOException
-import java.security.MessageDigest
 
 enum class AndroidExecCapability {
     EXEC_ALLOWED_APP_DATA,
@@ -80,13 +79,13 @@ class AndroidExecCapabilityProbe(
                     "Packaged nativeLibraryDir/libbox64.so is not an executable ARM64 ELF."
                 )
             }
-            if (!appDataExecutable.isFile || sha256(packaged) != sha256(appDataExecutable)) {
-                return AndroidExecProbeResult(
-                    AndroidExecCapability.EXEC_FAILED, packaged, null,
-                    "Packaged Box64 does not match the hash-validated runtime bundle; refusing mismatched execution."
-                )
-            }
-            return executeCandidate(packaged, AndroidExecCapability.EXEC_ALLOWED_NATIVE_LIB_DIR, appDataExecutable)
+            val resolved = RuntimeBundleValidator().resolveBox64ForExecution(
+                appDataExecutable, nativeLibraryDirectory, allowBundleFallback = false
+            ) ?: return AndroidExecProbeResult(
+                AndroidExecCapability.EXEC_FAILED, packaged, null,
+                "Packaged Box64 does not match the hash-validated runtime bundle; refusing mismatched execution."
+            )
+            return executeCandidate(resolved, AndroidExecCapability.EXEC_ALLOWED_NATIVE_LIB_DIR, appDataExecutable)
         }
 
         // Only JVM tests may fall back to app-private storage. Android Context instances
@@ -95,16 +94,13 @@ class AndroidExecCapabilityProbe(
             AndroidExecCapability.EXEC_FAILED, appDataExecutable, null,
             "Packaged nativeLibraryDir/libbox64.so is missing; refusing filesDir execution on Android."
         )
-        return executeCandidate(appDataExecutable, AndroidExecCapability.EXEC_ALLOWED_APP_DATA, appDataExecutable)
-    }
-
-    private fun sha256(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
-            val buffer = ByteArray(64 * 1024)
-            while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        val fallback = RuntimeBundleValidator().resolveBox64ForExecution(
+            appDataExecutable, nativeLibraryDirectory, allowBundleFallback = true
+        ) ?: return AndroidExecProbeResult(
+            AndroidExecCapability.EXEC_FAILED, appDataExecutable, null,
+            "App-data fallback is unavailable or not executable."
+        )
+        return executeCandidate(fallback, AndroidExecCapability.EXEC_ALLOWED_APP_DATA, appDataExecutable)
     }
 
     private fun executeCandidate(file: File, success: AndroidExecCapability, bundleExecutable: File): AndroidExecProbeResult {
