@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="${1:?Usage: audit_runtime_bundle.sh <bundle-root>}"
+ROOT="${1:?Usage: audit_runtime_bundle.sh <bundle-root> [bundle.zip]}"
+BUNDLE_ZIP="${2:-}"
+if [[ -n "$BUNDLE_ZIP" ]]; then
+  need unzip
+  need python3
+  [[ -s "$BUNDLE_ZIP" ]] || { echo "Runtime ZIP missing/empty: $BUNDLE_ZIP" >&2; exit 1; }
+  unzip -p "$BUNDLE_ZIP" runtime-manifest.json | python3 -m json.tool > /dev/null
+fi
 need(){ command -v "$1" >/dev/null 2>&1 || { echo "Missing required command: $1" >&2; exit 2; }; }
 need readelf
 need objdump
