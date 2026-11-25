@@ -78,6 +78,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState?.getBoolean("auto_launch_triggered") == true) launchReadinessCoordinator.markAutoLaunched()
         // Render a usable launcher shell before touching native/JNI or persisted repositories.
         val views = LauncherHomeView.create(
             this, ::openFolderPicker, ::revalidateSavedFolder,
@@ -223,6 +224,11 @@ class MainActivity : Activity() {
         if (::inputCoordinator.isInitialized) inputCoordinator.resetAndDisconnect()
         if (::physicalGamepadManager.isInitialized) physicalGamepadManager.unregister()
         super.onPause()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("auto_launch_triggered", launchReadinessCoordinator.hasAutoLaunched())
+        super.onSaveInstanceState(outState)
     }
 
     override fun onDestroy() {
@@ -515,7 +521,8 @@ class MainActivity : Activity() {
             val gamePresent = active?.isReadyToLaunch == true &&
                 active.source == com.dnctf.movingout2.core.model.InstallationSource.INTERNAL_IMPORTED &&
                 active.executableFile?.isFile == true &&
-                active.executableFile?.canonicalFile?.toPath()?.startsWith(File(filesDir, "game_data").canonicalFile.toPath()) == true
+                (active.executableFile?.canonicalFile?.toPath()?.startsWith(File(filesDir, "game_data").canonicalFile.toPath()) == true ||
+                    active.executableFile?.canonicalFile?.toPath()?.startsWith(File(filesDir, "game_import").canonicalFile.toPath()) == true)
             val dxvkReady = graphics.dxvk == "FILES_PRESENT_UNVERIFIED"
             val snapshot = com.dnctf.movingout2.runtime.LaunchReadinessSnapshot(
                 gameImportedToAppStorage = gamePresent,
@@ -581,7 +588,21 @@ class MainActivity : Activity() {
         val root = File(filesDir, "native_runtime/bundle")
         playButton.isEnabled = false
         runtimeStatus.text = "Starting Box64 / Wine session…"
-        val supervisor = WineSessionSupervisor(this, root, "moving-out-2", diagnosticLog)
+        val supervisor = WineSessionSupervisor(
+            this, root, "moving-out-2", diagnosticLog,
+            onSessionFinished = {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        activeWineSession = null
+                        playButton.text = "Play Moving Out 2"
+                        playButton.isEnabled = lastLaunchReady
+                        playButton.alpha = if (lastLaunchReady) 1f else 0.55f
+                        runtimeStatus.text = "Game process exited. Manual relaunch is available when readiness remains READY."
+                        refreshRuntimeStatus()
+                    }
+                }
+            }
+        )
         Thread({
             val started = runCatching { supervisor.startSession(gameExe) }
             runOnUiThread {
