@@ -46,7 +46,7 @@ class AndroidExecCapabilityProbe(
         process.stderrThread.join(500)
         val output = diagnostics.snapshot().drop(before)
         ProbeExecution(result.exitCode,
-            output.filter { it.component == "stdout" }.joinToString("\\n") { it.message },
+            output.filter { it.component == "stdout" }.joinToString(String(charArrayOf(10))) { it.message },
             output.filter { it.component == "stderr" }.joinToString("\\n") { it.message })
     }
 ) {
@@ -54,11 +54,15 @@ class AndroidExecCapabilityProbe(
         context: Context,
         diagnostics: RuntimeDiagnostics = RuntimeDiagnostics(),
         executor: AndroidBinaryExecutor = AndroidBinaryExecutor { binary, args ->
+            val before = diagnostics.snapshot().size
             val process = RuntimeProcess(diagnostics).start(binary, args, emptyMap(), binary.parentFile)
             val result = process.waitFor(3000)
             process.stdoutThread.join(500)
             process.stderrThread.join(500)
-            ProbeExecution(result.exitCode, "", "")
+            val output = diagnostics.snapshot().drop(before)
+            ProbeExecution(result.exitCode,
+                output.filter { it.component == "stdout" }.joinToString(String(charArrayOf(10))) { it.message },
+                output.filter { it.component == "stderr" }.joinToString(String(charArrayOf(10))) { it.message })
         }
     ) : this(File(context.applicationInfo.nativeLibraryDir ?: ""), diagnostics, executor)
 
