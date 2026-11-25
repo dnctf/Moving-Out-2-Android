@@ -67,18 +67,20 @@ object GameBinaryAnalyzer {
             }
             val sectionStart = optional + optionalSize
             require(sectionStart.toLong() + sections.toLong() * 40 <= bytes.size) { "Truncated section table" }
-            fun rvaToOffset(rva: Int): Int {
-                require(rva >= 0) { "Negative RVA" }
+            fun rvaToOffset(rva: Long): Int {
+                require(rva in 0L..0xffff_ffffL) { "RVA outside unsigned 32-bit range" }
                 for (i in 0 until sections) {
                     val s = sectionStart + i * 40
-                    val virtualAddress = u32(s + 12).toInt()
-                    val virtualSize = u32(s + 8).toInt()
-                    val rawSize = u32(s + 16).toInt()
-                    val rawPointer = u32(s + 20).toInt()
-                    val delta = rva.toLong() - virtualAddress
-                    if (delta >= 0 && delta < rawSize && delta < maxOf(virtualSize, rawSize)) {
-                        val offset = rawPointer.toLong() + delta
-                        require(offset >= 0 && offset < bytes.size) { "RVA raw offset out of bounds" }
+                    // PE section address/size/pointer fields are unsigned DWORDs. Keep them
+                    // unsigned through the mapping calculation to prevent signed wraparound.
+                    val virtualAddress = u32(s + 12)
+                    val virtualSize = u32(s + 8)
+                    val rawSize = u32(s + 16)
+                    val rawPointer = u32(s + 20)
+                    val delta = rva - virtualAddress
+                    if (delta >= 0L && delta < rawSize && delta < maxOf(virtualSize, rawSize)) {
+                        val offset = rawPointer + delta
+                        require(offset < bytes.size.toLong()) { "RVA raw offset out of bounds" }
                         return offset.toInt()
                     }
                 }
@@ -91,14 +93,13 @@ object GameBinaryAnalyzer {
                 require((importRvaRaw == 0L) == (importSizeRaw == 0L)) {
                     "Import directory RVA and size must both be zero or non-zero"
                 }
-                require(importRvaRaw <= Int.MAX_VALUE.toLong() && importSizeRaw <= Int.MAX_VALUE.toLong()) {
-                    "Import directory fields exceed supported file offsets"
+                require(importSizeRaw <= bytes.size.toLong()) {
+                    "Import directory size exceeds analyzed file bounds"
                 }
                 if (importRvaRaw != 0L) {
-                    val importRva = importRvaRaw.toInt()
                     val importSize = importSizeRaw.toInt()
                     require(importSize >= 20) { "Import directory too small" }
-                    val directoryOffset = rvaToOffset(importRva)
+                    val directoryOffset = rvaToOffset(importRvaRaw)
                     require(directoryOffset.toLong() + importSize <= bytes.size) { "Import directory exceeds file bounds" }
                     val descriptorLimit = minOf(importSize / 20, 4096)
                     var terminated = false
@@ -118,8 +119,8 @@ object GameBinaryAnalyzer {
                             terminated = true
                             break
                         }
-                        require(nameRva in 1L..Int.MAX_VALUE.toLong()) { "Import descriptor has invalid name RVA" }
-                        imports.add(cstr(rvaToOffset(nameRva.toInt())))
+                        require(nameRva in 1L..0xffff_ffffL) { "Import descriptor has invalid name RVA" }
+                        imports.add(cstr(rvaToOffset(nameRva)))
                     }
                     require(terminated) { "Import descriptor table is not terminated within directory bounds" }
                 }

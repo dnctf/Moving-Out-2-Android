@@ -1,33 +1,37 @@
 # Build Status
 
-Status last verified: 2026-11-22
+Status last verified: 2026-11-25
 
 ## CI baseline
 
 - Branch: `main`
-- Verified commit: `dc258f56ca44ad2bee71e2b5ef6c456b42a88411`
-- Android CI: **PASS** — Run #446 (2026-11-21)
-- Run: https://github.com/dnctf/Moving-Out-2-Android/actions/runs/44916947448
-- Completed steps: JDK 17, Android SDK packages, MinGW-w64, runtime bundle script syntax, MO2X protocol layout, Wine XInput DLL build/package, Gradle setup, unit tests, debug APK build, packaged APK verification, artifact upload.
-- APK artifact: `moving-out-2-android-alpha` (1,619,541 bytes; SHA-256 `38bab3947efa3653ee9de857b18fbb3e5e70f153f32ba10bca1ef1fcc225e254); expires 2026-12-05.
-- Artifact download: https://github.com/dnctf/Moving-Out-2-Android/actions/runs/44916947448
-- Historical run 44693974536 was **cancelled** during Android SDK setup; no APK artifact was produced.
+- Latest verified code commit: `30b464e12df9ace817a2de65d2197ce4d6f5be46`
+- Android CI: **PASS** — Run #468 (2026-11-24)
+- Run: https://github.com/dnctf/Moving-Out-2-Android/actions/runs/45363557567
+- Verified steps: JDK 17, Android SDK packages, MinGW-w64, runtime packager syntax, MO2X protocol layout, Wine XInput DLL build/package, Gradle setup, unit tests, debug APK build, APK content verification, and artifact upload.
+- APK artifact: `moving-out-2-android-alpha` (1,630,191 bytes; uploaded ZIP SHA-256 `b9a7c947ad214736f6eb350529a4fe84a6c9878dd0ff9d114915e6c6602238ab`); expires 2026-12-08.
+- Artifact download: https://github.com/dnctf/Moving-Out-2-Android/actions/runs/45363557567/artifacts/14906650972
+- Run #466 failed one `GamepadTranslatorTest` regression assertion; the non-finite trigger handling was corrected and Run #467 passed.
+- Run #461 failed Kotlin compilation in `VirtualControllerEngine.kt` due to type inference; later mainline changes corrected the compilation issue and Run #468 passed.
+- Run #460 failed one installation metadata fixture assertion. The current green baseline includes subsequent commits; continue expanding validator regression coverage.
+- Historical run 44693974536 was **cancelled** during Android SDK setup, before Gradle/build/test/artifact steps. It was not a source compilation failure and produced no APK.
 
 ## Foundation status
 
-- Installation validator: six-stage validation and filesystem fixture tests exist; case-insensitive paths, required-file/zero-byte checks, PE architecture, IL2CPP metadata, Unity-version detection limitations, and runtime-not-installed launch blocking are covered.
-- SAF installation manager: separate DocumentFile-based validation; permission revocation is represented as a validation blocker. SAF permission revocation requires Android instrumentation/device coverage.
-- Runtime foundation: bundle manifest validation, runtime state/session/process abstraction, watchdog cleanup, bounded diagnostics, and launch blocking when native components are missing are implemented and unit-tested.
-- Compatibility/graphics: device diagnostics and Vulkan native probing exist. SoC-derived GPU labels are heuristics; Vulkan probing is not swapchain/DXVK/Turnip/game-rendering certification.
-- UI: home/installation/diagnostics views have extracted UI classes, but `MainActivity` still owns substantial navigation, picker, settings, input and orchestration code. Thin-Activity refactor remains open.
-- Native Wine ARM64 + Box64 runtime integration and real device/game launch are **not complete**. No game files or proprietary binaries are committed.
+- Architecture packages exist for core model/state/config/logging, installation, runtime, compatibility, graphics, input, audio, settings, and extracted UI views/state.
+- Installation validation: filesystem and SAF validators expose staged checks for access, required files, metadata structure, PE architecture, compatibility, and launch readiness. Continue parity testing; SAF permission revocation requires Android instrumentation/device coverage and cannot be fully established by JVM filesystem fixtures.
+- PE inspection: bounds-checked PE32+ analysis covers machine type, section/RVA mapping, import descriptors, bounded import names, and malformed input. It is an analyzer only, not a binary loader or a guarantee of Unity/metadata version identification.
+- Runtime: bundle manifest validation, runtime state/session/process abstractions, watchdog cleanup, and diagnostics exist. Launch must remain blocked when native Wine/Box64 components are missing or invalid; report `RUNTIME_NOT_INSTALLED` / `MISSING_NATIVE_COMPONENTS` honestly.
+- Compatibility/graphics: device diagnostics and Vulkan native probing exist. GPU-family labels are heuristics; Vulkan capability probing is not swapchain, DXVK/Turnip, or game-rendering certification.
+- UI: extracted home/installation/diagnostics/settings state and views exist, but `MainActivity` remains approximately 400 lines and still owns picker, settings, input, and orchestration logic. Thin-Activity decomposition remains open.
+- Native Wine ARM64 + Box64 runtime integration and real device/game launch are **not complete**. No proprietary game files or game binaries are committed.
 
 ## Next P0/P1 work
 
-1. Continue thin-Activity decomposition behind existing UI/state seams, with regression tests.
-2. Align SAF and filesystem validator behavior and add comparable fixture coverage where feasible.
-3. Expand real installation-validation fixtures (malformed directory structures, boundary/truncated PE and metadata cases).
-4. Improve runtime/device diagnostics and native-runtime integration readiness without faking launch success.
-5. Preserve CI APK verification/artifact upload as a release gate.
+1. Run PE parser boundary regression tests for unsigned section raw pointers and continue malformed PE/metadata fixture coverage.
+2. Continue thin-Activity decomposition into dedicated screen/coordinator modules with lifecycle regression tests.
+3. Align SAF and filesystem validation semantics and add Android instrumentation for permission revocation.
+4. Improve runtime process supervision, exit diagnostics, and device capability reporting without claiming a launch when native components are unavailable.
+5. Keep CI unit tests, debug APK content verification, and artifact upload as a release gate.
 
-A successful Android launcher build does **not** imply game compatibility or gameplay. Runtime readiness remains `RUNTIME_NOT_INSTALLED` until lawful native components are integrated and validated.
+A successful Android launcher build does **not** imply game compatibility or gameplay. Runtime readiness remains blocked until lawful native components are integrated, validated, and exercised on a physical device.

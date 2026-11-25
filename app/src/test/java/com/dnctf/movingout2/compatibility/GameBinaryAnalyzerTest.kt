@@ -53,6 +53,16 @@ class GameBinaryAnalyzerTest {
         assertTrue(GameBinaryAnalyzer.analyze(bytes).errors.any { it.contains("directory count") })
     }
 
+    @Test fun highBitRawSectionPointerCannotWrapIntoDosHeaders() {
+        val bytes = peWithImport()
+        val sectionRawPointer = 328 + 20
+        for (i in 0..3) bytes[sectionRawPointer + i] = 0xff.toByte()
+
+        val result = GameBinaryAnalyzer.analyze(bytes)
+        assertTrue("unsigned raw pointer must not wrap into a valid low offset", result.errors.isNotEmpty())
+        assertTrue(result.imports.isEmpty())
+    }
+
     @Test fun nonAsciiImportNameIsRejected() {
         val bytes = peWithImport()
         bytes[0x250] = 0xff.toByte()
