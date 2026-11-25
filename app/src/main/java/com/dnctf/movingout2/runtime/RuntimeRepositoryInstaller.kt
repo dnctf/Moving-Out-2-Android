@@ -57,7 +57,8 @@ class RuntimeRepositoryInstaller(
     private val maxDownloadBytes: Long = 6L * 1024L * 1024L * 1024L,
     private val maxEntries: Int = 20_000,
     private val maxExpandedBytes: Long = 6L * 1024L * 1024L * 1024L,
-    private val storageReserveBytes: Long = 384L * 1024L * 1024L
+    private val storageReserveBytes: Long = 384L * 1024L * 1024L,
+    private val diagnostics: RuntimeDiagnostics? = null
 ) {
     private val appContext = context.applicationContext
     private val parent = File(appContext.filesDir, "native_runtime")
@@ -67,7 +68,19 @@ class RuntimeRepositoryInstaller(
     private val archive = File(appContext.cacheDir, "runtime-download.zip")
 
     fun installLatest(onProgress: (String) -> Unit = {}): RuntimeRepositoryInstallResult {
+        record(RuntimeDiagnostic.Severity.INFO, "installLatest started; filesDir=${appContext.filesDir.absolutePath}; cacheDir=${appContext.cacheDir.absolutePath}")
+        return try {
+            installLatestInternal(onProgress)
+        } catch (error: Exception) {
+            val trace = java.io.StringWriter().also { error.printStackTrace(java.io.PrintWriter(it)) }.toString()
+            record(RuntimeDiagnostic.Severity.ERROR, "Runtime install failed: ${error.javaClass.name}: ${error.message ?: "no message"}\n$trace")
+            throw error
+        }
+    }
+
+    private fun installLatestInternal(onProgress: (String) -> Unit): RuntimeRepositoryInstallResult {
         onProgress("Checking latest runtime release…")
+        record(RuntimeDiagnostic.Severity.INFO, "Fetching GitHub runtime release metadata: https://api.github.com/repos/$repository/releases?per_page=30")
         // GitHub's /releases/latest endpoint excludes pre-releases. Select the
         // newest published runtime pre-release explicitly so app downloads work.
         val releaseUrl = "https://api.github.com/repos/$repository/releases?per_page=30"
@@ -76,6 +89,7 @@ class RuntimeRepositoryInstaller(
             ?: throw IllegalStateException("No published Moving Out 2 runtime pre-release was found.")
         val version = release.optString("tag_name").takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("Runtime pre-release has no tag_name.")
+        record(RuntimeDiagnostic.Severity.INFO, "Selected complete runtime release $version; published_at=${release.optString("published_at")}")
         val assets = release.optJSONArray("assets") ?: throw IllegalStateException("Release has no assets.")
         val zipName = "moving-out-2-runtime-arm64-v8a.zip"
         val checksumName = "$zipName.sha256"
@@ -108,6 +122,7 @@ class RuntimeRepositoryInstaller(
         val digestUrl = checksumUrl ?: throw IllegalStateException(
             "Release $version is missing $checksumName; refusing an unverified runtime download."
         )
+        record(RuntimeDiagnostic.Severity.INFO, "Runtime asset selected: url=$bundleUrl; declaredBytes=$declaredArchiveBytes; checksumUrl=$digestUrl")
 
         onProgress("Downloading and verifying SHA-256…")
         val expectedHash = readUrl(digestUrl, 4096).trim().split(Regex("\\s+")).firstOrNull()?.lowercase()
@@ -122,7 +137,9 @@ class RuntimeRepositoryInstaller(
             throw error
         }
         val actualHash = sha256(archive)
+        record(RuntimeDiagnostic.Severity.INFO, "Runtime archive downloaded: path=${archive.absolutePath}; bytes=${archive.length()}; expectedSha256=$expectedHash; actualSha256=$actualHash")
         if (actualHash != expectedHash) {
+            record(RuntimeDiagnostic.Severity.ERROR, "Runtime SHA-256 mismatch; expected=$expectedHash actual=$actualHash path=${archive.absolutePath}")
             archive.delete()
             throw IllegalStateException("Runtime archive SHA-256 mismatch; download rejected.")
         }
@@ -134,6 +151,7 @@ class RuntimeRepositoryInstaller(
         try {
             onProgress("Extracting runtime bundle safely…")
             val counts = extract(archive, staging)
+            record(RuntimeDiagnostic.Severity.INFO, "Runtime ZIP extraction completed: staging=${staging.absolutePath}; entries=${counts.first}; expandedBytes=${counts.second}")
             // ZIP archives do not reliably preserve POSIX executable bits; restore them
             // before validation because the validator deliberately requires executable files.
             listOf("box64/bin/box64", "wine/bin/wine64", "wine/bin/wineserver").forEach { relative ->
@@ -143,6 +161,8 @@ class RuntimeRepositoryInstaller(
                 }
             }
             val report = validator.validate(staging)
+            record(if (report.isReady) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.ERROR,
+                "Staging runtime validation: status=${report.status}; root=${staging.absolutePath}; blockers=${report.blockers.joinToString("; ")}")
             if (!report.isReady) throw IllegalStateException(
                 "Downloaded runtime failed manifest/ABI validation: " + report.blockers.joinToString("; ")
             )
@@ -152,6 +172,8 @@ class RuntimeRepositoryInstaller(
             if (!staging.renameTo(target)) throw IllegalStateException("Cannot activate downloaded runtime bundle.")
             activated = true
             val active = validator.validate(target)
+            record(if (active.isReady) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.ERROR,
+                "Activated runtime validation: status=${active.status}; root=${target.absolutePath}; blockers=${active.blockers.joinToString("; ")}")
             if (!active.isReady) throw IllegalStateException("Activated runtime failed revalidation.")
             backup.deleteRecursively()
             archive.delete()
@@ -174,12 +196,16 @@ class RuntimeRepositoryInstaller(
         }
     }
 
+    private fun record(severity: RuntimeDiagnostic.Severity, message: String) {
+        diagnostics?.record(RuntimeDiagnostic(severity, "runtime-installer", message))
+    }
+
     private fun readUrl(url: String, limit: Int): String {
         val connection = open(url)
         try {
             val responseCode = connection.responseCode
             ensureAllowedGitHubResponse(connection)
-            if (responseCode !in 200..299) throw IllegalStateException("Repository request failed: HTTP $responseCode")
+            if (responseCode !in 200..299) throw IllegalStateException("Repository request failed: HTTP $responseCode; url=$url")
             val bytes = connection.inputStream.use { input ->
                 val output = java.io.ByteArrayOutputStream()
                 val buffer = ByteArray(8192)
@@ -200,7 +226,7 @@ class RuntimeRepositoryInstaller(
         try {
             val responseCode = connection.responseCode
             ensureAllowedGitHubResponse(connection)
-            if (responseCode !in 200..299) throw IllegalStateException("Runtime download failed: HTTP $responseCode")
+            if (responseCode !in 200..299) throw IllegalStateException("Runtime download failed: HTTP $responseCode; url=$url")
             val declared = connection.contentLengthLong
             if (declared > maxDownloadBytes) throw IllegalStateException("Runtime archive exceeds configured download limit.")
             var total = 0L
