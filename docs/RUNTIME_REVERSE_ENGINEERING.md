@@ -69,3 +69,8 @@ The JNI implementation owns one process-global mapping (`g_mapping`, `g_fd`) whi
 ### Runtime connection status remains intentionally gated
 
 `XInputTransport` is the runtime adapter boundary and `RuntimeInputBridge` reports native transport capability. The Android controller screen initializes the shared-memory writer; `WineRuntimeLauncher` stages the XInput DLLs and supplies `MO2_XINPUT_SHM_PATH`. However, no production runtime-session callback currently invokes `setNativeRuntimeConnected`, and the Wine DLL does not publish a reader heartbeat. Therefore `BRIDGE_READY_WAITING_RUNTIME` is the evidence-backed status; `BRIDGE_CONNECTED` must not be claimed merely because the APK contains the DLL or the shared file exists. A later integration must wire the actual supervised Wine process and, ideally, a reader/session handshake before reporting connection.
+
+
+## Physical controller player routing (2026-11-25)
+
+Each live Android gamepad is now routed by device ID to its own XInput slot. The first physical device shares player 0 with the virtual touch overlay; additional devices use slots 1–3. Disconnect and Activity teardown write neutral/disconnected packets for the affected slots. Device IDs are runtime-scoped and are not persisted across reconnects; a reconnected device receives the next free slot. This supports up to four simultaneous XInput players, but does not yet provide a user-facing player-slot assignment screen.

@@ -9,6 +9,8 @@ class ControllerInputCoordinatorTest {
         var initialized = false
         var connected = false
         var packet = ByteArray(XInputTransport.PACKET_SIZE_BYTES)
+        val connectedByPlayer = mutableMapOf<Int, Boolean>()
+        val packetByPlayer = mutableMapOf<Int, ByteArray>()
         override fun init(shmFilePath: String): Boolean {
             initialized = shmFilePath.isNotBlank()
             return initialized
@@ -17,6 +19,8 @@ class ControllerInputCoordinatorTest {
             if (!initialized || playerIndex !in 0 until XInputTransport.MAX_PLAYERS || packet.size != XInputTransport.PACKET_SIZE_BYTES) return false
             this.connected = connected
             this.packet = packet.copyOf()
+            connectedByPlayer[playerIndex] = connected
+            packetByPlayer[playerIndex] = packet.copyOf()
             return true
         }
         override fun destroy() { initialized = false }
@@ -38,6 +42,35 @@ class ControllerInputCoordinatorTest {
         assertTrue(coordinator.updatePhysicalState(ControllerState(buttons = setOf(ControllerButton.B))))
         assertTrue(transport.connected)
         assertEquals(0x3000, buttonMask(transport.packet))
+    }
+
+    @Test
+    fun physicalDevicesReceiveDistinctXInputPlayersAndDisconnectIndependently() {
+        val transport = RecordingTransport()
+        val coordinator = ControllerInputCoordinator(bridge(transport))
+        assertTrue(coordinator.updateTouchState(ControllerState(buttons = setOf(ControllerButton.A))))
+        assertTrue(coordinator.updatePhysicalDevice(10, ControllerState(buttons = setOf(ControllerButton.B)), true))
+        assertTrue(coordinator.updatePhysicalDevice(11, ControllerState(buttons = setOf(ControllerButton.X)), true))
+        assertEquals(0x3000, buttonMask(transport.packetByPlayer.getValue(0)))
+        assertEquals(0x4000, buttonMask(transport.packetByPlayer.getValue(1)))
+        assertTrue(transport.connectedByPlayer.getValue(0))
+        assertTrue(transport.connectedByPlayer.getValue(1))
+
+        assertTrue(coordinator.updatePhysicalDevice(11, ControllerState(), false))
+        assertFalse(transport.connectedByPlayer.getValue(1))
+        assertArrayEquals(ByteArray(XInputTransport.PACKET_SIZE_BYTES), transport.packetByPlayer.getValue(1))
+
+        // Releasing the player-0 physical controller must preserve the virtual player-0 input.
+        assertTrue(coordinator.updatePhysicalDevice(10, ControllerState(), false))
+        assertTrue(transport.connectedByPlayer.getValue(0))
+        assertEquals(0x1000, buttonMask(transport.packetByPlayer.getValue(0)))
+        coordinator.updateTouchState(ControllerState())
+        assertEquals(0, buttonMask(transport.packetByPlayer.getValue(0)))
+        assertTrue(transport.connectedByPlayer.getValue(0))
+
+        assertTrue(coordinator.resetAndDisconnect())
+        assertFalse(transport.connectedByPlayer.getValue(0))
+        assertFalse(transport.connectedByPlayer.getValue(1))
     }
 
     @Test

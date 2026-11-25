@@ -75,9 +75,13 @@ class MainActivity : Activity() {
         }
         inputBridge.initialize(RuntimeLaunchConfig(filesDir).sharedMemoryFile.absolutePath)
         inputCoordinator = ControllerInputCoordinator(inputBridge, controllerProfile)
-        physicalGamepadManager = PhysicalGamepadManager(this) { state ->
-            inputCoordinator.updatePhysicalState(state)
-        }
+        physicalGamepadManager = PhysicalGamepadManager(
+            this,
+            onDeviceState = { deviceId, _, state, connected ->
+                inputCoordinator.updatePhysicalDevice(deviceId, state, connected)
+            },
+            onAggregateState = { /* Per-device routing owns XInput slots; do not merge all pads into player 0. */ }
+        )
         val views = LauncherHomeView.create(this, ::openFolderPicker, ::revalidateSavedFolder, ::openRuntimeBundlePicker, ::downloadRuntimeFromRepository, ::openGameZipPicker, ::showSettings, ::showControllerTest, ::exportDiagnostics)
         status = views.status
         runtimeStatus = views.runtimeStatus

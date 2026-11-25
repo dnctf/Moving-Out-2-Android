@@ -9,6 +9,7 @@ class PhysicalGamepadStateStore {
     fun remove(deviceId: Int) { states.remove(deviceId) }
     fun clear() { states.clear() }
     fun deviceCount() = states.size
+    fun stateForDevice(deviceId: Int): ControllerState? = states[deviceId]
     fun aggregate(): ControllerState {
         val all = states.values
         fun safe(v: Float) = if (v.isFinite()) v.coerceIn(-1f, 1f) else 0f
