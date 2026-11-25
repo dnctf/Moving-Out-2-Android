@@ -157,8 +157,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/runtime-input/wine/bin" "$RUNNER_TEMP/runtime-input/wine/lib"
           install -m 0755 "$WINE64" "$RUNNER_TEMP/runtime-input/wine/bin/wine64"
           install -m 0755 "$WINESERVER" "$RUNNER_TEMP/runtime-input/wine/bin/wineserver"
-          cp -a "$WINE_LIB_DIR" "$RUNNER_TEMP/runtime-input/wine/lib/wine"
-          find "$RUNNER_TEMP/runtime-input/wine/lib/wine" -type f -name '*.so*' -print -quit | grep -q .
+          cp -aL "$WINE_LIB_DIR" "$RUNNER_TEMP/runtime-input/wine/lib/wine"
+          find -L "$RUNNER_TEMP/runtime-input/wine/lib/wine" -type f -name '*.so*' -print -quit | grep -q .
           echo "Wine source: Ubuntu signed apt packages wine64 + libwine:amd64"
           dpkg-query -W -f='${Package}=${Version}\n' wine64 libwine:amd64 | tee "$RUNNER_TEMP/wine-package-versions.txt"
 
@@ -199,7 +199,7 @@ jobs:
             llvm-readelf -h "$f" | grep -Eq 'Class:.*ELF64'
             llvm-readelf -h "$f" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
           done
-          find "$WINE_DIR/lib/wine" -type f -name '*.so*' -print0 | while IFS= read -r -d '' f; do
+          find -L "$WINE_DIR/lib/wine" -type f -name '*.so*' -print0 | while IFS= read -r -d '' f; do
             llvm-readelf -h "$f" | grep -Eq 'Class:.*ELF64'
             llvm-readelf -h "$f" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
             llvm-readelf -h "$f" | grep -Eq 'Type:.*DYN'

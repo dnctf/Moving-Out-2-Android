@@ -10,7 +10,7 @@ while (($#)); do case "$1" in
 [[ "$VERSION" =~ ^[A-Za-z0-9._+-]+$ ]] || { echo "Invalid bundle version." >&2; exit 2; }
 command -v zip >/dev/null || { echo "zip command is required." >&2; exit 1; }
 for f in "$BOX64" "$WINE_DIR/bin/wine64" "$WINE_DIR/bin/wineserver" "$DXVK_DIR/d3d11.dll" "$DXVK_DIR/dxgi.dll" "$XINPUT_DIR/xinput1_3.dll" "$XINPUT_DIR/xinput1_4.dll"; do [[ -s "$f" ]] || { echo "Required file missing/empty: $f" >&2;exit 1;}; done
-[[ -d "$WINE_DIR/lib/wine" && -n "$(find "$WINE_DIR/lib/wine" -type f -size +0c -print -quit)" ]] || { echo "wine/lib/wine is missing or empty" >&2;exit 1; }
+[[ -d "$WINE_DIR/lib/wine" && -n "$(find -L "$WINE_DIR/lib/wine" -type f -size +0c -print -quit)" ]] || { echo "wine/lib/wine is missing or empty" >&2;exit 1; }
 check_elf(){ local f="$1" machine="$2"; command -v readelf >/dev/null || { echo "readelf is required for ABI provenance validation." >&2; exit 1; }; readelf -h "$f" | grep -Eq "Machine:.*$machine" || { echo "Unexpected ELF machine (expected $machine): $f" >&2;exit 1;}; }
 check_elf "$BOX64" "AArch64"
 check_elf "$WINE_DIR/bin/wine64" "Advanced Micro Devices X86-64"
@@ -19,7 +19,7 @@ check_elf_shared(){ check_elf "$1" "$2"; readelf -h "$1" | grep -Eq "Type:.*DYN"
 if [[ -n "$TURNIP_SO" ]]; then check_elf_shared "$TURNIP_SO" "AArch64"; fi
 check_guest_libs(){
   local count
-  count="$(find "$WINE_DIR/lib/wine" -type f \( -name '*.so' -o -name '*.so.*' \) | wc -l)"
+  count="$(find -L "$WINE_DIR/lib/wine" -type f \( -name '*.so' -o -name '*.so.*' \) | wc -l)"
   [[ "$count" -gt 0 ]] || { echo "Wine guest library directory has no shared .so objects." >&2; exit 1; }
   while IFS= read -r -d '' lib; do check_elf_shared "$lib" "Advanced Micro Devices X86-64"; done < <(find "$WINE_DIR/lib/wine" -type f \( -name '*.so' -o -name '*.so.*' \) -print0)
 }
@@ -41,7 +41,7 @@ cp -a "$WINE_DIR/lib/wine" "$ROOT/wine/lib/wine";mkdir -p "$ROOT/wine/lib/wine/x
 cp "$XINPUT_DIR/xinput1_3.dll" "$ROOT/wine/lib/wine/x86_64-windows/";cp "$XINPUT_DIR/xinput1_4.dll" "$ROOT/wine/lib/wine/x86_64-windows/"
 if [[ -n "$TURNIP_SO" ]];then mkdir -p "$ROOT/turnip";cp "$TURNIP_SO" "$ROOT/turnip/libvulkan_freedreno.so";cp "$(dirname "$TURNIP_SO")/freedreno_icd.aarch64.json" "$ROOT/turnip/";fi
 sha(){ sha256sum "$1" | awk '{print $1}';}
-hash_dir(){ (cd "$1" && find . -type f -print0 | sort -z | xargs -0 sha256sum) | sha256sum | awk '{print $1}';}
+hash_dir(){ (cd "$1" && find -L . -type f -print0 | sort -z | xargs -0 sha256sum) | sha256sum | awk '{print $1}';}
 cat > "$ROOT/runtime-manifest.json" <<JSON
 {
  "schemaVersion":2,"targetAbi":"arm64-v8a","bundleVersion":"$VERSION",
