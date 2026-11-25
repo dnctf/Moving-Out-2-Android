@@ -557,6 +557,11 @@ class MainActivity : Activity() {
     }
 
     private fun startGameSession() {
+        if (!lastLaunchReady && activeWineSession?.state != WineSessionState.RUNNING) {
+            Toast.makeText(this, "Launch readiness checks are not complete.", Toast.LENGTH_LONG).show()
+            refreshRuntimeStatus()
+            return
+        }
         val existing = activeWineSession
         if (existing != null && existing.state == WineSessionState.RUNNING) {
             Thread({
