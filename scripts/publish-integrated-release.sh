@@ -43,11 +43,15 @@ find_asset() {
 }
 
 asset_is_complete() {
-  local asset_json="$1" local_size="$2"
-  [[ -n "$asset_json" ]] &&
-    [[ "$(jq -r '.state // ""' <<<"$asset_json")" == "uploaded" ]] &&
-    [[ "$(jq -r '.size // -1' <<<"$asset_json")" == "$local_size" ]] &&
-    (( local_size > 0 ))
+  local asset_json="$1" local_size="$2" local_file="$3"
+  local local_digest remote_digest
+  [[ -n "$asset_json" ]] || return 1
+  [[ "$(jq -r '.state // ""' <<<"$asset_json")" == "uploaded" ]] || return 1
+  [[ "$(jq -r '.size // -1' <<<"$asset_json")" == "$local_size" ]] || return 1
+  (( local_size > 0 )) || return 1
+  local_digest="sha256:$(sha256sum "$local_file" | awk '{print $1}')"
+  remote_digest="$(jq -r '.digest // ""' <<<"$asset_json")"
+  [[ "$remote_digest" == "$local_digest" ]]
 }
 
 cleanup_old_releases_and_tags() {
@@ -111,7 +115,7 @@ upload_one_asset() {
   (( local_size > 0 )) || { echo "Refusing to upload empty asset: $file" >&2; return 1; }
 
   asset_json="$(find_asset "$name")"
-  if asset_is_complete "$asset_json" "$local_size"; then
+  if asset_is_complete "$asset_json" "$local_size" "$file"; then
     echo "SKIP $name: already uploaded, size=$local_size"
     return 0
   fi
