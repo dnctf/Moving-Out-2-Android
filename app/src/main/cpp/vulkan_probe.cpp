@@ -71,6 +71,7 @@ Java_com_dnctf_movingout2_graphics_VulkanNativeProbe_probeNative(JNIEnv* env, jo
     out << "status=ok;device=" << clean(props.deviceName)
         << ";vendorId=" << props.vendorID << ";deviceId=" << props.deviceID
         << ";deviceApi=" << version(props.apiVersion)
+        << ";driverVersionRaw=0x" << std::hex << props.driverVersion << std::dec
         << ";deviceType=" << static_cast<int>(props.deviceType)
         << ";deviceExtensions=" << join(names);
     vkDestroyInstance(instance, nullptr);
