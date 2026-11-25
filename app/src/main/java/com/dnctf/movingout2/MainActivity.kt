@@ -598,6 +598,7 @@ class MainActivity : Activity() {
                 val imported = RuntimeBundleImporter(this).importTree(uri)
                 val graphics = RuntimeGraphicsComponents.assess(File(filesDir, "native_runtime/bundle"))
                 runtimeStatus.text = "Runtime bundle: STRUCTURE_VALIDATED\nCopied ${imported.copiedFiles} files (${imported.copiedBytes} bytes).\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${graphics.notes.joinToString("\n")}\nExecution/driver loading not verified; launch remains blocked."
+                refreshRuntimeStatus()
             } catch (e: Exception) { runtimeStatus.text = "Runtime bundle import failed: ${e.message ?: e.javaClass.simpleName}\nExisting bundle is preserved when possible." }
             pickGameZip -> {
                 val cancelled = AtomicBoolean(false)
