@@ -45,4 +45,16 @@ object WineLaunchCommand {
         if (dxvkDirectory != null) result["DXVK_DLL_PATH"] = dxvkDirectory.absolutePath
         return result
     }
+
+    fun winebootArguments(winePath: String): List<String> =
+        listOf(winePath, "wineboot", "--init")
+
+    fun wineserverArguments(wineserverPath: String): List<String> =
+        listOf(wineserverPath, "-f", "-p")
+
+    fun wineserverKillArguments(wineserverPath: String): List<String> =
+        listOf(wineserverPath, "-k")
+
+    fun wineserverProbeArguments(wineserverPath: String): List<String> =
+        listOf(wineserverPath, "-k0")
 }

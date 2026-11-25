@@ -8,8 +8,18 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantLock
 import java.util.zip.ZipFile
 import com.dnctf.movingout2.core.logging.ImportDiagnosticJournal
+
+interface ImportFaultInjector {
+    fun onPreflightComplete() {}
+    fun onExtractionEntry(entryName: String, bytesDone: Long) {}
+    fun onStagingValidated() {}
+    fun onBeforeSwap() {}
+    fun onAfterSwap() {}
+}
 
 data class ImportProgress(val phase: String, val entriesDone: Int, val totalEntries: Int, val bytesDone: Long, val totalBytes: Long) {
     val percent: Int get() = if (totalBytes > 0) ((bytesDone * 100L) / totalBytes).toInt().coerceIn(0, 100) else if (totalEntries > 0) ((entriesDone * 100) / totalEntries).coerceIn(0, 100) else 0
@@ -22,14 +32,42 @@ class GameZipImporter(
     private val maxEntries: Int = 100_000,
     private val storageReserveBytes: Long = 1_610_612_736L
 ) {
+    companion object {
+        private val directoryLocks = ConcurrentHashMap<String, ReentrantLock>()
+        fun getLockFor(dir: File): ReentrantLock =
+            directoryLocks.computeIfAbsent(dir.canonicalPath) { ReentrantLock() }
+    }
+
     private val resolver = context.contentResolver
     private val appContext = context.applicationContext
-    private val root = File(context.filesDir, "game_import")
-    private val staging = File(context.filesDir, "game_import_staging")
-    private val backup = File(context.filesDir, "game_import_backup")
+    val root = File(context.filesDir, "game_import")
+    val staging = File(context.filesDir, "game_import_staging")
+    val backup = File(context.filesDir, "game_import_backup")
     private val sourceZip = File(context.cacheDir, "game_import_preflight.zip")
 
-    fun importZip(uri: Uri, cancelled: () -> Boolean = { false }, onProgress: (ImportProgress) -> Unit = {}): GameZipImportResult {
+    fun importZip(
+        uri: Uri,
+        cancelled: () -> Boolean = { false },
+        onProgress: (ImportProgress) -> Unit = {},
+        faultInjector: ImportFaultInjector? = null
+    ): GameZipImportResult {
+        val lock = getLockFor(root)
+        if (!lock.tryLock()) {
+            throw IllegalStateException("Game import already in progress for destination: ${root.absolutePath}")
+        }
+        try {
+            return performImport(uri, cancelled, onProgress, faultInjector)
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    private fun performImport(
+        uri: Uri,
+        cancelled: () -> Boolean,
+        onProgress: (ImportProgress) -> Unit,
+        faultInjector: ImportFaultInjector?
+    ): GameZipImportResult {
         val journal = ImportDiagnosticJournal(File(resolverContextFilesDir(), "diagnostics"))
         val archiveName = uri.lastPathSegment
         var entryCount = 0
@@ -42,6 +80,7 @@ class GameZipImporter(
         recoverPreviousImport()
         try {
             copyUriToPreflight(uri, cancelled)
+            faultInjector?.onPreflightComplete()
             ZipFile(sourceZip).use { zip ->
                 val entries = zip.entries().asSequence().toList()
                 if (entries.isEmpty()) throw IOException("ZIP is empty.")
@@ -100,6 +139,7 @@ class GameZipImporter(
                         }
                     }
                     entriesDone++
+                    faultInjector?.onExtractionEntry(name, bytesWritten)
                     onProgress(ImportProgress("Extracting", entriesDone, normalized.size, bytesWritten, totalBytes))
                 }
                 val availableAfterExtraction = StatFs(parent.absolutePath).availableBytes
@@ -111,7 +151,8 @@ class GameZipImporter(
                 journal.checkpoint("GAME_ZIP", archiveName, sourceZip.length(), entryCount, bytesWritten, spaceBefore, runCatching { StatFs(storagePath).availableBytes }.getOrNull(), stage="STAGING_VALIDATION")
                 val validation = InstallationValidator().validate(candidate)
                 if (validation.status != InstallationStatus.VALID) throw IOException("Staging validation failed: missing=${validation.missingFiles.joinToString()}, errors=${validation.accessErrors.joinToString()}")
-                activateWithRollback(candidateRootPrefix)
+                faultInjector?.onStagingValidated()
+                activateWithRollback(candidateRootPrefix, faultInjector)
                 val active = findGameRoot(root) ?: throw IOException("Activated game root could not be resolved.")
                 backup.deleteRecursively()
                 journal.checkpoint("GAME_ZIP", archiveName, sourceZip.length(), entryCount, bytesWritten, spaceBefore, runCatching { StatFs(storagePath).availableBytes }.getOrNull(), stage="ACTIVATED", activationStatus="SUCCESS", rollbackStatus="NOT_REQUIRED")
@@ -173,7 +214,8 @@ class GameZipImporter(
         }
     }
 
-    private fun activateWithRollback(candidatePrefix: String) {
+    private fun activateWithRollback(candidatePrefix: String, faultInjector: ImportFaultInjector? = null) {
+        faultInjector?.onBeforeSwap()
         if (root.exists()) {
             backup.deleteRecursively()
             if (!root.renameTo(backup)) throw IOException("Unable to preserve previous imported game.")
@@ -182,6 +224,7 @@ class GameZipImporter(
             rollbackActivation()
             throw IOException("Unable to activate extracted game.")
         }
+        faultInjector?.onAfterSwap()
         val activeCandidate = File(root, candidatePrefix).canonicalFile
         val report = InstallationValidator().validate(activeCandidate)
         if (report.status != InstallationStatus.VALID) {

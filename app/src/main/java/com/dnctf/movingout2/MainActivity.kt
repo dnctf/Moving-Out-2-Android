@@ -43,6 +43,7 @@ class MainActivity : Activity() {
     private lateinit var runtimeStatus: TextView
     private lateinit var graphicsStatus: TextView
     private lateinit var repository: InstallationRepository
+    private lateinit var gameRegistry: com.dnctf.movingout2.installation.GameRegistry
     private lateinit var physicalGamepadManager: PhysicalGamepadManager
     private val inputBridge = RuntimeInputBridge()
     private val diagnosticLog = RuntimeDiagnostics()
@@ -60,6 +61,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repository = InstallationRepository(this)
+        gameRegistry = com.dnctf.movingout2.installation.GameRegistry(this, repository)
         controllerProfile = ControllerProfileRepository.load(this, "moving-out-2") ?: ControllerProfile.presets.first()
         inputBridge.initialize(RuntimeLaunchConfig(filesDir).sharedMemoryFile.absolutePath)
         inputCoordinator = ControllerInputCoordinator(inputBridge, controllerProfile)
@@ -188,10 +190,25 @@ class MainActivity : Activity() {
     }
 
     private fun revalidateSavedFolder() {
-        val uri = repository.savedUri()
-        status.text = if (uri == null) "No installation folder saved." else runCatching {
-            formatReport(GameInstallationManager(this).validate(uri))
-        }.getOrElse { "Folder access error: ${it.message ?: "permission unavailable"}" }
+        val active = gameRegistry.getActiveGame()
+        status.text = if (active == null) {
+            val uri = repository.savedUri()
+            if (uri == null) "No installation folder saved." else runCatching {
+                formatReport(GameInstallationManager(this).validate(uri))
+            }.getOrElse { "Folder access error: ${it.message ?: "permission unavailable"}" }
+        } else {
+            buildString {
+                append("Active installation: ").append(active.displayName)
+                append("\nStatus: ").append(active.validationStatus)
+                append("\nSource: ").append(active.source)
+                append("\nArchitecture: ").append(active.architecture ?: "unknown")
+                if (active.unityVersion != null) append("\nUnity: ").append(active.unityVersion)
+                if (active.metadataVersion != null) append("\nIL2CPP metadata: v").append(active.metadataVersion)
+                if (active.missingFiles.isNotEmpty()) append("\nMissing:\n- ").append(active.missingFiles.joinToString("\n- "))
+                if (active.accessErrors.isNotEmpty()) append("\nAccess errors:\n- ").append(active.accessErrors.joinToString("\n- "))
+                append("\n\nReady to launch: ").append(if (active.isReadyToLaunch) "YES (runtime integration pending)" else "NO")
+            }
+        }
     }
 
     private fun showSettings() {
