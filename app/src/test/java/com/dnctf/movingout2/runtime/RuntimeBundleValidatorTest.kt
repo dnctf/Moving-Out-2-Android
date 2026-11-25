@@ -163,7 +163,7 @@ class RuntimeBundleValidatorTest {
         assertTrue(report.isReady)
         root.deleteRecursively()
     }
-    @Test fun validatesJsonManifestOnlyWithArm64ElfExecutables() {
+    @Test fun validatesMixedAbiManifestByComponentRole() {
         val root = jsonManifestBundle()
         val report = RuntimeBundleValidator().validate(root)
         assertEquals(RuntimeBundleStatus.READY, report.status)
@@ -183,7 +183,7 @@ class RuntimeBundleValidatorTest {
         assertEquals(RuntimeBundleStatus.INCOMPLETE, report.status)
         assertTrue(
             "Wrong-architecture Box64 must be blocked even with a matching checksum: ${report.blockers}",
-            report.blockers.any { it.contains("box64") && it.contains("ELF AArch64") }
+            report.blockers.any { it.contains("box64") && it.contains("ELF64_AARCH64") }
         )
         root.deleteRecursively()
     }
