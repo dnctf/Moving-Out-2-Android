@@ -14,6 +14,7 @@ object LauncherHomeView {
         onSelectFolder: () -> Unit,
         onRevalidate: () -> Unit,
         onImportRuntime: () -> Unit,
+        onDownloadRuntime: () -> Unit,
         onImportGameZip: () -> Unit,
         onOpenSettings: () -> Unit,
         onControllerTest: () -> Unit,
@@ -34,6 +35,7 @@ object LauncherHomeView {
         val runtimeTitle = TextView(context).apply { text = "Native Runtime Bundle"; textSize = 20f; setPadding(0, 32, 0, 12) }
         val runtimeStatus = TextView(context).apply { textSize = 14f; setPadding(0, 8, 0, 12) }
         val importRuntime = Button(context).apply { text = "Import runtime bundle (SAF)"; setOnClickListener { onImportRuntime() } }
+        val downloadRuntime = Button(context).apply { text = "Download runtime from GitHub"; setOnClickListener { onDownloadRuntime() } }
         val runtimeInfo = TextView(context).apply {
             text = "Runtime payload validation only. Wine/Box64 execution and graphics-driver integration are not yet verified."
             textSize = 13f; setPadding(0, 16, 0, 0)
@@ -45,7 +47,7 @@ object LauncherHomeView {
         content.addView(title); content.addView(subtitle); content.addView(status)
         content.addView(importZip); content.addView(select); content.addView(revalidate); content.addView(settings); content.addView(controller); content.addView(exportDiagnostics)
         content.addView(graphicsTitle); content.addView(graphicsStatus)
-        content.addView(runtimeTitle); content.addView(runtimeStatus); content.addView(importRuntime); content.addView(runtimeInfo); content.addView(disclaimer)
+        content.addView(runtimeTitle); content.addView(runtimeStatus); content.addView(downloadRuntime); content.addView(importRuntime); content.addView(runtimeInfo); content.addView(disclaimer)
         val scroll = ScrollView(context).apply { addView(content) }
         return LauncherHomeViews(scroll, status, runtimeStatus, graphicsStatus)
     }
