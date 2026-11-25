@@ -18,6 +18,9 @@ check_elf "$WINE_DIR/bin/wineserver" "Advanced Micro Devices X86-64"
 check_elf_shared(){ check_elf "$1" "$2"; readelf -h "$1" | grep -Eq "Type:.*DYN" || { echo "Not an ELF shared object: $1" >&2; exit 1; }; }
 if [[ -n "$TURNIP_SO" ]]; then check_elf_shared "$TURNIP_SO" "AArch64"; fi
 check_guest_libs(){
+  local count
+  count="$(find "$WINE_DIR/lib/wine" -type f -name '*.so' | wc -l)"
+  [[ "$count" -gt 0 ]] || { echo "Wine guest library directory has no shared .so objects." >&2; exit 1; }
   while IFS= read -r -d '' lib; do check_elf_shared "$lib" "Advanced Micro Devices X86-64"; done < <(find "$WINE_DIR/lib/wine" -type f -name '*.so' -print0)
 }
 check_guest_libs
