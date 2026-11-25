@@ -35,7 +35,7 @@ fun interface AndroidBinaryExecutor {
  * permission-bit check: Android 10+ SELinux policy can deny execution despite 0755.
  */
 class AndroidExecCapabilityProbe(
-    private val context: Context,
+    private val nativeLibraryDirectory: File,
     private val diagnostics: RuntimeDiagnostics = RuntimeDiagnostics(),
     private val executor: AndroidBinaryExecutor = AndroidBinaryExecutor { binary, args ->
         val process = RuntimeProcess(diagnostics).start(binary, args, emptyMap(), binary.parentFile)
@@ -45,12 +45,23 @@ class AndroidExecCapabilityProbe(
         ProbeExecution(result.exitCode, "", "")
     }
 ) {
+    constructor(
+        context: Context,
+        diagnostics: RuntimeDiagnostics = RuntimeDiagnostics(),
+        executor: AndroidBinaryExecutor = AndroidBinaryExecutor { binary, args ->
+            val process = RuntimeProcess(diagnostics).start(binary, args, emptyMap(), binary.parentFile)
+            val result = process.waitFor(3000)
+            process.stdoutThread.join(500)
+            process.stderrThread.join(500)
+            ProbeExecution(result.exitCode, "", "")
+        }
+    ) : this(File(context.applicationInfo.nativeLibraryDir ?: ""), diagnostics, executor)
+
     fun probe(appDataExecutable: File): AndroidExecProbeResult {
         val appData = executeCandidate(appDataExecutable, AndroidExecCapability.EXEC_ALLOWED_APP_DATA)
         if (appData.allowed) return appData
 
-        val nativeDir = File(context.applicationInfo.nativeLibraryDir ?: "")
-        val packaged = File(nativeDir, "libbox64.so")
+        val packaged = File(nativeLibraryDirectory, "libbox64.so")
         if (packaged.isFile && packaged.canExecute()) {
             val nativeResult = executeCandidate(packaged, AndroidExecCapability.EXEC_ALLOWED_NATIVE_LIB_DIR)
             if (nativeResult.allowed) return nativeResult
