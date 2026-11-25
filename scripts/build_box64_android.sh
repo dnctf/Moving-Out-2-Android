@@ -45,7 +45,7 @@ readelf -h "$BOX64_BIN" | grep -Eq 'Class:.*ELF64'
 readelf -h "$BOX64_BIN" | grep -Eq 'Machine:.*AArch64'
 readelf -h "$BOX64_BIN" | grep -Eq 'Type:.*DYN'
 echo "Box64 LOAD segment alignment:"
-readelf -l "$BOX64_BIN" | awk '/LOAD/{print "  " $NF; if ($NF != "0x4000") {print "ERROR: expected 0x4000, got " $NF > "/dev/stderr"; exit 1} found=1} END{if (!found) {print "ERROR: no LOAD segments found" > "/dev/stderr"; exit 1}}'
+readelf -Wl "$BOX64_BIN" | awk '/LOAD/{print "  " $NF; if ($NF != "0x4000") {print "ERROR: expected 0x4000, got " $NF > "/dev/stderr"; exit 1} found=1} END{if (!found) {print "ERROR: no LOAD segments found" > "/dev/stderr"; exit 1}}'
 mkdir -p "$OUT_DIR"
 install -m 0755 "$BOX64_BIN" "$OUT_DIR/libbox64.so"
 echo "Built Box64 for Android API 28: $OUT_DIR/libbox64.so"
