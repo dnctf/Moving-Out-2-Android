@@ -16,7 +16,7 @@ class RuntimeManifestParserTest {
    "box64" -> RuntimeBinaryInspector.ELF64_AARCH64
    "turnipSo" -> RuntimeBinaryInspector.ELF64_AARCH64_SHARED
    "wine64", "wineserver" -> RuntimeBinaryInspector.ELF64_X86_64
-   "d3d11", "dxgi", "xinput1_3", "xinput1_4" -> RuntimeBinaryInspector.PE32_PLUS_X86_64
+   "d3d11", "dxgi", "xinput1_3", "xinput1_4", "xinput9_1_0", "vcruntime140", "vcruntime140_1", "msvcp140" -> RuntimeBinaryInspector.PE32_PLUS_X86_64
    else -> "JSON"
   }
   components.put(key,JSONObject().put("included",true).put("path",path).put("sha256",sha(f)).put("abi",abi))}
@@ -29,6 +29,10 @@ class RuntimeManifestParserTest {
   put("dxgi","dxvk/x64/dxgi.dll","dxgi")
   put("xinput1_3","wine/lib/wine/x86_64-windows/xinput1_3.dll","xinput3")
   put("xinput1_4","wine/lib/wine/x86_64-windows/xinput1_4.dll","xinput4")
+  put("xinput9_1_0","wine/lib/wine/x86_64-windows/xinput9_1_0.dll","xinput91")
+  put("vcruntime140","wine/lib/wine/x86_64-windows/vcruntime140.dll","vcruntime")
+  put("vcruntime140_1","wine/lib/wine/x86_64-windows/vcruntime140_1.dll","vcruntime1")
+  put("msvcp140","wine/lib/wine/x86_64-windows/msvcp140.dll","msvcp")
   // XInput DLLs live under wineLib, so calculate its directory digest after both are staged.
   components.put("wineLib",JSONObject().put("included",true).put("path","wine/lib/wine").put("sha256",hashDir(lib)).put("abi","DIRECTORY_SHA256_X86_64"))
   components.put("turnip",JSONObject().put("included",turnip))
@@ -40,7 +44,7 @@ class RuntimeManifestParserTest {
    components.put("turnipIcd",JSONObject().put("included",false).put("path","turnip/freedreno_icd.aarch64.json").put("abi","JSON").put("sha256",""))
   }
   val launch=JSONObject().put("arguments",org.json.JSONArray().put("-force-d3d11"))
-   .put("environment",JSONObject().put("WINEDLLOVERRIDES","d3d11,dxgi,xinput1_3,xinput1_4=n,b")
+   .put("environment",JSONObject().put("WINEDLLOVERRIDES","d3d11,dxgi=n,b;xinput1_3,xinput1_4,xinput9_1_0=n,b")
     .put("BOX64_DYNAREC","1").put("BOX64_DYNAREC_BIGBLOCK","1")
     .put("BOX64_DYNAREC_STRONGMEM","1").put("BOX64_DYNAREC_SAFEFLAGS","1"))
   File(root,"runtime-manifest.json").writeText(JSONObject().put("schemaVersion",2).put("targetAbi","arm64-v8a").put("bundleVersion","test-1").put("provenance",JSONObject().put("packager","scripts/package_runtime_bundle.sh").put("manifestFormat","role-validated-abi-v2")).put("components",components).put("defaultLaunchProfile",launch).toString())
