@@ -39,11 +39,15 @@ class AndroidExecCapabilityProbe(
     private val nativeLibraryDirectory: File,
     private val diagnostics: RuntimeDiagnostics = RuntimeDiagnostics(),
     private val executor: AndroidBinaryExecutor = AndroidBinaryExecutor { binary, args ->
+        val before = diagnostics.snapshot().size
         val process = RuntimeProcess(diagnostics).start(binary, args, emptyMap(), binary.parentFile)
         val result = process.waitFor(3000)
         process.stdoutThread.join(500)
         process.stderrThread.join(500)
-        ProbeExecution(result.exitCode, "", "")
+        val output = diagnostics.snapshot().drop(before)
+        ProbeExecution(result.exitCode,
+            output.filter { it.component == "stdout" }.joinToString("\\n") { it.message },
+            output.filter { it.component == "stderr" }.joinToString("\\n") { it.message })
     }
 ) {
     constructor(
