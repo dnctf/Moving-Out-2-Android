@@ -25,7 +25,7 @@ object RuntimeGraphicsComponents {
             if (!component.optBoolean("included", false)) return null
             val relative = component.optString("path").trim()
             if (relative.isBlank() || relative.startsWith("/") || relative.contains(':') ||
-                relative.split('/', '\\\\').any { it == ".." }) {
+                relative.split('/', '\\').any { it == ".." }) {
                 notes += "$key manifest path is invalid."
                 return null
             }
