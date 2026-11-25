@@ -63,7 +63,8 @@ interface SessionProcessRunner {
 
 class DefaultSessionProcessRunner(
     private val diagnostics: RuntimeDiagnostics,
-    private val logFile: File? = null
+    private val logFile: File? = null,
+    private val runtimeProcessLogFile: File? = null
 ) : SessionProcessRunner {
     private val fileLock = Any()
 
@@ -150,7 +151,7 @@ class DefaultSessionProcessRunner(
     private fun recordStructured(severity: RuntimeDiagnostic.Severity, tag: String, message: String) {
         val formattedMessage = "[$tag] $message"
         diagnostics.record(RuntimeDiagnostic(severity, tag, formattedMessage))
-        logFile?.let { file ->
+        listOfNotNull(logFile, runtimeProcessLogFile).forEach { file ->
             synchronized(fileLock) {
                 runCatching {
                     file.parentFile?.mkdirs()
@@ -170,7 +171,8 @@ class WineSessionSupervisor(
     private val diagnostics: RuntimeDiagnostics = RuntimeDiagnostics(),
     private val runner: SessionProcessRunner = DefaultSessionProcessRunner(
         diagnostics,
-        File(context.filesDir, "diagnostics/wine_session.log")
+        File(context.filesDir, "diagnostics/wine_session.log"),
+        File(context.filesDir, "diagnostics/runtime-process.log")
     )
 ) {
     val prefix: File = File(context.filesDir, "wine_prefixes/$gameId")
