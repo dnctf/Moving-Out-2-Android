@@ -5,10 +5,32 @@ import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Properties
+import java.security.MessageDigest
 
 enum class RuntimeBundleStatus { NOT_FOUND, INVALID_MANIFEST, INCOMPLETE, READY }
 data class RuntimeBundleReport(val status:RuntimeBundleStatus,val root:File?,val box64:File?,val wine64:File?,val wineserver:File?,val libraryDirectory:File?,val blockers:List<String>,val manifestVersion:Int?=null){val isReady:Boolean get()=status==RuntimeBundleStatus.READY}
 class RuntimeBundleValidator {
+ fun resolveBox64ForExecution(
+  bundleBox64: File,
+  nativeLibraryDirectory: File,
+  allowBundleFallback: Boolean = false
+ ): File? {
+  val packaged = File(nativeLibraryDirectory, "libbox64.so")
+  if (packaged.isFile && packaged.canExecute() &&
+      bundleBox64.isFile && bundleBox64.canExecute() &&
+      RuntimeBinaryInspector.matches(packaged, RuntimeBinaryInspector.ELF64_AARCH64) &&
+      sha256(packaged) == sha256(bundleBox64)) return packaged
+  return if (allowBundleFallback && bundleBox64.isFile && bundleBox64.canExecute()) bundleBox64 else null
+ }
+
+ private fun sha256(file: File): String {
+  val digest = MessageDigest.getInstance("SHA-256")
+  file.inputStream().use { input ->
+   val buffer = ByteArray(64 * 1024)
+   while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
+  }
+  return digest.digest().joinToString("") { "%02x".format(it) }
+ }
  fun validate(root:File):RuntimeBundleReport {
   if(!root.exists()||!root.isDirectory)return report(RuntimeBundleStatus.NOT_FOUND,null,listOf("Runtime bundle directory is not present."))
   val canonical=runCatching{root.canonicalFile}.getOrNull()?:return report(RuntimeBundleStatus.INVALID_MANIFEST,root,listOf("Unable to resolve bundle root."))
