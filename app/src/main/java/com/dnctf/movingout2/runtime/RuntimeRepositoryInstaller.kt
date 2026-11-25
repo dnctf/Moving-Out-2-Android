@@ -63,7 +63,7 @@ class RuntimeRepositoryInstaller(
         )
 
         onProgress("Downloading and verifying SHA-256…")
-        val expectedHash = readUrl(digestUrl, 4096).trim().substringBefore(Regex("\\s")).lowercase()
+        val expectedHash = readUrl(digestUrl, 4096).trim().split(Regex("\\s+")).first().lowercase()
         require(expectedHash.matches(Regex("[a-f0-9]{64}"))) { "Release checksum file is malformed." }
         download(bundleUrl, archive, onProgress)
         val actualHash = sha256(archive)
