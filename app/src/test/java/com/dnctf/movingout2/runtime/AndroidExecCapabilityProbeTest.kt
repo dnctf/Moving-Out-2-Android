@@ -37,7 +37,7 @@ class AndroidExecCapabilityProbeTest {
         }
         var executed: File? = null
         val probe = AndroidExecCapabilityProbe(nativeDir, executor =
-            AndroidBinaryExecutor { binary, _ ->
+            AndroidBinaryExecutor { binary, _, _ ->
                 executed = binary
                 ProbeExecution(0, "box64 version", "")
             })
@@ -62,7 +62,7 @@ class AndroidExecCapabilityProbeTest {
         }
         var executed = false
         val probe = AndroidExecCapabilityProbe(nativeDir, executor =
-            AndroidBinaryExecutor { _, _ ->
+            AndroidBinaryExecutor { _, _, _ ->
                 executed = true
                 ProbeExecution(0, "unexpected", "")
             })
@@ -77,7 +77,7 @@ class AndroidExecCapabilityProbeTest {
         val root = Files.createTempDirectory("exec-probe").toFile()
         val binary = File(root, "box64").apply { writeText("fixture"); setExecutable(true) }
         val probe = AndroidExecCapabilityProbe(File(root, "native"), executor =
-            AndroidBinaryExecutor { _, _ -> ProbeExecution(0, "box64 version", "") })
+            AndroidBinaryExecutor { _, _, _ -> ProbeExecution(0, "box64 version", "") })
         val result = probe.probe(binary)
         assertEquals(AndroidExecCapability.EXEC_ALLOWED_APP_DATA, result.capability)
         assertTrue(result.allowed)
@@ -88,7 +88,7 @@ class AndroidExecCapabilityProbeTest {
         val root = Files.createTempDirectory("exec-probe-eacces").toFile()
         val binary = File(root, "box64").apply { writeText("fixture"); setExecutable(true) }
         val probe = AndroidExecCapabilityProbe(File(root, "native"), executor =
-            AndroidBinaryExecutor { _, _ -> throw IOException("error=13, Permission denied (EACCES)") })
+            AndroidBinaryExecutor { _, _, _ -> throw IOException("error=13, Permission denied (EACCES)") })
         val result = probe.probe(binary)
         assertEquals(AndroidExecCapability.EXEC_BLOCKED_SELINUX_EACCES, result.capability)
         assertFalse(result.allowed)
