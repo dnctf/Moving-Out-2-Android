@@ -108,10 +108,10 @@ jobs:
           test -s "$RUNNER_TEMP/xinput/xinput1_4.dll"
           test -s "$RUNNER_TEMP/xinput/xinput9_1_0.dll"
           for dll in xinput1_3.dll xinput1_4.dll xinput9_1_0.dll; do
-            objdump -p "$RUNNER_TEMP/xinput/$dll" | grep -Eq '\\[[[:space:]]*100\\]'
-            objdump -p "$RUNNER_TEMP/xinput/$dll" | grep -Eq '\\[[[:space:]]*101\\]'
-            objdump -p "$RUNNER_TEMP/xinput/$dll" | grep -Eq '\\[[[:space:]]*102\\]'
-            objdump -p "$RUNNER_TEMP/xinput/$dll" | grep -Eq '\\[[[:space:]]*103\\]'
+            objdump -p "$RUNNER_TEMP/xinput/$dll" | grep -Eq '\[[[:space:]]*100\]'
+            objdump -p "$RUNNER_TEMP/xinput/$dll" | grep -Eq '\[[[:space:]]*101\]'
+            objdump -p "$RUNNER_TEMP/xinput/$dll" | grep -Eq '\[[[:space:]]*102\]'
+            objdump -p "$RUNNER_TEMP/xinput/$dll" | grep -Eq '\[[[:space:]]*103\]'
           done
 
       - name: Build Box64 for standalone Android API 28
