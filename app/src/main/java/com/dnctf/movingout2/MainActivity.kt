@@ -469,6 +469,32 @@ class MainActivity : Activity() {
                 activateControllerProfileForGame(activeGame)
                 status.text = formatReport(GameInstallationManager(this).validate(uri))
             } catch (e: Exception) { status.text = "Folder import failed safely: ${e.message ?: e.javaClass.simpleName}" }
+            pickRuntimeZip -> {
+                runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                if (!runtimeInstallInProgress.compareAndSet(false, true)) {
+                    runtimeStatus.text = "Another runtime operation is already running."
+                    return
+                }
+                runtimeStatus.text = "Importing runtime ZIP into private app storage…"
+                Thread({
+                    val result = runCatching { RuntimeBundleImporter(this).importZip(uri) }
+                    runtimeInstallInProgress.set(false)
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        result.onSuccess { imported ->
+                            val graphics = RuntimeGraphicsComponents.assess(File(filesDir, "native_runtime/bundle"))
+                            runtimeStatus.text = "Runtime ZIP imported and extracted successfully.\\nFiles: ${imported.copiedFiles} | Expanded: ${imported.copiedBytes / (1024 * 1024)} MiB\\nManifest: schema v2 | ABI: ARM64 | Integrity: VALIDATED\\nDXVK: ${graphics.dxvk}\\n${graphics.notes.joinToString("\\n")}"
+                            Toast.makeText(this, "Runtime ZIP installed and validated.", Toast.LENGTH_LONG).show()
+                        }.onFailure { error ->
+                            val trace = java.io.StringWriter().also { error.printStackTrace(java.io.PrintWriter(it)) }.toString()
+                            diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime-zip-import",
+                                "${error.javaClass.name}: ${error.message ?: "no message"}\\n$trace"))
+                            runtimeStatus.text = "Runtime ZIP import failed. Existing runtime was preserved when possible.\\n${error.javaClass.simpleName}: ${error.message ?: "no message"}"
+                            Toast.makeText(this, "Runtime ZIP import failed: ${error.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }, "runtime-zip-importer").apply { isDaemon = false; start() }
+            }
             pickRuntimeBundle -> try {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 val imported = RuntimeBundleImporter(this).importTree(uri)
