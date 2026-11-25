@@ -32,7 +32,7 @@ class RuntimeBundleValidator {
     val guestLibraries = libs.walkTopDown().filter { it.isFile && it.extension.equals("so", true) }.toList()
     if (guestLibraries.isEmpty()) blockers += "Wine guest library directory contains no shared ELF objects."
     guestLibraries.forEach { library ->
-     if (!RuntimeBinaryInspector.matches(library, RuntimeBinaryInspector.ELF64_X86_64)) {
+     if (!RuntimeBinaryInspector.matches(library, RuntimeBinaryInspector.ELF64_X86_64_SHARED)) {
       blockers += "Guest Wine library is not ELF64 x86-64: ${library.relativeTo(canonical).invariantSeparatorsPath}"
      }
     }
