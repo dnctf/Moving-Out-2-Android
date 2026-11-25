@@ -169,8 +169,8 @@ jobs:
             return 1
           }
           PACKAGE_PATHS="$(dpkg-query -L wine64 libwine:amd64)"
-          LIBRARY_PATHS="$(find -L /usr/lib /usr/libexec -type f \\( -name 'wine64' -o -name 'wine64-preloader' -o -name 'wine64-stable' -o -name 'wineserver' -o -name 'wineserver-stable' -o -name 'wine' \\) -print 2>/dev/null || true)"
-          ALL_WINE_PATHS="$(printf '%s\\n%s\\n' "$PACKAGE_PATHS" "$LIBRARY_PATHS" | sort -u)"
+          LIBRARY_PATHS="$(find -L /usr/lib /usr/libexec -type f \( -name 'wine64' -o -name 'wine64-preloader' -o -name 'wine64-stable' -o -name 'wineserver' -o -name 'wineserver-stable' -o -name 'wine' \\) -print 2>/dev/null || true)"
+          ALL_WINE_PATHS="$(printf '%s\n%s\n' "$PACKAGE_PATHS" "$LIBRARY_PATHS" | sort -u)"
           WINE64_CANDIDATES="$(grep -E '/(wine64|wine64-preloader|wine64-stable)$' <<<"$ALL_WINE_PATHS" || true)"
           WINESERVER_CANDIDATES="$(grep -E '/(wineserver|wineserver-stable)$' <<<"$ALL_WINE_PATHS" || true)"
           WINE64="$(find_wine_elf "$WINE64_CANDIDATES" || true)"
@@ -184,7 +184,7 @@ jobs:
               readelf -h "$resolved" 2>&1 | grep -E 'Class:|Machine:|Error:' || true
             done
             echo "Wine executable files discovered under /usr/lib:"
-            find -L /usr/lib /usr/libexec -type f \\( -name 'wine*' -o -name 'wineserver*' \\) -print 2>/dev/null | head -100 || true
+            find -L /usr/lib /usr/libexec -type f \( -name 'wine*' -o -name 'wineserver*' \\) -print 2>/dev/null | head -100 || true
             exit 1
           fi
           WINE_LIB_DIR="/usr/lib/x86_64-linux-gnu/wine"
@@ -198,7 +198,7 @@ jobs:
           readelf -h "$WINE64" | grep -E 'Class:|Machine:'
           readelf -h "$WINESERVER" | grep -E 'Class:|Machine:'
           echo "Wine source: Ubuntu signed apt packages wine64 + libwine:amd64"
-          dpkg-query -W -f='${Package}=${Version}\\n' wine64 libwine:amd64 | tee "$RUNNER_TEMP/wine-package-versions.txt"
+          dpkg-query -W -f='${Package}=${Version}\n' wine64 libwine:amd64 | tee "$RUNNER_TEMP/wine-package-versions.txt"
 
       - name: Download and verify DXVK release
         shell: bash
