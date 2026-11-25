@@ -27,7 +27,7 @@ class RuntimeBundleValidator {
    requireFormat("wineserver", server, RuntimeBinaryInspector.ELF64_X86_64)
    requireFormat("d3d11", map["d3d11"], RuntimeBinaryInspector.PE32_PLUS_X86_64)
    requireFormat("dxgi", map["dxgi"], RuntimeBinaryInspector.PE32_PLUS_X86_64)
-   map["turnipSo"]?.let { requireFormat("turnipSo", it, RuntimeBinaryInspector.ELF64_AARCH64) }
+   map["turnipSo"]?.let { requireFormat("turnipSo", it, RuntimeBinaryInspector.ELF64_AARCH64_SHARED) }
    if (libs != null) {
     val guestLibraries = libs.walkTopDown().filter { it.isFile && it.extension.equals("so", true) }.toList()
     if (guestLibraries.isEmpty()) blockers += "Wine guest library directory contains no shared ELF objects."
