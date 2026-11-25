@@ -13,7 +13,7 @@ data class VulkanCapabilities(
     val available: Boolean, val apiVersion: String? = null, val extensions: Set<String> = emptySet(),
     val gpuVendor: String? = null, val gpuName: String? = null, val blockers: List<String> = emptyList(),
     val hardwareLevelFeature: Boolean = false, val hardwareVersionFeature: Boolean = false,
-    val nativeProbeStatus: String? = null
+    val nativeProbeStatus: String? = null, val driverVersionRaw: String? = null
 ) {
     companion object {
         /** Native Vulkan enumeration is authoritative; Android feature flags and EGL are fallback hints only. */
@@ -24,6 +24,7 @@ data class VulkanCapabilities(
             val native = VulkanNativeProbe.parse(VulkanNativeProbe.runProbe())
             val nativeStatus = native["status"]
             val api = native["deviceApi"]
+            val driverVersionRaw = native["driverVersionRaw"]
             val extensions = native["deviceExtensions"]?.split(',')?.filter(String::isNotBlank)?.toSet().orEmpty()
             val rendererProbe = probeEglRenderer()
             val renderer = native["device"]?.takeIf(String::isNotBlank) ?: rendererProbe?.second
@@ -37,7 +38,7 @@ data class VulkanCapabilities(
                 if (extensions.isEmpty()) add("Physical-device Vulkan extensions were not enumerated.")
                 add("Turnip driver status is unverified; this probe reports the active Vulkan driver only.")
             }
-            return VulkanCapabilities(nativeStatus == "ok", api, extensions, vendor, renderer, blockers, level, versionFeature, nativeStatus)
+            return VulkanCapabilities(nativeStatus == "ok", api, extensions, vendor, renderer, blockers, level, versionFeature, nativeStatus, driverVersionRaw)
         }
 
         private fun vendorName(id: String): String = when (id.toLongOrNull()) {
