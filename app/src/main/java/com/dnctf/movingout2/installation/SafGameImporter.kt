@@ -31,7 +31,7 @@ class SafGameImporter(private val context: Context) {
         val reserveBytes = 128L * 1024L * 1024L
         val requiredSpace = if (Long.MAX_VALUE - totalBytes < reserveBytes) Long.MAX_VALUE else totalBytes + reserveBytes
         if (context.filesDir.usableSpace < requiredSpace) {
-            throw IOException("Insufficient app storage. Need at least \${requiredSpace / (1024 * 1024)} MiB free.")
+            throw IOException("Insufficient app storage. Need at least ${requiredSpace / (1024 * 1024)} MiB free.")
         }
 
         val target = File(context.filesDir, "game_data")
@@ -48,7 +48,7 @@ class SafGameImporter(private val context: Context) {
             val validation = InstallationValidator().validate(staging)
             if (validation.status != InstallationStatus.VALID ||
                 validation.missingFiles.isNotEmpty() || validation.accessErrors.isNotEmpty()) {
-                throw IOException("Copied game failed validation: \${validation.status}; missing=\${validation.missingFiles.joinToString()}; errors=\${validation.accessErrors.joinToString()}")
+                throw IOException("Copied game failed validation: ${validation.status}; missing=${validation.missingFiles.joinToString()}; errors=${validation.accessErrors.joinToString()}")
             }
 
             if (target.exists() && !target.renameTo(backup)) throw IOException("Unable to preserve previous game installation.")
