@@ -146,10 +146,17 @@ class RuntimeRepositoryInstaller(
         if (expectedHash == null || !expectedHash.matches(Regex("[a-f0-9]{64}"))) {
             throw IllegalStateException("Release checksum file is malformed.")
         }
+        val partialFile = File(appContext.cacheDir, archive.name + ".part")
+        val partialMetadata = File(appContext.cacheDir, archive.name + ".part.meta")
+        val partialIdentity = "$bundleUrl\n$expectedHash"
+        if (partialFile.exists() && (!partialMetadata.isFile || partialMetadata.readText() != partialIdentity)) {
+            partialFile.delete()
+        }
+        partialMetadata.writeText(partialIdentity)
         try {
             download(bundleUrl, archive, onProgress)
         } catch (error: Exception) {
-            // Keep the .part file so a later user retry can resume from its current length.
+            // Keep the matching .part + metadata pair so a later retry can resume safely.
             throw error
         }
         val actualHash = sha256(archive)
@@ -159,6 +166,7 @@ class RuntimeRepositoryInstaller(
             archive.delete()
             throw IllegalStateException("Runtime archive SHA-256 mismatch; download rejected.")
         }
+        partialMetadata.delete()
 
         if (!parent.mkdirs() && !parent.isDirectory) throw IllegalStateException("Cannot create private runtime directory.")
         staging.deleteRecursively()
