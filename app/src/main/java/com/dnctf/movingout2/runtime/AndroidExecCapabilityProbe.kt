@@ -56,7 +56,7 @@ class AndroidExecCapabilityProbe(
         diagnostics: RuntimeDiagnostics = RuntimeDiagnostics(),
         executor: AndroidBinaryExecutor = AndroidBinaryExecutor { binary, args, environment ->
             val before = diagnostics.snapshot().size
-            val process = RuntimeProcess(diagnostics).start(binary, args, emptyMap(), binary.parentFile)
+            val process = RuntimeProcess(diagnostics).start(binary, args, environment, binary.parentFile)
             val result = process.waitFor(3000)
             process.stdoutThread.join(500)
             process.stderrThread.join(500)
