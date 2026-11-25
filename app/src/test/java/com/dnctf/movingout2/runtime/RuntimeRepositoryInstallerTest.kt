@@ -59,6 +59,14 @@ class RuntimeRepositoryInstallerTest {
         assertFalse(isSafeRuntimeArchiveEntry("runtime/${0x7f.toChar()}bad", false))
     }
 
+    @Test fun acceptsZipToolDotRootPrefixesButRejectsTraversalAfterPrefix() {
+        assertEquals("", normalizeRuntimeArchiveEntry("./", true))
+        assertEquals("runtime-manifest.json", normalizeRuntimeArchiveEntry("./runtime-manifest.json", false))
+        assertEquals("box64/bin/box64", normalizeRuntimeArchiveEntry("./box64/bin/box64", false))
+        assertFalse(isSafeRuntimeArchiveEntry("./../escape", false))
+        assertFalse(isSafeRuntimeArchiveEntry("./box64/../../escape", false))
+    }
+
     @Test fun acceptsRuntimeFilesAndDirectoryEntries() {
         assertTrue(isSafeRuntimeArchiveEntry("box64/bin/box64", false))
         assertTrue(isSafeRuntimeArchiveEntry("wine/lib/", true))
