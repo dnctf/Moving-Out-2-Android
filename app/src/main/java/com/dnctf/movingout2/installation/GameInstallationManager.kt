@@ -30,7 +30,7 @@ class GameInstallationManager(private val context: Context) {
         val root = runCatching { DocumentFile.fromTreeUri(context, uri) }.getOrNull()
         if (root == null || !root.isDirectory || !root.canRead()) {
             errors += "Selected tree cannot be opened/read."
-            return SafInstallationReport(required, errors, listOf(
+            return SafInstallationReport(peFiles + UnityDataDirectoryLocator.metadataFilePath("mo2.exe"), errors, listOf(
                 "Folder access: FAIL", "Core file detection: NOT RUN", "Structural validation: NOT RUN",
                 "Version/architecture: NOT RUN", "Compatibility: NOT_ASSESSED", "Launch readiness: BLOCKED"
             ))
@@ -55,7 +55,7 @@ class GameInstallationManager(private val context: Context) {
         val metadataDirOk = metadataDir?.isDirectory == true && metadataDir.canRead()
         val metadataBytes = resolved[required.last()]?.let { read(it, 8) }
         val metadataVersion = metadataBytes?.let(UnityGameProfileDetector::detectMetadataVersion)
-        if (metadataDirOk.not()) missing.add("MovingOut2_Data/il2cpp_data/Metadata/")
+        if (metadataDirOk.not()) missing.add("${UnityDataDirectoryLocator.metadataPath(executable?.name ?: "mo2.exe")}/")
         if (metadataVersion == null && required.last() !in missing) errors += "IL2CPP global-metadata.dat header is invalid or truncated."
 
         val peResults = peFiles.map { path ->
