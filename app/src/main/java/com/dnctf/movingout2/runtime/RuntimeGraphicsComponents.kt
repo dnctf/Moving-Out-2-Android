@@ -68,7 +68,7 @@ object RuntimeGraphicsComponents {
             turnipSo == null && turnipIcd == null -> "NOT_BUNDLED"
             turnipSo?.let(::isArm64Elf) == true && turnipIcd?.isFile == true &&
                 runCatching { readBoundedText(turnipIcd, 8192).contains("library_path") }.getOrDefault(false) ->
-                "BUNDLE_AVAILABLE_NOT_SELECTED"
+                if (manifestFile("turnipSo") != null) "BUNDLE_AVAILABLE_NOT_SELECTED" else "FILES_PRESENT_UNVERIFIED"
             else -> "INCOMPLETE"
         }
         if (turnipStatus == "BUNDLE_AVAILABLE_NOT_SELECTED") notes +=
