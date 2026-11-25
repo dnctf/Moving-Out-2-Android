@@ -29,6 +29,9 @@ export PATH="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
   -DNO_LIB_INSTALL=ON -DNO_CONF_INSTALL=ON \
   -DBOX64_STANDALONE_ANDROID=ON \
   -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28 \
+  -DPAGE16K=ON \
+  -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384" \
+  -DCMAKE_EXE_LINKER_FLAGS="-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384" \
   -DCMAKE_BUILD_TYPE=Release
 "$CMAKE_BIN" --build "$BUILD_DIR" --parallel 2
 
@@ -41,6 +44,7 @@ fi
 readelf -h "$BOX64_BIN" | grep -Eq 'Class:.*ELF64'
 readelf -h "$BOX64_BIN" | grep -Eq 'Machine:.*AArch64'
 readelf -h "$BOX64_BIN" | grep -Eq 'Type:.*DYN'
+readelf -l "$BOX64_BIN" | awk '/LOAD/{if ($NF != "0x4000") exit 1; found=1} END{if (!found) exit 1}'
 mkdir -p "$OUT_DIR"
 install -m 0755 "$BOX64_BIN" "$OUT_DIR/libbox64.so"
 echo "Built Box64 for Android API 28: $OUT_DIR/libbox64.so"
