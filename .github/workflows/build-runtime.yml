@@ -13,6 +13,7 @@ on:
       - "app/src/test/java/com/dnctf/movingout2/**"
       - "app/build.gradle.kts"
       - "app/src/main/AndroidManifest.xml"
+      - "app/src/main/cpp/**"
   workflow_dispatch:
     inputs:
       dxvk_url:
@@ -86,11 +87,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -c "import yaml; yaml.safe_load(open('.github/workflows/build-runtime.yml', encoding='utf-8'))"
-          bash -n scripts/package_runtime_bundle.sh
-          bash -n scripts/audit_runtime_bundle.sh
-          bash -n native/wine-xinput/build_wine_xinput.sh
-          shellcheck scripts/package_runtime_bundle.sh scripts/audit_runtime_bundle.sh native/wine-xinput/build_wine_xinput.sh
+          python3 - <<'PY'
+          import pathlib, yaml
+          for path in pathlib.Path(".github/workflows").glob("*.y*ml"):
+              yaml.safe_load(path.read_text(encoding="utf-8"))
+              print(f"YAML OK: {path}")
+          PY
+          find scripts native -type f -name '*.sh' -print0 | while IFS= read -r -d '' script; do bash -n "$script"; done
+          find scripts native -type f -name '*.sh' -print0 | xargs -0 shellcheck
           python3 -m unittest discover -s scripts/tests -v
 
       - name: Build Wine XInput bridge
