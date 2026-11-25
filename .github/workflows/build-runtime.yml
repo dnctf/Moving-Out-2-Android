@@ -236,7 +236,7 @@ jobs:
             readelf -h "$f" | grep -Eq 'Type:.*DYN'
           done
           for f in "$DXVK_DIR/d3d11.dll" "$DXVK_DIR/dxgi.dll" "$XINPUT_DIR/xinput1_3.dll" "$XINPUT_DIR/xinput1_4.dll"; do
-            objdump -p "$f" | objdump -f "$f" | grep -q 'architecture: i386:x86-64'
+            objdump -f "$f" | grep -q 'architecture: i386:x86-64'
             objdump -p "$f" | grep -Eqi 'Magic[[:space:]]+020b'
           done
 
