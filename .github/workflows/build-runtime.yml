@@ -266,7 +266,8 @@ jobs:
           sha256sum --check dist/moving-out-2-runtime-arm64-v8a.zip.sha256
           mkdir -p "$RUNNER_TEMP/runtime-audit"
           unzip -q dist/*.zip -d "$RUNNER_TEMP/runtime-audit"
-          scripts/audit_runtime_bundle.sh "$RUNNER_TEMP/runtime-audit"
+          scripts/audit_runtime_bundle.sh "$RUNNER_TEMP/runtime-audit" "dist/moving-out-2-runtime-arm64-v8a.zip"
+          unzip -p dist/moving-out-2-runtime-arm64-v8a.zip runtime-manifest.json | python3 -m json.tool > /dev/null
           cp "$RUNNER_TEMP/wine-package-versions.txt" dist/
           cat dist/SHA256SUMS.txt
 
