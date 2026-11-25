@@ -19,6 +19,12 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
+      - name: Validate workflow YAML and publisher shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' .github/workflows/publish-apk-prerelease.yml
+          bash -n scripts/publish-integrated-release.sh
       - name: Validate release version
         id: version
         shell: bash
