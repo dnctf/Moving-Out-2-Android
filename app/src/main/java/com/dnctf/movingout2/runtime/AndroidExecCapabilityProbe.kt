@@ -67,19 +67,30 @@ class AndroidExecCapabilityProbe(
     ) : this(File(context.applicationInfo.nativeLibraryDir ?: ""), diagnostics, executor)
 
     fun probe(appDataExecutable: File): AndroidExecProbeResult {
-        val appData = executeCandidate(appDataExecutable, AndroidExecCapability.EXEC_ALLOWED_APP_DATA)
-        if (appData.allowed) return appData
-
+        // Android 10+ may deny execve() from filesDir even when POSIX mode is 0755.
+        // Prefer the APK-extracted copy from nativeLibraryDir, but only when it is
+        // byte-identical to the manifest-validated runtime payload.
         val packaged = File(nativeLibraryDirectory, "libbox64.so")
-        val samePayload = packaged.isFile && packaged.canExecute() &&
-            RuntimeBinaryInspector.matches(packaged, RuntimeBinaryInspector.ELF64_AARCH64) &&
-            sha256(packaged) == sha256(appDataExecutable)
-        if (samePayload) {
-            val nativeResult = executeCandidate(packaged, AndroidExecCapability.EXEC_ALLOWED_NATIVE_LIB_DIR)
-            if (nativeResult.allowed) return nativeResult
-            if (nativeResult.capability == AndroidExecCapability.EXEC_BLOCKED_SELINUX_EACCES) return nativeResult
+        if (packaged.exists()) {
+            if (!packaged.isFile || !packaged.canExecute() ||
+                !RuntimeBinaryInspector.matches(packaged, RuntimeBinaryInspector.ELF64_AARCH64)) {
+                return AndroidExecProbeResult(
+                    AndroidExecCapability.EXEC_FAILED, packaged, null,
+                    "Packaged nativeLibraryDir/libbox64.so is not an executable ARM64 ELF."
+                )
+            }
+            if (!appDataExecutable.isFile || sha256(packaged) != sha256(appDataExecutable)) {
+                return AndroidExecProbeResult(
+                    AndroidExecCapability.EXEC_FAILED, packaged, null,
+                    "Packaged Box64 does not match the hash-validated runtime bundle; refusing mismatched execution."
+                )
+            }
+            return executeCandidate(packaged, AndroidExecCapability.EXEC_ALLOWED_NATIVE_LIB_DIR)
         }
-        return appData
+
+        // JVM unit tests and development builds without the packaged native payload
+        // may use the bundle executable. Production APKs are required to package it.
+        return executeCandidate(appDataExecutable, AndroidExecCapability.EXEC_ALLOWED_APP_DATA)
     }
 
     private fun sha256(file: File): String {
