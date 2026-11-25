@@ -19,8 +19,8 @@ class RuntimeBundleValidatorTest {
         val root = Files.createTempDirectory("runtime-bundle-test-").toFile()
         File(root, "runtime.properties").writeText("format_version=1\ntarget_abi=arm64-v8a\nbox64=bin/box64\nwine64=wine/bin/wine64\nwineserver=wine/bin/wineserver\nlibrary_dir=lib\n")
         fakeArm64Elf(File(root, "bin/box64"))
-        fakeArm64Elf(File(root, "wine/bin/wine64"))
-        fakeArm64Elf(File(root, "wine/bin/wineserver"))
+        File(root, "wine/bin/wine64").apply { parentFile.mkdirs(); writeBytes(arm64Elf(machine = 62)); setExecutable(true, false) }
+        File(root, "wine/bin/wineserver").apply { parentFile.mkdirs(); writeBytes(arm64Elf(machine = 62)); setExecutable(true, false) }
         File(root, "lib/libc.so").apply { parentFile.mkdirs(); writeBytes(byteArrayOf(1)) }
         return root
     }
@@ -52,6 +52,18 @@ class RuntimeBundleValidatorTest {
         elf.putLong(96, bytes.size.toLong())
         elf.putLong(104, bytes.size.toLong())
         elf.putLong(112, 0x1000L)
+        return bytes
+    }
+
+    private fun pe32PlusX64(): ByteArray {
+        val bytes = ByteArray(128)
+        bytes[0] = 'M'.code.toByte(); bytes[1] = 'Z'.code.toByte()
+        val b = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        b.putInt(0x3c, 64)
+        bytes[64] = 'P'.code.toByte(); bytes[65] = 'E'.code.toByte()
+        b.putShort(68, 0x8664.toShort())
+        b.putShort(84, 24.toShort())
+        b.putShort(88, 0x20b.toShort())
         return bytes
     }
 
@@ -109,10 +121,10 @@ class RuntimeBundleValidatorTest {
         }
 
         addFile("box64", "box64/bin/box64", arm64Elf(), executable = true)
-        addFile("wine64", "wine/bin/wine64", arm64Elf(), executable = true)
-        addFile("wineserver", "wine/bin/wineserver", arm64Elf(), executable = true)
-        addFile("d3d11", "dxvk/x64/d3d11.dll", byteArrayOf(1, 2, 3))
-        addFile("dxgi", "dxvk/x64/dxgi.dll", byteArrayOf(4, 5, 6))
+        addFile("wine64", "wine/bin/wine64", arm64Elf(machine = 62), executable = true)
+        addFile("wineserver", "wine/bin/wineserver", arm64Elf(machine = 62), executable = true)
+        addFile("d3d11", "dxvk/x64/d3d11.dll", pe32PlusX64())
+        addFile("dxgi", "dxvk/x64/dxgi.dll", pe32PlusX64())
 
         val libraryDirectory = File(root, "wine/lib/wine").apply { mkdirs() }
         File(libraryDirectory, "module.so").writeBytes(byteArrayOf(7, 8, 9))
@@ -121,13 +133,13 @@ class RuntimeBundleValidatorTest {
             JSONObject()
                 .put("included", true)
                 .put("path", "wine/lib/wine")
-                .put("sha256", directorySha256(libraryDirectory))
+                .put("sha256", directorySha256(libraryDirectory))\n                .put("abi", "DIRECTORY_SHA256")
         )
         components.put("turnip", JSONObject().put("included", false))
 
         File(root, "runtime-manifest.json").writeText(
             JSONObject()
-                .put("schemaVersion", 1)
+                .put("schemaVersion", 2)
                 .put("targetAbi", "arm64-v8a")
                 .put("components", components)
                 .put("defaultLaunchProfile", JSONObject())
