@@ -92,7 +92,7 @@ class GameRegistry(
 
     private fun validateAndCacheSaf(uri: Uri): RegisteredGame {
         val report = safManager.validate(uri)
-        val status = if (report.isComplete) InstallationStatus.VALID else if (report.missing.isNotEmpty()) InstallationStatus.MISSING_FILES else InstallationStatus.ACCESS_ERROR
+        val status = if (report.isComplete) InstallationStatus.VALID else if (report.missing.isNotEmpty()) InstallationStatus.INCOMPLETE else InstallationStatus.ACCESS_ERROR
         val now = System.currentTimeMillis()
         val id = "saf:$uri"
         repository.markValidated(id, now)
