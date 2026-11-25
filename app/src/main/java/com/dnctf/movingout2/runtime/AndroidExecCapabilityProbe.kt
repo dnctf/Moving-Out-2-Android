@@ -28,7 +28,7 @@ data class ProbeExecution(val exitCode: Int?, val stdout: String, val stderr: St
 
 fun interface AndroidBinaryExecutor {
     @Throws(IOException::class)
-    fun execute(binary: File, arguments: List<String>): ProbeExecution
+    fun execute(binary: File, arguments: List<String>, environment: Map<String, String>): ProbeExecution
 }
 
 /**
@@ -38,9 +38,9 @@ fun interface AndroidBinaryExecutor {
 class AndroidExecCapabilityProbe(
     private val nativeLibraryDirectory: File,
     private val diagnostics: RuntimeDiagnostics = RuntimeDiagnostics(),
-    private val executor: AndroidBinaryExecutor = AndroidBinaryExecutor { binary, args ->
+    private val executor: AndroidBinaryExecutor = AndroidBinaryExecutor { binary, args, environment ->
         val before = diagnostics.snapshot().size
-        val process = RuntimeProcess(diagnostics).start(binary, args, emptyMap(), binary.parentFile)
+        val process = RuntimeProcess(diagnostics).start(binary, args, environment, binary.parentFile)
         val result = process.waitFor(3000)
         process.stdoutThread.join(500)
         process.stderrThread.join(500)
@@ -48,12 +48,13 @@ class AndroidExecCapabilityProbe(
         ProbeExecution(result.exitCode,
             output.filter { it.component == "stdout" }.joinToString("\n") { it.message },
             output.filter { it.component == "stderr" }.joinToString("\n") { it.message })
-    }
+    },
+    private val allowBundleFallback: Boolean = true
 ) {
     constructor(
         context: Context,
         diagnostics: RuntimeDiagnostics = RuntimeDiagnostics(),
-        executor: AndroidBinaryExecutor = AndroidBinaryExecutor { binary, args ->
+        executor: AndroidBinaryExecutor = AndroidBinaryExecutor { binary, args, environment ->
             val before = diagnostics.snapshot().size
             val process = RuntimeProcess(diagnostics).start(binary, args, emptyMap(), binary.parentFile)
             val result = process.waitFor(3000)
@@ -64,7 +65,7 @@ class AndroidExecCapabilityProbe(
                 output.filter { it.component == "stdout" }.joinToString("\n") { it.message },
                 output.filter { it.component == "stderr" }.joinToString("\n") { it.message })
         }
-    ) : this(File(context.applicationInfo.nativeLibraryDir ?: ""), diagnostics, executor)
+    ) : this(File(context.applicationInfo.nativeLibraryDir ?: ""), diagnostics, executor, false)
 
     fun probe(appDataExecutable: File): AndroidExecProbeResult {
         // Android 10+ may deny execve() from filesDir even when POSIX mode is 0755.
@@ -85,12 +86,16 @@ class AndroidExecCapabilityProbe(
                     "Packaged Box64 does not match the hash-validated runtime bundle; refusing mismatched execution."
                 )
             }
-            return executeCandidate(packaged, AndroidExecCapability.EXEC_ALLOWED_NATIVE_LIB_DIR)
+            return executeCandidate(packaged, AndroidExecCapability.EXEC_ALLOWED_NATIVE_LIB_DIR, appDataExecutable)
         }
 
-        // JVM unit tests and development builds without the packaged native payload
-        // may use the bundle executable. Production APKs are required to package it.
-        return executeCandidate(appDataExecutable, AndroidExecCapability.EXEC_ALLOWED_APP_DATA)
+        // Only JVM tests may fall back to app-private storage. Android Context instances
+        // fail closed: Android 10+ SELinux may deny execve from filesDir regardless of chmod.
+        if (!allowBundleFallback) return AndroidExecProbeResult(
+            AndroidExecCapability.EXEC_FAILED, appDataExecutable, null,
+            "Packaged nativeLibraryDir/libbox64.so is missing; refusing filesDir execution on Android."
+        )
+        return executeCandidate(appDataExecutable, AndroidExecCapability.EXEC_ALLOWED_APP_DATA, appDataExecutable)
     }
 
     private fun sha256(file: File): String {
@@ -102,13 +107,21 @@ class AndroidExecCapabilityProbe(
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
-    private fun executeCandidate(file: File, success: AndroidExecCapability): AndroidExecProbeResult {
+    private fun executeCandidate(file: File, success: AndroidExecCapability, bundleExecutable: File): AndroidExecProbeResult {
         if (!file.isFile || !file.canExecute()) {
             return AndroidExecProbeResult(AndroidExecCapability.EXEC_FAILED, file, null,
                 "Executable is missing or lacks execute permission: ${file.absolutePath}")
         }
         return try {
-            val execution = executor.execute(file, listOf("--version"))
+            val bundleRoot = bundleExecutable.parentFile?.parentFile?.canonicalFile
+            val environment = buildMap {
+                put("LD_LIBRARY_PATH", nativeLibraryDirectory.absolutePath)
+                if (bundleRoot != null) {
+                    put("BOX64_PATH", File(bundleRoot, "wine/bin").absolutePath)
+                    put("BOX64_LD_LIBRARY_PATH", File(bundleRoot, "wine/lib/wine/x86_64-unix").absolutePath)
+                }
+            }
+            val execution = executor.execute(file, listOf("--version"), environment)
             if (execution.exitCode == 0) {
                 val result = AndroidExecProbeResult(success, file, 0,
                     "Binary execution succeeded from ${file.parentFile?.absolutePath}.",
