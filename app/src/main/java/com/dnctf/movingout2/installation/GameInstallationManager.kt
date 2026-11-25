@@ -85,7 +85,7 @@ class GameInstallationManager(private val context: Context) {
             "Structural validation: ${if (structurePass) "PASS" else "FAIL"}",
             "Version/architecture: ${peResults.joinToString { "${it.first}=${it.second ?: "INVALID"}" }}; Unity: ${unityVersion ?: "not detected"}; IL2CPP: ${metadataVersion ?: "invalid/unknown"}",
             "Compatibility: NOT_ASSESSED (device/GPU/runtime capabilities must be checked separately)",
-            "Launch readiness: BLOCKED (native runtime is not installed/validated)"
+            "Launch readiness: DEFERRED (app-storage import and runtime/driver checks are evaluated by the launcher)"
         )
         // Persisted SAF access, core files, structure, PE32+ x64, and IL2CPP header
         // must all pass before reporting installation complete. Runtime is never implied.
