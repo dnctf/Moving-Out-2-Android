@@ -287,4 +287,4 @@ jobs:
           retention-days: 30
 
       # Runtime is an intermediate artifact only. The integrated APK pipeline consumes
-      # this run's artifact, cleans legacy releases, then publishes the single APK release.
+      # this run's artifact, deletes legacy release objects and tags, then publishes one APK release.
