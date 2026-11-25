@@ -15,6 +15,18 @@ check_elf(){ local f="$1" machine="$2"; command -v readelf >/dev/null || { echo 
 check_elf "$BOX64" "AArch64"
 check_elf "$WINE_DIR/bin/wine64" "Advanced Micro Devices X86-64"
 check_elf "$WINE_DIR/bin/wineserver" "Advanced Micro Devices X86-64"
+if [[ -n "$TURNIP_SO" ]]; then check_elf "$TURNIP_SO" "AArch64"; fi
+check_guest_libs(){
+  while IFS= read -r -d '' lib; do check_elf "$lib" "Advanced Micro Devices X86-64"; done < <(find "$WINE_DIR/lib/wine" -type f -name '*.so' -print0)
+}
+check_guest_libs
+check_pe_x64(){
+  command -v objdump >/dev/null || { echo "objdump is required for PE32+ ABI validation." >&2; exit 1; }
+  objdump -f "$1" | grep -q "architecture: i386:x86-64" || { echo "Not x86-64 PE: $1" >&2; exit 1; }
+  objdump -p "$1" | grep -Eqi "Magic[[:space:]]+020b.*PE32\+" || { echo "Not PE32+: $1" >&2; exit 1; }
+}
+check_pe_x64 "$DXVK_DIR/d3d11.dll"
+check_pe_x64 "$DXVK_DIR/dxgi.dll"
 if [[ -n "$TURNIP_SO" ]];then [[ -s "$TURNIP_SO" ]] || { echo "Turnip SO missing/empty" >&2;exit 1;}; ICD="$(dirname "$TURNIP_SO")/freedreno_icd.aarch64.json"; [[ -s "$ICD" ]] || { echo "Expected ICD JSON beside Turnip SO: $ICD" >&2;exit 1;};fi
 OUT_DIR="$(dirname "$OUTPUT")";mkdir -p "$OUT_DIR";OUTPUT="$(cd "$OUT_DIR" && pwd)/$(basename "$OUTPUT")";TMP="$(mktemp -d)";trap "rm -rf \"$TMP\"" EXIT
 ROOT="$TMP/root";mkdir -p "$ROOT/box64/bin" "$ROOT/wine/bin" "$ROOT/wine/lib" "$ROOT/dxvk/x64"
@@ -25,7 +37,8 @@ sha(){ sha256sum "$1" | awk '{print $1}';}
 hash_dir(){ (cd "$1" && find . -type f -print0 | sort -z | xargs -0 sha256sum) | sha256sum | awk '{print $1}';}
 cat > "$ROOT/runtime-manifest.json" <<JSON
 {
- "schemaVersion":2,"targetAbi":"arm64-v8a","bundleVersion":"$VERSION",\n "provenance":{"packager":"scripts/package_runtime_bundle.sh","manifestFormat":"role-validated-abi-v2"},
+ "schemaVersion":2,"targetAbi":"arm64-v8a","bundleVersion":"$VERSION",
+ "provenance":{"packager":"scripts/package_runtime_bundle.sh","manifestFormat":"role-validated-abi-v2"},
  "components":{
   "box64":{"included":true,"path":"box64/bin/box64","abi":"ELF64_AARCH64","sha256":"$(sha "$ROOT/box64/bin/box64")"},
   "wine64":{"included":true,"path":"wine/bin/wine64","abi":"ELF64_X86_64","sha256":"$(sha "$ROOT/wine/bin/wine64")"},
@@ -34,8 +47,8 @@ cat > "$ROOT/runtime-manifest.json" <<JSON
   "d3d11":{"included":true,"path":"dxvk/x64/d3d11.dll","abi":"PE32_PLUS_X86_64","sha256":"$(sha "$ROOT/dxvk/x64/d3d11.dll")"},
   "dxgi":{"included":true,"path":"dxvk/x64/dxgi.dll","abi":"PE32_PLUS_X86_64","sha256":"$(sha "$ROOT/dxvk/x64/dxgi.dll")"},
   "turnip":{"included":$([[ -n "$TURNIP_SO" ]] && echo true || echo false)},
-  "turnipSo":{"included":$([[ -n "$TURNIP_SO" ]] && echo true || echo false), "path":"turnip/libvulkan_freedreno.so","sha256":"$([[ -n "$TURNIP_SO" ]] && sha "$ROOT/turnip/libvulkan_freedreno.so" || echo "")"},
-  "turnipIcd":{"included":$([[ -n "$TURNIP_SO" ]] && echo true || echo false), "path":"turnip/freedreno_icd.aarch64.json","sha256":"$([[ -n "$TURNIP_SO" ]] && sha "$ROOT/turnip/freedreno_icd.aarch64.json" || echo "")}
+  "turnipSo":{"included":$([[ -n "$TURNIP_SO" ]] && echo true || echo false), "path":"turnip/libvulkan_freedreno.so","abi":"ELF64_AARCH64","sha256":"$([[ -n "$TURNIP_SO" ]] && sha "$ROOT/turnip/libvulkan_freedreno.so" || echo "")"},
+  "turnipIcd":{"included":$([[ -n "$TURNIP_SO" ]] && echo true || echo false), "path":"turnip/freedreno_icd.aarch64.json","abi":"JSON","sha256":"$([[ -n "$TURNIP_SO" ]] && sha "$ROOT/turnip/freedreno_icd.aarch64.json" || echo "")}
  },
  "defaultLaunchProfile":{"arguments":["-force-d3d11"],"environment":{"WINEDLLOVERRIDES":"d3d11,dxgi,xinput1_3,xinput1_4=n,b","BOX64_DYNAREC":"1","BOX64_DYNAREC_BIGBLOCK":"1","BOX64_DYNAREC_STRONGMEM":"1","BOX64_DYNAREC_SAFEFLAGS":"1"}}
 }
