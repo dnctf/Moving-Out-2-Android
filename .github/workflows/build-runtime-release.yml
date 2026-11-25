@@ -1,0 +1,173 @@
+name: Build and Publish ARM64 Runtime Bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      runtime_version:
+        description: "Runtime release version (without v prefix)"
+        required: true
+        default: "0.1.0"
+        type: string
+      box64_version:
+        description: "Official ptitSeb/box64 tag"
+        required: true
+        default: "v0.4.4"
+        type: string
+      wine_version:
+        description: "Kron4ek Wine-Builds release tag"
+        required: true
+        default: "11.22"
+        type: string
+      dxvk_version:
+        description: "DXVK release tag (Vulkan 1.1 baseline)"
+        required: true
+        default: "1.10.3"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: runtime-release-${{ inputs.runtime_version }}
+  cancel-in-progress: false
+
+jobs:
+  build-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout launcher and packager
+        uses: actions/checkout@v6
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build git curl jq xz-utils tar zip unzip \
+            binutils python3 ca-certificates
+
+      - name: Install Android NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -perm -u+x | sort | tail -n1)"
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=$SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          test -x "$SDK_ROOT/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+
+      - name: Build Box64 for Android ARM64
+        shell: bash
+        env:
+          BOX64_VERSION: ${{ inputs.box64_version }}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$BOX64_VERSION" https://github.com/ptitSeb/box64.git box64-src
+          cmake -S box64-src -B box64-build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=26 \
+            -DANDROID=ON \
+            -DARM64=ON \
+            -DARM_DYNAREC=ON \
+            -DBAD_SIGNAL=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PWD/box64-install"
+          cmake --build box64-build --parallel 2
+          cmake --install box64-build
+          BOX64_BIN="$(find box64-install box64-build -type f -name box64 -perm -u+x -print -quit)"
+          test -n "$BOX64_BIN"
+          mkdir -p runtime-input
+          install -m 0755 "$BOX64_BIN" runtime-input/box64
+          file runtime-input/box64
+          readelf -h runtime-input/box64 | grep -E "Class:.*ELF64|Machine:.*AArch64"
+
+      - name: Download and verify Wine x86_64
+        shell: bash
+        env:
+          WINE_VERSION: ${{ inputs.wine_version }}
+        run: |
+          set -euo pipefail
+          API="https://api.github.com/repos/Kron4ek/Wine-Builds/releases/tags/$WINE_VERSION"
+          curl --fail --silent --show-error --location "$API" -o wine-release.json
+          WINE_URL="$(jq -r '.assets[] | select(.name == ("wine-" + env.WINE_VERSION + "-amd64.tar.xz")) | .browser_download_url' wine-release.json)"
+          SUM_URL="$(jq -r '.assets[] | select(.name == "sha256sums.txt") | .browser_download_url' wine-release.json)"
+          test -n "$WINE_URL" && test "$WINE_URL" != "null"
+          test -n "$SUM_URL" && test "$SUM_URL" != "null"
+          curl --fail --location --retry 3 "$WINE_URL" -o wine-amd64.tar.xz
+          curl --fail --location --retry 3 "$SUM_URL" -o wine-sha256sums.txt
+          EXPECTED="$(awk -v f="$(basename "$WINE_URL")" '$2 == f || $2 == "*"f {print $1; exit}' wine-sha256sums.txt)"
+          test -n "$EXPECTED"
+          echo "$EXPECTED  wine-amd64.tar.xz" | sha256sum --check -
+          mkdir -p wine-extract
+          tar -xJf wine-amd64.tar.xz -C wine-extract
+          WINE_BIN="$(find wine-extract -type f -o -type l | grep '/bin/wine64$' | head -n1)"
+          test -n "$WINE_BIN"
+          WINE_ROOT="${WINE_BIN%/bin/wine64}"
+          test -x "$WINE_ROOT/bin/wine64"
+          test -x "$WINE_ROOT/bin/wineserver"
+          test -d "$WINE_ROOT/lib/wine"
+          mkdir -p runtime-input/wine
+          cp -a "$WINE_ROOT/." runtime-input/wine/
+          readelf -h runtime-input/wine/bin/wine64 | grep -E "Class:.*ELF64|Machine:.*X86-64"
+          readelf -h runtime-input/wine/bin/wineserver | grep -E "Class:.*ELF64|Machine:.*X86-64"
+
+      - name: Download and verify DXVK for Vulkan 1.1 devices
+        env:
+          DXVK_VERSION: ${{ inputs.dxvk_version }}
+        run: |
+          set -euo pipefail
+          case "$DXVK_VERSION" in
+            1.10.3) DXVK_SHA256="8d1a3c912761b450c879f98478ae64f6f6639e40ce6848170a0f6b8596fd53c6" ;;
+            *) echo "::error::Only the pinned Vulkan 1.1-compatible DXVK 1.10.3 is approved in this initial runtime profile."; exit 1 ;;
+          esac
+          curl --fail --location --retry 3 \
+            "https://github.com/doitsujin/dxvk/releases/download/v$DXVK_VERSION/dxvk-$DXVK_VERSION.tar.gz" \
+            -o dxvk.tar.gz
+          echo "$DXVK_SHA256  dxvk.tar.gz" | sha256sum --check -
+          mkdir -p dxvk-extract runtime-input/dxvk/x64
+          tar -xzf dxvk.tar.gz -C dxvk-extract
+          DXVK_ROOT="$(find dxvk-extract -type f -path '*/x64/d3d11.dll' -printf '%h\n' | head -n1)"
+          test -n "$DXVK_ROOT"
+          install -m 0644 "$DXVK_ROOT/d3d11.dll" runtime-input/dxvk/x64/d3d11.dll
+          install -m 0644 "$DXVK_ROOT/dxgi.dll" runtime-input/dxvk/x64/dxgi.dll
+          file runtime-input/dxvk/x64/*.dll
+
+      - name: Package and validate runtime manifest v2
+        env:
+          RUNTIME_VERSION: ${{ inputs.runtime_version }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/package_runtime_bundle.sh
+          scripts/package_runtime_bundle.sh \
+            --box64 runtime-input/box64 \
+            --wine-dir runtime-input/wine \
+            --dxvk-dir runtime-input/dxvk/x64 \
+            --bundle-version "$RUNTIME_VERSION" \
+            --output moving-out-2-runtime-arm64-v8a.zip
+          sha256sum moving-out-2-runtime-arm64-v8a.zip > moving-out-2-runtime-arm64-v8a.zip.sha256
+          unzip -t moving-out-2-runtime-arm64-v8a.zip
+          unzip -p moving-out-2-runtime-arm64-v8a.zip runtime-manifest.json | jq -e '.schemaVersion == 2 and .targetAbi == "arm64-v8a"'
+
+      - name: Upload runtime build artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: moving-out-2-runtime-arm64-v8a
+          path: |
+            moving-out-2-runtime-arm64-v8a.zip
+            moving-out-2-runtime-arm64-v8a.zip.sha256
+          retention-days: 30
+
+      - name: Publish runtime release consumed by the app
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: runtime-v${{ inputs.runtime_version }}
+          name: Moving Out 2 Android Runtime v${{ inputs.runtime_version }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            moving-out-2-runtime-arm64-v8a.zip
+            moving-out-2-runtime-arm64-v8a.zip.sha256
