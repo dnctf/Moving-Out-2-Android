@@ -25,6 +25,7 @@ import com.dnctf.movingout2.input.VirtualControllerView
 import com.dnctf.movingout2.input.PhysicalGamepadManager
 import com.dnctf.movingout2.input.ControllerProfile
 import com.dnctf.movingout2.input.ControllerProfileRepository
+import com.dnctf.movingout2.input.controllerProfileStorageKey
 import com.dnctf.movingout2.input.readBoundedUtf8Profile
 import com.dnctf.movingout2.installation.GameInstallationManager
 import com.dnctf.movingout2.installation.InstallationRepository
@@ -51,6 +52,7 @@ class MainActivity : Activity() {
     private val pickDiagnosticDestination = 1004
     private lateinit var inputCoordinator: ControllerInputCoordinator
     private var controllerProfile = ControllerProfile.presets.first()
+    private var controllerProfileGameKey = "moving-out-2"
     private var pendingProfileExport: String? = null
     private val pickFolder = 1001
     private val pickRuntimeBundle = 1002
@@ -62,7 +64,15 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         repository = InstallationRepository(this)
         gameRegistry = com.dnctf.movingout2.installation.GameRegistry(this, repository)
-        controllerProfile = ControllerProfileRepository.load(this, "moving-out-2") ?: ControllerProfile.presets.first()
+        val activeGame = gameRegistry.getActiveGame()
+        controllerProfileGameKey = controllerProfileStorageKey(activeGame?.id)
+        val storedProfile = ControllerProfileRepository.load(this, controllerProfileGameKey)
+        val legacyProfile = if (controllerProfileGameKey == "moving-out-2") null
+            else ControllerProfileRepository.load(this, "moving-out-2")
+        controllerProfile = storedProfile ?: legacyProfile ?: ControllerProfile.presets.first()
+        if (storedProfile == null && legacyProfile != null) {
+            ControllerProfileRepository.save(this, controllerProfileGameKey, legacyProfile)
+        }
         inputBridge.initialize(RuntimeLaunchConfig(filesDir).sharedMemoryFile.absolutePath)
         inputCoordinator = ControllerInputCoordinator(inputBridge, controllerProfile)
         physicalGamepadManager = PhysicalGamepadManager(this) { state ->
@@ -78,6 +88,19 @@ class MainActivity : Activity() {
         probeGraphicsAsync()
     }
 
+
+    private fun activateControllerProfileForGame(game: com.dnctf.movingout2.installation.RegisteredGame?) {
+        val nextKey = controllerProfileStorageKey(game?.id)
+        if (nextKey == controllerProfileGameKey) return
+        val stored = ControllerProfileRepository.load(this, nextKey)
+        val legacy = if (nextKey == "moving-out-2") null
+            else ControllerProfileRepository.load(this, "moving-out-2")
+        val nextProfile = stored ?: legacy ?: ControllerProfile.presets.first()
+        if (stored == null && legacy != null) ControllerProfileRepository.save(this, nextKey, nextProfile)
+        controllerProfileGameKey = nextKey
+        controllerProfile = nextProfile
+        inputCoordinator.setProfile(nextProfile)
+    }
 
     private fun exportDiagnostics() {
         Toast.makeText(this, "Preparing diagnostics ZIP…", Toast.LENGTH_SHORT).show()
@@ -212,6 +235,7 @@ class MainActivity : Activity() {
 
     private fun revalidateSavedFolder() {
         val active = gameRegistry.getActiveGame()
+        activateControllerProfileForGame(active)
         status.text = if (active == null) {
             val uri = repository.savedUri()
             if (uri == null) "No installation folder saved." else runCatching {
@@ -297,7 +321,7 @@ class MainActivity : Activity() {
                 if (selectedProfileIndex in ControllerProfile.presets.indices) {
                     controllerProfile = ControllerProfile.presets[selectedProfileIndex]
                     inputCoordinator.setProfile(controllerProfile)
-                    ControllerProfileRepository.save(this, "moving-out-2", controllerProfile)
+                    ControllerProfileRepository.save(this, controllerProfileGameKey, controllerProfile)
                 }
                 LauncherSettings.save(this, LauncherSettings(resolutionScale = resolution.progress.coerceIn(50, 100), fpsTarget = selectedFps, graphicsPreset = selectedPreset, masterVolume = master.progress, musicVolume = music.progress, sfxVolume = sfx.progress, controllerScale = controllerScale.progress.coerceIn(65, 150), controllerOpacity = controllerOpacity.progress.coerceIn(15, 100), controllerOffsetX = controllerOffsetX.progress.coerceIn(35, 65), controllerOffsetY = controllerOffsetY.progress.coerceIn(35, 65), controllerEnabled = controllerEnabled.isChecked, controllerHaptics = controllerHaptics.isChecked))
                 Toast.makeText(this, "Settings saved (runtime application pending).", Toast.LENGTH_SHORT).show()
@@ -357,7 +381,7 @@ class MainActivity : Activity() {
                     readBoundedUtf8Profile(stream)
                 } ?: error("Profile file could not be opened.")
                 val imported = ControllerProfileRepository.importFromJson(raw)
-                ControllerProfileRepository.save(this, "moving-out-2", imported)
+                ControllerProfileRepository.save(this, controllerProfileGameKey, imported)
                 controllerProfile = imported
                 inputCoordinator.setProfile(imported)
                 Toast.makeText(this, "Controller profile imported: ${imported.name}", Toast.LENGTH_LONG).show()
@@ -371,7 +395,8 @@ class MainActivity : Activity() {
                 .also { pendingProfileExport = null }
             pickFolder -> try {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                repository.saveUri(uri)
+                val activeGame = gameRegistry.registerSafFolder(uri)
+                activateControllerProfileForGame(activeGame)
                 status.text = formatReport(GameInstallationManager(this).validate(uri))
             } catch (e: Exception) { status.text = "Folder import failed safely: ${e.message ?: e.javaClass.simpleName}" }
             pickRuntimeBundle -> try {
@@ -401,6 +426,8 @@ class MainActivity : Activity() {
                     }) { result ->
                         progressDialog.dismiss()
                         status.text = result.fold({ summary ->
+                            val activeGame = gameRegistry.registerImportedZip(summary.imported.gameRoot)
+                            activateControllerProfileForGame(activeGame)
                             buildString {
                                 append("ZIP import successful. Files: ").append(summary.imported.fileCount)
                                 append("\nExpanded: ").append(summary.imported.bytesWritten / (1024 * 1024)).append(" MiB")

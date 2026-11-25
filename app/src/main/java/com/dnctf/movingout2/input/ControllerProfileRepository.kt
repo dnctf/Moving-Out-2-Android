@@ -6,7 +6,15 @@ import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
+import java.security.MessageDigest
 import org.json.JSONObject
+
+/** Maps arbitrary registry IDs to a stable key accepted by SharedPreferences validation. */
+internal fun controllerProfileStorageKey(gameId: String?): String {
+    val normalized = gameId?.trim()?.takeIf { it.isNotEmpty() } ?: return "moving-out-2"
+    val digest = MessageDigest.getInstance("SHA-256").digest(normalized.toByteArray(Charsets.UTF_8))
+    return "game-" + digest.take(16).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+}
 
 data class ControllerProfile(
     val schemaVersion: Int = 1,
@@ -62,7 +70,11 @@ data class ControllerProfile(
         }
         val lt = scaledTrigger(axis("LEFT_TRIGGER", state.leftTrigger))
         val rt = scaledTrigger(axis("RIGHT_TRIGGER", state.rightTrigger))
-        return ControllerState(buttons, (l.x * sensitivity).coerceIn(-1f, 1f), (l.y * sensitivity).coerceIn(-1f, 1f), (r.x * sensitivity).coerceIn(-1f, 1f), (r.y * sensitivity).coerceIn(-1f, 1f), lt, rt)
+        // Sensitivity boost must preserve the circular stick boundary; clamping each
+        // component independently would allow diagonal magnitude to exceed 1.0.
+        val scaledLeft = PhysicalGamepadNormalizer.normalizeStick(l.x * sensitivity, l.y * sensitivity, 0f)
+        val scaledRight = PhysicalGamepadNormalizer.normalizeStick(r.x * sensitivity, r.y * sensitivity, 0f)
+        return ControllerState(buttons, scaledLeft.x, scaledLeft.y, scaledRight.x, scaledRight.y, lt, rt)
     }
 
     companion object {

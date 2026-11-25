@@ -120,14 +120,15 @@ class GameRegistry(
         val id = "internal:$rootPath"
         repository.markValidated(id, now)
 
-        val exe = File(rootFile, "mo2.exe").takeIf { it.isFile }
-        val metadataDat = File(rootFile, "MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat")
+        val exe = GameRegistryLayout.executable(rootFile)
+        val executableName = exe?.name ?: "mo2.exe"
+        val metadataDat = GameRegistryLayout.metadataFile(rootFile, executableName)
         val metadataVersion = if (metadataDat.isFile) {
             runCatching { metadataDat.inputStream().use { UnityGameProfileDetector.readBounded(it, 8) } }
                 .getOrNull()?.let(UnityGameProfileDetector::detectMetadataVersion)
         } else null
 
-        val globalManagers = File(rootFile, "MovingOut2_Data/globalgamemanagers")
+        val globalManagers = GameRegistryLayout.globalManagersFile(rootFile, executableName)
         val unityVersion = if (globalManagers.isFile) {
             runCatching { globalManagers.inputStream().use { UnityGameProfileDetector.readBounded(it, 256 * 1024) } }
                 .getOrNull()?.let(UnityGameProfileDetector::detectUnityVersion)
@@ -159,7 +160,7 @@ class GameRegistry(
         pending.add(base to 0)
         while (pending.isNotEmpty()) {
             val (dir, depth) = pending.removeFirst()
-            if (File(dir, "mo2.exe").isFile && File(dir, "MovingOut2_Data").isDirectory) return dir
+            if (GameRegistryLayout.dataDirectory(dir) != null) return dir
             if (depth >= 12) continue
             dir.listFiles()?.filter { it.isDirectory }?.forEach { pending.add(it to depth + 1) }
         }

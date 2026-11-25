@@ -2,7 +2,7 @@
 
 ## Target evidence and limits
 
-The intended game target is a Windows x86-64 Unity IL2CPP player (`mo2.exe`, `UnityPlayer.dll`, `GameAssembly.dll`, and `MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat`). A D3D11 renderer is expected from the target profile, but the project has not yet inspected a user-supplied game binary in this run. **Do not publish an exact DLL-import list or compatibility result without that binary.**
+The intended game target is a Windows x86-64 Unity IL2CPP player (`mo2.exe`, `UnityPlayer.dll`, `GameAssembly.dll`, and `mo2_Data/il2cpp_data/Metadata/global-metadata.dat`). A D3D11 renderer is expected from the target profile, but the project has not yet inspected a user-supplied game binary in this run. **Do not publish an exact DLL-import list or compatibility result without that binary.**
 
 `GameBinaryAnalyzer` parses PE32+ headers and the import directory with bounds checks. The import results should be collected separately for `mo2.exe`, `UnityPlayer.dll`, and `GameAssembly.dll`, then reconciled with delay imports, dynamic LoadLibrary calls, Unity plugins, and the Steam/EOS SDKs before any Wine override is declared complete. An import table is evidence of static imports only.
 

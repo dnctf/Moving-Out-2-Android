@@ -45,6 +45,25 @@ class ControllerProfileRepositoryTest {
         assertEquals(1f, out.leftX, 0f)
         assertEquals(1f, out.leftTrigger, 0f)
     }
+    @Test fun sensitivityBoostPreservesRadialStickLimit() {
+        val profile = ControllerProfile(name = "Radial boost", sensitivity = 3f, deadzone = 0f)
+        val output = profile.apply(ControllerState(leftX = .6f, leftY = .6f))
+        val magnitudeSquared = output.leftX * output.leftX + output.leftY * output.leftY
+        assertTrue(magnitudeSquared <= 1.0001f)
+        assertEquals(output.leftX, output.leftY, .0001f)
+    }
+
+    @Test fun perGameProfileKeysAreStableDistinctAndSafe() {
+        val first = controllerProfileStorageKey("internal:/games/mo2")
+        val same = controllerProfileStorageKey("internal:/games/mo2")
+        val second = controllerProfileStorageKey("saf:content://tree/another")
+        assertEquals(first, same)
+        assertTrue(first.matches(Regex("game-[a-f0-9]{32}")))
+        assertTrue(second.matches(Regex("game-[a-f0-9]{32}")))
+        assertTrue(first != second)
+        assertEquals("moving-out-2", controllerProfileStorageKey(null))
+    }
+
     @Test fun alreadyNormalizedTouchInputCanSkipProfileDeadzone() {
         val profile = ControllerProfile(name = "Touch once", deadzone = .12f)
         val sample = VirtualControllerEngine.radialDeadzone(.13f, 0f, profile.deadzone)
