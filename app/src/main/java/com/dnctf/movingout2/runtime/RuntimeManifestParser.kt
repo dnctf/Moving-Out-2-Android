@@ -40,7 +40,7 @@ class RuntimeManifestParser {
             val path = component.optString("path", fallback)
             val hash = component.optString("sha256").lowercase()
             if (path.isBlank() || path.startsWith("/") || path.startsWith("\\") || path.contains(':') ||
-                path.split('/', '\\\\').any { it == ".." }) {
+                path.split('/', '\\').any { it == ".." }) {
                 errors += "Unsafe path for $key"; return
             }
             if (!hash.matches(Regex("[a-f0-9]{64}"))) { errors += "Invalid SHA-256 for $key"; return }
@@ -74,7 +74,7 @@ class RuntimeManifestParser {
     private fun hashDirectory(dir: File): String {
         val listing = StringBuilder()
         dir.walkTopDown().filter { it.isFile }.sortedBy { it.relativeTo(dir).invariantSeparatorsPath }.forEach {
-            listing.append(hashFile(it)).append("  ./").append(it.relativeTo(dir).invariantSeparatorsPath).append('\\n')
+            listing.append(hashFile(it)).append("  ./").append(it.relativeTo(dir).invariantSeparatorsPath).append('\n')
         }
         val digest = MessageDigest.getInstance("SHA-256")
         digest.update(listing.toString().toByteArray(Charsets.UTF_8))
