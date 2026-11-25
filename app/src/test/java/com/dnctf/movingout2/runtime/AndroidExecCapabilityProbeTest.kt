@@ -23,6 +23,56 @@ class AndroidExecCapabilityProbeTest {
     }
 
 
+    @Test fun prefersByteIdenticalBox64FromNativeLibraryDirectory() {
+        val root = Files.createTempDirectory("exec-probe-native").toFile()
+        val appData = File(root, "bundle/box64").apply {
+            parentFile?.mkdirs()
+            writeBytes(arm64Elf())
+            setExecutable(true)
+        }
+        val nativeDir = File(root, "native").apply { mkdirs() }
+        val packaged = File(nativeDir, "libbox64.so").apply {
+            writeBytes(appData.readBytes())
+            setExecutable(true)
+        }
+        var executed: File? = null
+        val probe = AndroidExecCapabilityProbe(nativeDir, executor =
+            AndroidBinaryExecutor { binary, _ ->
+                executed = binary
+                ProbeExecution(0, "box64 version", "")
+            })
+        val result = probe.probe(appData)
+        assertEquals(AndroidExecCapability.EXEC_ALLOWED_NATIVE_LIB_DIR, result.capability)
+        assertEquals(packaged.canonicalFile, result.executable?.canonicalFile)
+        assertEquals(packaged.canonicalFile, executed?.canonicalFile)
+        root.deleteRecursively()
+    }
+
+    @Test fun refusesMismatchedPackagedBox64InsteadOfExecutingFilesDirCopy() {
+        val root = Files.createTempDirectory("exec-probe-native-mismatch").toFile()
+        val appData = File(root, "bundle/box64").apply {
+            parentFile?.mkdirs()
+            writeBytes(arm64Elf())
+            setExecutable(true)
+        }
+        val nativeDir = File(root, "native").apply { mkdirs() }
+        File(nativeDir, "libbox64.so").apply {
+            writeBytes(arm64Elf().also { it[it.lastIndex] = 1 })
+            setExecutable(true)
+        }
+        var executed = false
+        val probe = AndroidExecCapabilityProbe(nativeDir, executor =
+            AndroidBinaryExecutor { _, _ ->
+                executed = true
+                ProbeExecution(0, "unexpected", "")
+            })
+        val result = probe.probe(appData)
+        assertEquals(AndroidExecCapability.EXEC_FAILED, result.capability)
+        assertFalse(executed)
+        assertTrue(result.detail.contains("does not match"))
+        root.deleteRecursively()
+    }
+
     @Test fun reportsAppDataExecutionSuccess() {
         val root = Files.createTempDirectory("exec-probe").toFile()
         val binary = File(root, "box64").apply { writeText("fixture"); setExecutable(true) }
