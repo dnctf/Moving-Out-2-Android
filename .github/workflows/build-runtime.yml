@@ -148,8 +148,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Package launchers can be shell wrappers. Search the package-owned
-          # paths and Wine's library directories for the real x86_64 ELF files.
+          # Ubuntu's /usr/bin/wine64-stable is a shell wrapper. The actual
+          # Wine 11 x86_64 ELF launcher is installed as /usr/lib/.../wine/wine.
           find_wine_elf() {
             local candidates="$1"
             local path resolved header
@@ -169,138 +169,9 @@ jobs:
             return 1
           }
           PACKAGE_PATHS="$(dpkg-query -L wine64 libwine:amd64)"
-          LIBRARY_PATHS="$(find -L /usr/lib /usr/libexec -type f \( -name 'wine64' -o -name 'wine64-preloader' -o -name 'wine64-stable' -o -name 'wineserver' -o -name 'wineserver-stable' -o -name 'wine' \) -print 2>/dev/null || true)"
+          LIBRARY_PATHS="$(find -L /usr/lib /usr/libexec -type f \( -name 'wine' -o -name 'wine64' -o -name 'wine64-preloader' -o -name 'wine64-stable' -o -name 'wineserver' -o -name 'wineserver-stable' \) -print 2>/dev/null || true)"
           ALL_WINE_PATHS="$(printf '%s\n%s\n' "$PACKAGE_PATHS" "$LIBRARY_PATHS" | sort -u)"
           WINE64_CANDIDATES="$(grep -E '/(wine|wine64|wine64-preloader|wine64-stable)$' <<<"$ALL_WINE_PATHS" || true)"
-          WINESERVER_CANDIDATES="$(grep -E '/(wineserver|wineserver-stable)$' <<<"$ALL_WINE_PATHS" || true)"
-          WINE64="$(find_wine_elf "$WINE64_CANDIDATES" || true)"
-          WINESERVER="$(find_wine_elf "$WINESERVER_CANDIDATES" || true)"
-          if [[ -z "$WINE64" || -z "$WINESERVER" ]]; then
-            echo "::error::Could not locate real Wine x86_64 ELF launchers."
-            for candidate in $WINE64_CANDIDATES $WINESERVER_CANDIDATES; do
-              resolved="$(readlink -f "$candidate" 2>/dev/null || printf '%s' "$candidate")"
-              echo "Candidate: $candidate -> $resolved"
-              file "$resolved" || true
-              readelf -h "$resolved" 2>&1 | grep -E 'Class:|Machine:|Error:' || true
-            done
-            echo "Wine executable files discovered under /usr/lib:"
-            find -L /usr/lib /usr/libexec -type f \( -name 'wine*' -o -name 'wineserver*' \) -print 2>/dev/null | head -100 || true
-            exit 1
-          fi
-          WINE_LIB_DIR="/usr/lib/x86_64-linux-gnu/wine"
-          [[ -d "$WINE_LIB_DIR" ]]
-          mkdir -p "$RUNNER_TEMP/runtime-input/wine/bin" "$RUNNER_TEMP/runtime-input/wine/lib"
-          install -m 0755 "$WINE64" "$RUNNER_TEMP/runtime-input/wine/bin/wine64"
-          install -m 0755 "$WINESERVER" "$RUNNER_TEMP/runtime-input/wine/bin/wineserver"
-          cp -aL "$WINE_LIB_DIR" "$RUNNER_TEMP/runtime-input/wine/lib/wine"
-          find -L "$RUNNER_TEMP/runtime-input/wine/lib/wine" -type f -name '*.so*' -print -quit | grep -q .
-          echo "Resolved Wine ELF launchers:"
-          readelf -h "$WINE64" | grep -E 'Class:|Machine:'
-          readelf -h "$WINESERVER" | grep -E 'Class:|Machine:'
-          echo "Wine source: Ubuntu signed apt packages wine64 + libwine:amd64"
-          dpkg-query -W -f='${Package}=${Version}\n' wine64 libwine:amd64 | tee "$RUNNER_TEMP/wine-package-versions.txt"
-
-      - name: Download and verify DXVK release
-        shell: bash
-        env:
-          DXVK_URL: ${{ inputs.dxvk_url || 'https://github.com/doitsujin/dxvk/releases/download/v3.1.1/dxvk-3.1.1.tar.gz' }}
-          DXVK_SHA256: ${{ inputs.dxvk_sha256 || '40565b4a724aadc4433fa4e010b4b23916d9b1f1baeee64e17186db94f54e608' }}
-        run: |
-          set -euo pipefail
-          if [[ -z "$DXVK_URL" || ! "$DXVK_SHA256" =~ ^[a-fA-F0-9]{64}$ ]]; then
-            echo "::error::A DXVK release URL and its independently verified 64-character SHA-256 are required. Supply them via workflow_dispatch."
-            exit 2
-          fi
-          curl --fail --location --retry 3 --retry-all-errors "$DXVK_URL" -o "$RUNNER_TEMP/dxvk.tar.gz"
-          printf '%s  %s\n' "$DXVK_SHA256" "$RUNNER_TEMP/dxvk.tar.gz" | sha256sum --check --status
-          mkdir -p "$RUNNER_TEMP/dxvk-extract" "$RUNNER_TEMP/runtime-input/dxvk/x64"
-          tar -xzf "$RUNNER_TEMP/dxvk.tar.gz" -C "$RUNNER_TEMP/dxvk-extract"
-          D3D11="$(find "$RUNNER_TEMP/dxvk-extract" -type f -path '*/x64/d3d11.dll' -print -quit)"
-          DXGI="$(find "$RUNNER_TEMP/dxvk-extract" -type f -path '*/x64/dxgi.dll' -print -quit)"
-          [[ -s "$D3D11" && -s "$DXGI" ]]
-          install -m 0644 "$D3D11" "$RUNNER_TEMP/runtime-input/dxvk/x64/d3d11.dll"
-          install -m 0644 "$DXGI" "$RUNNER_TEMP/runtime-input/dxvk/x64/dxgi.dll"
-
-      - name: Audit all runtime binary ABIs
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/runtime-input/xinput"
-          cp "$RUNNER_TEMP/xinput/"*.dll "$RUNNER_TEMP/runtime-input/xinput/"
-          WINE_DIR="$RUNNER_TEMP/runtime-input/wine"
-          DXVK_DIR="$RUNNER_TEMP/runtime-input/dxvk/x64"
-          XINPUT_DIR="$RUNNER_TEMP/runtime-input/xinput"
-          BOX64="$RUNNER_TEMP/runtime-input/box64/box64"
-          readelf -h "$BOX64" | grep -Eq 'Class:.*ELF64'
-          readelf -h "$BOX64" | grep -Eq 'Machine:.*AArch64'
-          for f in "$WINE_DIR/bin/wine64" "$WINE_DIR/bin/wineserver"; do
-            readelf -h "$f" | grep -Eq 'Class:.*ELF64'
-            readelf -h "$f" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
-          done
-          find -L "$WINE_DIR/lib/wine" -type f -name '*.so*' -print0 | while IFS= read -r -d '' f; do
-            readelf -h "$f" | grep -Eq 'Class:.*ELF64'
-            readelf -h "$f" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
-            readelf -h "$f" | grep -Eq 'Type:.*DYN'
-          done
-          for f in "$DXVK_DIR/d3d11.dll" "$DXVK_DIR/dxgi.dll" "$XINPUT_DIR/xinput1_3.dll" "$XINPUT_DIR/xinput1_4.dll"; do
-            objdump -f "$f" | grep -q 'architecture: i386:x86-64'
-            objdump -p "$f" | grep -Eqi 'Magic[[:space:]]+020b'
-          done
-
-      - name: Package runtime manifest v2
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          scripts/package_runtime_bundle.sh \
-            --box64 "$RUNNER_TEMP/runtime-input/box64/box64" \
-            --wine-dir "$RUNNER_TEMP/runtime-input/wine" \
-            --dxvk-dir "$RUNNER_TEMP/runtime-input/dxvk/x64" \
-            --xinput-dir "$RUNNER_TEMP/runtime-input/xinput" \
-            --bundle-version "${{ inputs.bundle_version || '0.1.0' }}" \
-            --output "dist/moving-out-2-runtime-arm64-v8a.zip"
-          test -s dist/SHA256SUMS.txt
-          sha256sum dist/moving-out-2-runtime-arm64-v8a.zip > dist/moving-out-2-runtime-arm64-v8a.zip.sha256
-          (cd dist && sha256sum --check SHA256SUMS.txt)
-          sha256sum --check dist/moving-out-2-runtime-arm64-v8a.zip.sha256
-          mkdir -p "$RUNNER_TEMP/runtime-audit"
-          unzip -q dist/*.zip -d "$RUNNER_TEMP/runtime-audit"
-          scripts/audit_runtime_bundle.sh "$RUNNER_TEMP/runtime-audit"
-          cp "$RUNNER_TEMP/wine-package-versions.txt" dist/
-          cat dist/SHA256SUMS.txt
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: "8.9"
-
-      - name: Run Kotlin unit tests
-        run: gradle --no-daemon testDebugUnitTest
-
-      - name: Upload runtime bundle and provenance
-        uses: actions/upload-artifact@v6
-        with:
-          name: moving-out-2-runtime-${{ github.run_number }}
-          path: |
-            dist/*.zip
-            dist/*.zip.sha256
-            dist/SHA256SUMS.txt
-            dist/wine-package-versions.txt
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Publish GitHub pre-release
-        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_prerelease)
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: runtime-v${{ inputs.bundle_version || '0.1.0' }}-${{ github.run_number }}
-          name: Moving Out 2 Runtime ${{ inputs.bundle_version || '0.1.0' }} (pre-release)
-          prerelease: true
-          files: |
-            dist/moving-out-2-runtime-arm64-v8a.zip
-            dist/moving-out-2-runtime-arm64-v8a.zip.sha256
-            dist/SHA256SUMS.txt
-          generate_release_notes: true
           WINESERVER_CANDIDATES="$(grep -E '/(wineserver|wineserver-stable)$' <<<"$ALL_WINE_PATHS" || true)"
           WINE64="$(find_wine_elf "$WINE64_CANDIDATES" || true)"
           WINESERVER="$(find_wine_elf "$WINESERVER_CANDIDATES" || true)"
