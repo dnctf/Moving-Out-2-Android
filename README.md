@@ -240,7 +240,7 @@ sha256sum -c SHA256SUMS.txt
 
 If the checksum file contains a filename different from the downloaded APK filename, compare the hash manually:
 ```bash
-sha256sum Moving-Out-2-Android-*-arm64-v8a-*.apk
+sha256sum Moving-Out-2-Android-*-arm64-v8a-debug-signed.apk
 cat SHA256SUMS.txt
 ```
 
