@@ -20,7 +20,7 @@ check_pe(){
   local file="$1"
   [[ -s "$file" ]] || { echo "Missing/empty PE: $file" >&2; exit 1; }
   llvm-readobj --file-headers "$file" | grep -Eq 'Format:.*COFF-x86-64'
-  llvm-readobj --file-headers "$file" | grep -Eq 'Magic:.*PE32\+'
+  llvm-readobj --file-headers "$file" | grep -Eqi 'Magic:.*0x20b'
 }
 check_elf "$ROOT/box64/bin/box64" AArch64
 check_elf "$ROOT/wine/bin/wine64" 'X86-64'

@@ -198,7 +198,7 @@ jobs:
           done
           for f in "$DXVK_DIR/d3d11.dll" "$DXVK_DIR/dxgi.dll" "$XINPUT_DIR/xinput1_3.dll" "$XINPUT_DIR/xinput1_4.dll"; do
             llvm-readobj --file-headers "$f" | grep -Eq 'Format:.*COFF-x86-64'
-            llvm-readobj --file-headers "$f" | grep -Eq 'Magic:.*PE32\+'
+            llvm-readobj --file-headers "$f" | grep -Eqi 'Magic:.*0x20b'
           done
 
       - name: Package runtime manifest v2
@@ -214,7 +214,16 @@ jobs:
             --bundle-version "${{ inputs.bundle_version || '0.1.0' }}" \
             --output "dist/moving-out-2-runtime-${{ github.run_number }}.zip"
           test -s dist/SHA256SUMS.txt
+          mkdir -p "$RUNNER_TEMP/runtime-audit"
+          unzip -q dist/*.zip -d "$RUNNER_TEMP/runtime-audit"
+          scripts/audit_runtime_bundle.sh "$RUNNER_TEMP/runtime-audit"
+          cp "$RUNNER_TEMP/wine-package-versions.txt" dist/
           cat dist/SHA256SUMS.txt
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.9"
 
       - name: Run Kotlin unit tests
         run: gradle --no-daemon testDebugUnitTest
@@ -226,7 +235,7 @@ jobs:
           path: |
             dist/*.zip
             dist/SHA256SUMS.txt
-            "$RUNNER_TEMP/wine-package-versions.txt"
+            dist/wine-package-versions.txt
           if-no-files-found: error
           retention-days: 30
 
