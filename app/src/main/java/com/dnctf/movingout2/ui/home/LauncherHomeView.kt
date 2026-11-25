@@ -26,6 +26,7 @@ object LauncherHomeView {
         onSelectFolder: () -> Unit,
         onRevalidate: () -> Unit,
         onImportRuntime: () -> Unit,
+        onImportRuntimeFolder: () -> Unit,
         onDownloadRuntime: () -> Unit,
         onImportGameZip: () -> Unit,
         onOpenSettings: () -> Unit,
@@ -121,7 +122,7 @@ object LauncherHomeView {
         runtimeCard.addView(runtimeStatus)
         addGap(runtimeCard)
         addAction(runtimeCard, action("Repair / download runtime", true, onDownloadRuntime))
-        addAction(runtimeCard, action("Import runtime bundle from storage", false, onImportRuntime))
+        addAction(runtimeCard, action("Import runtime ZIP and extract", true, onImportRuntime)\n        addAction(runtimeCard, action("Import runtime folder (SAF)", false, onImportRuntimeFolder)))
         runtimeCard.addView(text("The runtime is distributed separately from the APK. Downloading it does not include or provide game files.", 12f, MUTED))
         content.addView(runtimeCard)
         addGap(content, 12)
