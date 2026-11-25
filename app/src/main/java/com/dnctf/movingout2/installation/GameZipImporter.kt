@@ -258,7 +258,8 @@ class GameZipImporter(
         pending.add(base to 0)
         while (pending.isNotEmpty()) {
             val (dir, depth) = pending.removeFirst()
-            if (File(dir, "mo2.exe").isFile && File(dir, "MovingOut2_Data").isDirectory) return dir
+            val exe = File(dir, "mo2.exe")
+            if (exe.isFile && File(dir, UnityDataDirectoryLocator.directoryName(exe.name)).isDirectory) return dir
             if (depth >= 12) continue
             dir.listFiles()?.filter { it.isDirectory }?.forEach { pending.add(it to depth + 1) }
         }
@@ -277,10 +278,14 @@ internal object GameZipRootLocator {
     fun findRootPrefix(names: List<String>): String? {
         val files = names.filterNot { it.endsWith('/') }.map { it.lowercase(Locale.ROOT) }.toSet()
         val exe = names.filter { it.equals("mo2.exe", true) || it.lowercase(Locale.ROOT).endsWith("/mo2.exe") }
-        val required = listOf("gameassembly.dll", "unityplayer.dll", "baselib.dll", "movingout2_data/il2cpp_data/metadata/global-metadata.dat")
+        val required = listOf("gameassembly.dll", "unityplayer.dll", "baselib.dll")
         for (exePath in exe) {
             val prefix = exePath.substringBeforeLast('/', "").let { if (it.isEmpty()) "" else "$it/" }
-            if (required.all { req -> files.contains((prefix + req).lowercase(Locale.ROOT)) }) return prefix
+            val exeName = exePath.substringAfterLast('/')
+            val dataDir = UnityDataDirectoryLocator.directoryName(exeName).lowercase(Locale.ROOT)
+            val metadata = "$dataDir/il2cpp_data/metadata/global-metadata.dat"
+            if (required.all { req -> files.contains((prefix + req).lowercase(Locale.ROOT)) } &&
+                files.contains((prefix + metadata).lowercase(Locale.ROOT))) return prefix
         }
         return null
     }

@@ -20,9 +20,7 @@ data class InstallationReport(
 ) { val isReadyForRuntime: Boolean get() = false }
 
 class InstallationValidator {
-    private val required = listOf("mo2.exe", "GameAssembly.dll", "UnityPlayer.dll", "baselib.dll",
-        "MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat")
-    private val peFiles = required.dropLast(1)
+    private val peFiles = listOf("mo2.exe", "GameAssembly.dll", "UnityPlayer.dll", "baselib.dll")
     private val metadataMagic = byteArrayOf(0xaf.toByte(), 0x1b, 0xb1.toByte(), 0xfa.toByte())
 
     fun validate(root: File, persistablePermission: Boolean = true, hardwareBlockers: List<String> = emptyList()): InstallationReport {
@@ -34,6 +32,9 @@ class InstallationValidator {
         if (!rootReadable) errors += "Selected folder is not readable."
         stages += StageResult(ValidationStage.FOLDER_ACCESS, persistablePermission && rootReadable, errors.toList())
 
+        val executable = findCaseInsensitive(root, "mo2.exe")
+        val metadataRelative = UnityDataDirectoryLocator.metadataFilePath(executable?.name ?: "mo2.exe")
+        val required = peFiles + metadataRelative
         val files = mutableMapOf<String, File>()
         for (path in required) {
             val file = try { findCaseInsensitive(root, path) } catch (e: IOException) {
@@ -50,12 +51,12 @@ class InstallationValidator {
         stages += StageResult(ValidationStage.CORE_FILES, InstallationStagePolicy.coreFilesPassed(missing, errors, persistablePermission && rootReadable),
             missing.map { "Missing: $it" } + errors.toList())
 
-        val metadataDir = try { findCaseInsensitive(root, "MovingOut2_Data/il2cpp_data/Metadata") } catch (e: IOException) {
+        val metadataDir = try { findCaseInsensitive(root, UnityDataDirectoryLocator.metadataPath(executable?.name ?: "mo2.exe")) } catch (e: IOException) {
             errors += "Metadata directory: ${e.message ?: "unsafe path"}"
             null
         }
         val metadataDirOk = metadataDir?.isDirectory == true && metadataDir.canRead() && isWithinRoot(root, metadataDir)
-        if (!metadataDirOk && missing.none { it.endsWith("global-metadata.dat") }) missing += "MovingOut2_Data/il2cpp_data/Metadata/"
+        if (!metadataDirOk && missing.none { it.endsWith("global-metadata.dat") }) missing += "${UnityDataDirectoryLocator.metadataPath(executable?.name ?: "mo2.exe")}/"
         stages += StageResult(ValidationStage.STRUCTURE, metadataDirOk,
             if (metadataDirOk) emptyList() else listOf("Metadata directory missing, not a directory, unreadable, or outside selected root"))
 
@@ -63,7 +64,7 @@ class InstallationValidator {
         val exeArch = peChecks.firstOrNull { it.first == "mo2.exe" }?.second
         val peOk = peChecks.all { it.second == "x86_64" }
         val metadataVersion = files[required.last()]?.let(::inspectMetadataVersion)
-        val unityVersion = runCatching { findCaseInsensitive(root, "MovingOut2_Data/globalgamemanagers") }
+        val unityVersion = runCatching { findCaseInsensitive(root, UnityDataDirectoryLocator.globalManagersPath(executable?.name ?: "mo2.exe")) }
             .getOrNull()?.takeIf { it.isFile && it.canRead() && it.length() > 0 }
             ?.let { file -> runCatching { file.inputStream().use { UnityGameProfileDetector.detectUnityVersion(readUpTo(it, 256 * 1024)) } }.getOrNull() }
         val versionArchPassed = peOk && metadataVersion != null
