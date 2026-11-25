@@ -248,17 +248,25 @@ jobs:
           BOX64="$RUNNER_TEMP/runtime-input/box64/box64"
           readelf -h "$BOX64" | grep -Eq 'Class:.*ELF64'
           readelf -h "$BOX64" | grep -Eq 'Machine:.*AArch64'
-          readelf -l "$BOX64" | awk '/LOAD/{if ($NF != "0x4000") exit 1; found=1} END{if (!found) exit 1}'
+          echo "Box64 LOAD segment alignment:"
+          readelf -l "$BOX64" | awk '/LOAD/{print "  " $NF; if ($NF != "0x4000") {print "ERROR: Box64 LOAD alignment is not 16 KB: " $NF > "/dev/stderr"; exit 1} found=1} END{if (!found) {print "ERROR: Box64 has no LOAD segments" > "/dev/stderr"; exit 1}}'
           for f in "$WINE_DIR/bin/wine64" "$WINE_DIR/bin/wineserver"; do
+            echo "Checking Wine ELF: $f"
+            readelf -h "$f" | grep -E 'Class:|Machine:'
             readelf -h "$f" | grep -Eq 'Class:.*ELF64'
             readelf -h "$f" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
           done
           find -L "$WINE_DIR/lib/wine" -type f -name '*.so*' -print0 | while IFS= read -r -d '' f; do
+            echo "Checking Wine shared object: $f"
+            readelf -h "$f" | grep -E 'Class:|Type:|Machine:'
             readelf -h "$f" | grep -Eq 'Class:.*ELF64'
             readelf -h "$f" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
             readelf -h "$f" | grep -Eq 'Type:.*DYN'
           done
           for f in "$DXVK_DIR/d3d11.dll" "$DXVK_DIR/dxgi.dll" "$XINPUT_DIR/xinput1_3.dll" "$XINPUT_DIR/xinput1_4.dll" "$XINPUT_DIR/xinput9_1_0.dll"; do
+            echo "Checking PE32+ x86_64: $f"
+            objdump -f "$f" | grep 'architecture:'
+            objdump -p "$f" | grep -Ei 'Magic[[:space:]]+'
             objdump -f "$f" | grep -q 'architecture: i386:x86-64'
             objdump -p "$f" | grep -Eqi 'Magic[[:space:]]+020b'
           done
