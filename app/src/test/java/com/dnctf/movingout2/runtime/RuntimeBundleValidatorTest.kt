@@ -161,7 +161,7 @@ class RuntimeBundleValidatorTest {
     @Test fun validatesCompleteArm64Bundle() {
         val root = bundle()
         val report = RuntimeBundleValidator().validate(root)
-        assertEquals(RuntimeBundleStatus.READY, report.status)
+        assertEquals(report.blockers.toString(), RuntimeBundleStatus.READY, report.status)
         assertTrue(report.isReady)
         root.deleteRecursively()
     }
