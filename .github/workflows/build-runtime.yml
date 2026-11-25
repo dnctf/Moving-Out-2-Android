@@ -301,7 +301,6 @@ jobs:
             dist/moving-out-2-runtime-arm64-v8a.zip.sha256
             dist/SHA256SUMS.txt
           generate_release_notes: true
- <<<"$ALL_WINE_PATHS" || true)"
           WINESERVER_CANDIDATES="$(grep -E '/(wineserver|wineserver-stable)$' <<<"$ALL_WINE_PATHS" || true)"
           WINE64="$(find_wine_elf "$WINE64_CANDIDATES" || true)"
           WINESERVER="$(find_wine_elf "$WINESERVER_CANDIDATES" || true)"
