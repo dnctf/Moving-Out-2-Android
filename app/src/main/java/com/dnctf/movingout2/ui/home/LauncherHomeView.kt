@@ -151,8 +151,8 @@ object LauncherHomeView {
             isFillViewport = true
             clipToPadding = false
             setPadding(dp(16), 0, dp(16), 0)
-            addView(centered, ScrollView.LayoutParams(
-                ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT
+            addView(centered, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT
             ))
             contentDescription = "Moving Out 2 Android launcher"
         }
