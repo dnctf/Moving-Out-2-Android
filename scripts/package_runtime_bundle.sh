@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 usage(){ echo "Usage: $0 --box64 FILE --wine-dir DIR --dxvk-dir DIR --xinput-dir DIR [--turnip-so FILE] [--bundle-version VERSION] --output ZIP" >&2; }
-BOX64= WINE_DIR= DXVK_DIR= XINPUT_DIR= TURNIP_SO= VERSION=1 OUTPUT=
+BOX64='' WINE_DIR='' DXVK_DIR='' XINPUT_DIR='' TURNIP_SO='' VERSION=1 OUTPUT=''
 while (($#)); do case "$1" in
  --box64) BOX64=${2:?};shift 2;; --wine-dir) WINE_DIR=${2:?};shift 2;; --dxvk-dir) DXVK_DIR=${2:?};shift 2;; --xinput-dir) XINPUT_DIR=${2:?};shift 2;;
  --turnip-so) TURNIP_SO=${2:?};shift 2;; --bundle-version) VERSION=${2:?};shift 2;; --output) OUTPUT=${2:?};shift 2;;
@@ -34,7 +34,7 @@ check_pe_x64 "$DXVK_DIR/dxgi.dll"
 check_pe_x64 "$XINPUT_DIR/xinput1_3.dll"
 check_pe_x64 "$XINPUT_DIR/xinput1_4.dll"
 if [[ -n "$TURNIP_SO" ]];then [[ -s "$TURNIP_SO" ]] || { echo "Turnip SO missing/empty" >&2;exit 1;}; ICD="$(dirname "$TURNIP_SO")/freedreno_icd.aarch64.json"; [[ -s "$ICD" ]] || { echo "Expected ICD JSON beside Turnip SO: $ICD" >&2;exit 1;};fi
-OUT_DIR="$(dirname "$OUTPUT")";mkdir -p "$OUT_DIR";OUTPUT="$(cd "$OUT_DIR" && pwd)/$(basename "$OUTPUT")";TMP="$(mktemp -d)";trap "rm -rf \"$TMP\"" EXIT
+OUT_DIR="$(dirname "$OUTPUT")";mkdir -p "$OUT_DIR";OUTPUT="$(cd "$OUT_DIR" && pwd)/$(basename "$OUTPUT")";TMP="$(mktemp -d)";trap 'rm -rf "$TMP"' EXIT
 ROOT="$TMP/root";mkdir -p "$ROOT/box64/bin" "$ROOT/wine/bin" "$ROOT/wine/lib" "$ROOT/dxvk/x64"
 cp "$BOX64" "$ROOT/box64/bin/box64";cp "$WINE_DIR/bin/wine64" "$ROOT/wine/bin/wine64";cp "$WINE_DIR/bin/wineserver" "$ROOT/wine/bin/wineserver"
 cp -a "$WINE_DIR/lib/wine" "$ROOT/wine/lib/wine";mkdir -p "$ROOT/wine/lib/wine/x86_64-windows";cp "$DXVK_DIR/d3d11.dll" "$ROOT/dxvk/x64/";cp "$DXVK_DIR/dxgi.dll" "$ROOT/dxvk/x64/"
