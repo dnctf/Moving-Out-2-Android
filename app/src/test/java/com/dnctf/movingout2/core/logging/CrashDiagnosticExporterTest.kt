@@ -25,4 +25,27 @@ class CrashDiagnosticExporterTest {
   }
   temp.deleteRecursively()
  }
+ @Test fun exportsFailurePathExitCodeStderrAndStackTraceWithoutTruncation() {
+  val temp=Files.createTempDirectory("diagnostic-failure").toFile()
+  val failure = runCatching { throw IllegalStateException("HTTP 404 while fetching runtime asset") }.exceptionOrNull()!!
+  val trace = java.io.StringWriter().also { failure.printStackTrace(java.io.PrintWriter(it)) }.toString()
+  val details = "stage=download; target=/data/user/0/com.dnctf.movingout2/files/cache/runtime-download.zip; exitCode=127; stderr=exec format error; $trace"
+  val zip=CrashDiagnosticExporter(temp).export(
+   """{"device":"test"}""", """{"status":"not_selected"}""", """{"status":"NOT_FOUND"}""",
+   listOf(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR,"runtime-installer",details)),
+   exitCode=127,
+   crashInfo="runtime download/launch failed"
+  )
+  ZipFile(zip).use { archive ->
+   val log=archive.getInputStream(archive.getEntry("runtime-process.log")).bufferedReader().readText()
+   assertTrue(log.contains("runtime-download.zip"))
+   assertTrue(log.contains("exitCode=127"))
+   assertTrue(log.contains("stderr=exec format error"))
+   assertTrue(log.contains("IllegalStateException: HTTP 404"))
+   assertTrue(log.contains("Crash info: runtime download/launch failed"))
+   assertTrue(log.contains("Process exit code: 127"))
+  }
+  temp.deleteRecursively()
+ }
+
 }
