@@ -236,7 +236,8 @@ class WineRuntimeLauncher(
     }
 
     private fun isValidX64Pe(file: File): Boolean =
-        RuntimeBinaryInspector.matches(file, RuntimeBinaryInspector.PE32_PLUS_X86_64)}
+        RuntimeBinaryInspector.matches(file, RuntimeBinaryInspector.PE32_PLUS_X86_64)
+}
 
 /** Cleanup steps are ordered and failure-isolated so later resources are still released. */
 internal fun runRuntimeCleanupSequence(neutralize: () -> Boolean, stopProcess: () -> Boolean, destroyBridge: () -> Boolean, stopServer: () -> Boolean): Boolean {
