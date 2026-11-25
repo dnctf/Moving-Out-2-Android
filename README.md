@@ -198,9 +198,9 @@ This project publishes the Android application and the emulation runtime as **se
 
 ### Latest Runtime Bundle
 
-- **Runtime release:** [Moving Out 2 Runtime 0.1.0 (pre-release)](https://github.com/dnctf/Moving-Out-2-Android/releases/tag/runtime-v0.1.0-23)
-- **Runtime archive:** [moving-out-2-runtime-arm64-v8a.zip](https://github.com/dnctf/Moving-Out-2-Android/releases/download/runtime-v0.1.0-23/moving-out-2-runtime-arm64-v8a.zip)
-- **Runtime checksums:** [SHA256SUMS.txt](https://github.com/dnctf/Moving-Out-2-Android/releases/download/runtime-v0.1.0-23/SHA256SUMS.txt)
+- **Runtime release:** [Moving Out 2 Runtime 0.1.0 (pre-release)](https://github.com/dnctf/Moving-Out-2-Android/releases/tag/runtime-v0.1.0-33)
+- **Runtime archive:** [moving-out-2-runtime-arm64-v8a.zip](https://github.com/dnctf/Moving-Out-2-Android/releases/download/runtime-v0.1.0-33/moving-out-2-runtime-arm64-v8a.zip)
+- **Runtime checksums:** [SHA256SUMS.txt](https://github.com/dnctf/Moving-Out-2-Android/releases/download/runtime-v0.1.0-33/SHA256SUMS.txt)
 
 Runtime package schema v2 contains the ARM64 Box64 host binary, x86_64 Wine executables and guest libraries, DXVK D3D11/DXGI DLLs, XInput 1.3/1.4 DLLs, and a manifest with component ABI declarations and SHA-256 hashes. Optional Turnip components are included only when supplied to the packager.
 
@@ -213,11 +213,11 @@ APK pre-releases are published independently by the **Publish Android APK Pre-Re
 - `SHA256SUMS.txt` for integrity verification.
 - Release notes describing the build, installation, limitations and test status.
 
-Open [GitHub Releases](https://github.com/dnctf/Moving-Out-2-Android/releases) and select the latest `app-v*` pre-release. The APK release workflow is manually triggered from **Actions → Publish Android APK Pre-Release → Run workflow**. The default version is `0.2.0-alpha.1`.
+Open [GitHub Releases](https://github.com/dnctf/Moving-Out-2-Android/releases) and select the latest `app-v*` pre-release. The APK release workflow is manually triggered from **Actions → Publish Android APK Pre-Release → Run workflow**. The current update version is `0.2.0-alpha.2` (Android `versionCode` 2). The release workflow can be run manually, and it also runs when the release workflow or app version configuration changes on `main`.
 
 ### Installation Order
 
-1. Install the APK. If Android reports a signature conflict with an older build, uninstall the older build first; this release workflow currently produces an unsigned APK.
+1. Install the APK. If Android reports a signature conflict with an older build, uninstall the older build first; this alpha is signed with a CI-generated debug key. Because the key is not persistent across fresh runners, uninstall the older alpha first if Android reports a signature mismatch. The incremented `versionCode` supports normal upgrade ordering when the signing identity matches.
 2. Open the app and use its runtime setup/download flow, or download the runtime ZIP above and import it through the app if prompted.
 3. Import your own legally obtained Moving Out 2 Windows game directory/archive. The game itself is not distributed here.
 4. Connect a controller or configure the on-screen controls, then launch only after the app reports that game files and runtime validation have passed.
@@ -240,7 +240,7 @@ sha256sum -c SHA256SUMS.txt
 
 If the checksum file contains a filename different from the downloaded APK filename, compare the hash manually:
 ```bash
-sha256sum Moving-Out-2-Android-*-arm64-v8a-unsigned.apk
+sha256sum Moving-Out-2-Android-*-arm64-v8a-*.apk
 cat SHA256SUMS.txt
 ```
 
