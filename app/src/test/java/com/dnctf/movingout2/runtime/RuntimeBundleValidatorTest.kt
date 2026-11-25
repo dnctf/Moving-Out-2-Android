@@ -115,7 +115,7 @@ class RuntimeBundleValidatorTest {
             val abi = when (key) {
                 "box64" -> RuntimeBinaryInspector.ELF64_AARCH64
                 "wine64", "wineserver" -> RuntimeBinaryInspector.ELF64_X86_64
-                "d3d11", "dxgi", "xinput1_3", "xinput1_4" -> RuntimeBinaryInspector.PE32_PLUS_X86_64
+                "d3d11", "dxgi", "xinput1_3", "xinput1_4", "xinput9_1_0", "vcruntime140", "vcruntime140_1", "msvcp140" -> RuntimeBinaryInspector.PE32_PLUS_X86_64
                 else -> "JSON"
             }
             components.put(
@@ -135,6 +135,10 @@ class RuntimeBundleValidatorTest {
         addFile("dxgi", "dxvk/x64/dxgi.dll", pe32PlusX64())
         addFile("xinput1_3", "wine/lib/wine/x86_64-windows/xinput1_3.dll", pe32PlusX64())
         addFile("xinput1_4", "wine/lib/wine/x86_64-windows/xinput1_4.dll", pe32PlusX64())
+        addFile("xinput9_1_0", "wine/lib/wine/x86_64-windows/xinput9_1_0.dll", pe32PlusX64())
+        addFile("vcruntime140", "wine/lib/wine/x86_64-windows/vcruntime140.dll", pe32PlusX64())
+        addFile("vcruntime140_1", "wine/lib/wine/x86_64-windows/vcruntime140_1.dll", pe32PlusX64())
+        addFile("msvcp140", "wine/lib/wine/x86_64-windows/msvcp140.dll", pe32PlusX64())
 
         val libraryDirectory = File(root, "wine/lib/wine").apply { mkdirs() }
         File(libraryDirectory, "module.so").writeBytes(arm64Elf(machine = 62).also { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).putLong(24, 0L) })
