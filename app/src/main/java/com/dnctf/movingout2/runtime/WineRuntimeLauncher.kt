@@ -26,7 +26,8 @@ data class WineLaunchOptions(
     val height: Int = 720,
     val fpsCap: Int = 60,
     val useTurnip: Boolean = true,
-    val useDxvk: Boolean = true
+    val useDxvk: Boolean = true,
+    val environmentOverrides: Map<String, String> = emptyMap()
 )
 
 /** Prepares an isolated prefix and builds a Box64 -> Wine launch plan. Presence checks do not prove runtime compatibility. */
