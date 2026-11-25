@@ -113,7 +113,7 @@ class AndroidExecCapabilityProbe(
                 "Executable is missing or lacks execute permission: ${file.absolutePath}")
         }
         return try {
-            val bundleRoot = bundleExecutable.parentFile?.parentFile?.canonicalFile
+            val bundleRoot = bundleExecutable.parentFile?.parentFile?.parentFile?.canonicalFile
             val environment = buildMap {
                 put("LD_LIBRARY_PATH", nativeLibraryDirectory.absolutePath)
                 if (bundleRoot != null) {
