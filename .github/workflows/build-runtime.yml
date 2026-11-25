@@ -24,7 +24,7 @@ on:
       bundle_version:
         description: "Runtime bundle version"
         required: false
-        default: "0.1.0"
+        default: "0.1.1"
         type: string
 
 permissions:
@@ -253,7 +253,7 @@ jobs:
             --wine-dir "$RUNNER_TEMP/runtime-input/wine" \
             --dxvk-dir "$RUNNER_TEMP/runtime-input/dxvk/x64" \
             --xinput-dir "$RUNNER_TEMP/runtime-input/xinput" \
-            --bundle-version "${{ inputs.bundle_version || '0.1.0' }}" \
+            --bundle-version "${{ inputs.bundle_version || '0.1.1' }}" \
             --output "dist/moving-out-2-runtime-arm64-v8a.zip"
           test -s dist/SHA256SUMS.txt
           sha256sum dist/moving-out-2-runtime-arm64-v8a.zip > dist/moving-out-2-runtime-arm64-v8a.zip.sha256
@@ -286,5 +286,5 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # Runtime is an intermediate artifact. The APK release workflow consumes
-      # this artifact and publishes APK + runtime + checksums together.
+      # Runtime is an intermediate artifact only. Publish Android APK + runtime +
+      # checksums together from publish-apk-prerelease.yml after this run succeeds.
