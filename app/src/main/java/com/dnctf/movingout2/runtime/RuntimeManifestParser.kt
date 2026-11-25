@@ -24,6 +24,11 @@ class RuntimeManifestParser {
         }
         if (json.optInt("schemaVersion", -1) != 2) errors += "schemaVersion must be 2 (explicit component ABI/provenance required)"
         if (json.optString("targetAbi") != "arm64-v8a") errors += "targetAbi must be arm64-v8a"
+        val provenance = json.optJSONObject("provenance")
+        if (provenance == null || provenance.optString("packager").isBlank() ||
+            provenance.optString("manifestFormat") != "role-validated-abi-v2") {
+            errors += "Manifest provenance is missing or unsupported."
+        }
         val components = json.optJSONObject("components") ?: run { errors += "components object missing"; JSONObject() }
 
         fun verify(key: String, fallback: String, required: Boolean, expectedAbi: String, directory: Boolean = false) {
@@ -65,8 +70,8 @@ class RuntimeManifestParser {
         verify("d3d11", "dxvk/x64/d3d11.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
         verify("dxgi", "dxvk/x64/dxgi.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
         if (components.optJSONObject("turnip")?.optBoolean("included", false) == true) {
-            verify("turnipSo", "turnip/libvulkan_freedreno.so", false, RuntimeBinaryInspector.ELF64_AARCH64)
-            verify("turnipIcd", "turnip/freedreno_icd.aarch64.json", false, "JSON")
+            verify("turnipSo", "turnip/libvulkan_freedreno.so", true, RuntimeBinaryInspector.ELF64_AARCH64)
+            verify("turnipIcd", "turnip/freedreno_icd.aarch64.json", true, "JSON")
         }
         return RuntimeManifestValidation(errors.isEmpty(), errors.distinct(), json, files)
     }
