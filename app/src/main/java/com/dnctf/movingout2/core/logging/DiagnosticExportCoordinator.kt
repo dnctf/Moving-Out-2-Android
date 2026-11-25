@@ -96,6 +96,25 @@ class DiagnosticExportCoordinator(
                     .put("reason", "Runtime bundle did not pass structural validation; Box64 was not executed."))
             }
 
+            val execAllowed = runtimeJson.optJSONObject("execProbe")?.optBoolean("allowed", false) == true
+            val gameFilesPresent = gameJson.optString("status") == "files_present" &&
+                gameJson.optString("source") == "INTERNAL_IMPORTED"
+            val launchState = com.dnctf.movingout2.runtime.RuntimeInstallationState(
+                runtime.isReady, execAllowed, gameFilesPresent
+            )
+            runtimeJson.put("launchReadiness", launchState.launchReadiness)
+            gameJson.put("launchReadiness", launchState.launchReadiness)
+
+            val runtimeProcessLog = File(appContext.filesDir, "diagnostics/runtime-process.log")
+            if (runtimeProcessLog.isFile) {
+                runCatching { runtimeProcessLog.readText(Charsets.UTF_8).takeLast(MAX_SESSION_LOG_CHARS) }
+                    .onSuccess { runtimeJson.put("runtimeProcessLog", JSONObject().put("path", runtimeProcessLog.absolutePath)
+                        .put("bytes", runtimeProcessLog.length()).put("tail", it)) }
+            } else {
+                runtimeJson.put("runtimeProcessLog", JSONObject().put("status", "not_found")
+                    .put("path", runtimeProcessLog.absolutePath))
+            }
+
             val sessionLog = File(appContext.filesDir, "diagnostics/wine_session.log")
             if (sessionLog.isFile) {
                 diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "wine-session",
