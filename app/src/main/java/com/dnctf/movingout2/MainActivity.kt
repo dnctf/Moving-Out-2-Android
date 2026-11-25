@@ -9,6 +9,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.os.Bundle
 import android.content.Intent
+import android.net.Uri
 import android.widget.TextView
 import android.widget.LinearLayout
 import android.widget.SeekBar
@@ -56,6 +57,11 @@ class MainActivity : Activity() {
     private lateinit var physicalGamepadManager: PhysicalGamepadManager
     private val inputBridge = RuntimeInputBridge()
     private val runtimeInstallInProgress = AtomicBoolean(false)
+    private val gameImportInProgress = AtomicBoolean(false)
+    private val launchReadinessCoordinator = com.dnctf.movingout2.runtime.LaunchReadinessCoordinator()
+    @Volatile private var vulkanAvailable = false
+    @Volatile private var graphicsProbeComplete = false
+    @Volatile private var lastLaunchReady = false
     private val diagnosticLog = RuntimeDiagnostics()
     private var pendingDiagnosticZip: File? = null
     private val pickDiagnosticDestination = 1004
@@ -107,8 +113,19 @@ class MainActivity : Activity() {
                 },
                 onAggregateState = { /* Per-device routing owns XInput slots. */ }
             )
-            status.text = if (repository.savedUri() != null) "Saved installation folder found. Tap Revalidate to check current access."
-                else "Import the game ZIP or select an existing game folder."
+            val activeAtStartup = gameRegistry.getActiveGame()
+            status.text = if (activeAtStartup?.source == com.dnctf.movingout2.core.model.InstallationSource.SAF_DIRECTORY) {
+                "Saved SAF game folder found. Importing automatically into app storage…"
+            } else if (activeAtStartup != null) {
+                "Imported game installation found. Refreshing launch readiness…"
+            } else if (repository.savedUri() != null) {
+                "Saved game folder found. Checking access and importing automatically…"
+            } else "Import the game ZIP or select an existing game folder."
+            if (activeAtStartup?.source == com.dnctf.movingout2.core.model.InstallationSource.SAF_DIRECTORY) {
+                startSafGameImport(Uri.parse(activeAtStartup.location))
+            } else if (activeAtStartup == null) {
+                repository.savedUri()?.let(::startSafGameImport)
+            }
             refreshRuntimeStatus()
             probeGraphicsAsync()
             ensureRuntimeInstalledOnFirstLaunch()
@@ -227,6 +244,47 @@ class MainActivity : Activity() {
         startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE); type = "application/json"; putExtra(Intent.EXTRA_TITLE, "moving-out-2-controller-profile.json")
         }, pickControllerProfileExport)
+    }
+
+    private fun startSafGameImport(uri: Uri) {
+        if (!gameImportInProgress.compareAndSet(false, true)) return
+        val progress = ProgressDialog(this).apply {
+            setTitle("Importing game folder")
+            setMessage("Copying SAF files into private app storage…")
+            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+            setMax(100)
+            setProgress(0)
+            setCancelable(false)
+            show()
+        }
+        Thread({
+            val result = runCatching {
+                com.dnctf.movingout2.installation.SafGameImporter(this).import(uri, onProgress = { update ->
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) {
+                            progress.progress = update.percent
+                            progress.setMessage("Copying game files: ${update.percent}% (${update.copiedFiles} files, ${update.copiedBytes / (1024 * 1024)} MiB)")
+                        }
+                    }
+                })
+            }
+            gameImportInProgress.set(false)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                progress.dismiss()
+                result.onSuccess { imported ->
+                    val activeGame = gameRegistry.registerImportedZip(imported.gameRoot)
+                    activateControllerProfileForGame(activeGame)
+                    status.text = "SAF game folder imported automatically to ${imported.gameRoot.absolutePath}.\nFiles: ${imported.copiedFiles} | Copied: ${imported.copiedBytes / (1024 * 1024)} MiB\nGame validation: ${activeGame.validationStatus}"
+                    refreshRuntimeStatus()
+                    Toast.makeText(this, "Game files copied and validated in app storage.", Toast.LENGTH_LONG).show()
+                }.onFailure { error ->
+                    status.text = "Automatic SAF import failed safely: ${error.message ?: error.javaClass.simpleName}\nThe original SAF folder was not modified. Check free storage and permissions."
+                    diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "saf-game-import", status.text.toString()))
+                    Toast.makeText(this, "Game folder import failed: ${error.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }, "saf-game-import").apply { isDaemon = true; start() }
     }
 
     private fun openFolderPicker() {
@@ -407,26 +465,31 @@ class MainActivity : Activity() {
 
 
     private fun probeGraphicsAsync() {
+        graphicsProbeComplete = false
         graphicsStatus.text = "Probing Vulkan loader and physical device..."
         Thread({
             val device = runCatching { DeviceDiagnosticsProvider.collect(this) }
             val result = runCatching { VulkanCapabilities.probe(this) }
+            vulkanAvailable = result.getOrNull()?.available == true
+            graphicsProbeComplete = true
             runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 val deviceText = device.getOrNull()?.let {
-                    "Device: ${it.manufacturer} ${it.model}\\nSoC: ${it.soc}\\nCPU ABI: ${it.abi.joinToString()}\\nRAM: ${it.ramBytes?.div(1024 * 1024) ?: "unknown"} MiB (free ${it.availableRamBytes?.div(1024 * 1024) ?: "unknown"} MiB)\\nGPU family hint: ${it.gpuVendorHint}"
+                    "Device: ${it.manufacturer} ${it.model}\nSoC: ${it.soc}\nCPU ABI: ${it.abi.joinToString()}\nRAM: ${it.ramBytes?.div(1024 * 1024) ?: "unknown"} MiB (free ${it.availableRamBytes?.div(1024 * 1024) ?: "unknown"} MiB)\nGPU family hint: ${it.gpuVendorHint}"
                 } ?: "Device detection unavailable."
                 graphicsStatus.text = result.fold({ probe ->
                     buildString {
                         append(deviceText)
-                        append("\\n\\nActive Vulkan driver: ").append(probe.nativeProbeStatus ?: "unavailable")
-                        append("\\nVulkan API: ").append(probe.apiVersion ?: "unknown")
-                        append("\\nVulkan driver version (raw): ").append(probe.driverVersionRaw ?: "unavailable")
-                        append("\\nGPU: ").append(probe.gpuVendor ?: "unknown").append(" / ").append(probe.gpuName ?: "unknown")
-                        append("\\nDevice extensions: ").append(probe.extensions.size)
-                        append("\\nDriver policy: use the Android system Vulkan driver; do not force-load Turnip unless device/driver compatibility is verified.")
-                        if (probe.blockers.isNotEmpty()) append("\\n\\nNotes:\\n- ").append(probe.blockers.joinToString("\\n- "))
+                        append("\n\nActive Vulkan driver: ").append(probe.nativeProbeStatus ?: "unavailable")
+                        append("\nVulkan API: ").append(probe.apiVersion ?: "unknown")
+                        append("\nVulkan driver version (raw): ").append(probe.driverVersionRaw ?: "unavailable")
+                        append("\nGPU: ").append(probe.gpuVendor ?: "unknown").append(" / ").append(probe.gpuName ?: "unknown")
+                        append("\nDevice extensions: ").append(probe.extensions.size)
+                        append("\nDriver policy: use the Android system Vulkan driver; do not force-load Turnip unless compatibility is verified.")
+                        if (probe.blockers.isNotEmpty()) append("\n\nNotes:\n- ").append(probe.blockers.joinToString("\n- "))
                     }
-                }, { deviceText + "\\n\\nVulkan probe failed: ${it.message ?: it.javaClass.simpleName}" })
+                }, { deviceText + "\n\nVulkan probe failed: ${it.message ?: it.javaClass.simpleName}" })
+                refreshRuntimeStatus()
             }
         }, "graphics-probe").apply { isDaemon = true; start() }
     }
@@ -436,34 +499,52 @@ class MainActivity : Activity() {
         val report = RuntimeBundleValidator().validate(root)
         val graphics = RuntimeGraphicsComponents.assess(root)
         if (!report.isReady || report.box64 == null) {
+            lastLaunchReady = false
             playButton.isEnabled = false
             playButton.alpha = 0.55f
             runtimeStatus.text = "Runtime bundle: ${report.status}\nLaunch readiness: BLOCKED (runtime not validated)\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${report.blockers.joinToString("\n")}\n${graphics.notes.joinToString("\n")}"
             return
         }
+        lastLaunchReady = false
         playButton.isEnabled = false
         playButton.alpha = 0.55f
-        runtimeStatus.text = "Runtime bundle: READY (checking nativeLibraryDir exec capability)…"
+        runtimeStatus.text = "Runtime bundle: READY (checking nativeLibraryDir exec capability and Vulkan)…"
         Thread({
             val exec = runCatching { AndroidExecCapabilityProbe(this, diagnosticLog).probe(report.box64) }
             val active = runCatching { gameRegistry.getActiveGame() }.getOrNull()
             val gamePresent = active?.isReadyToLaunch == true &&
                 active.source == com.dnctf.movingout2.core.model.InstallationSource.INTERNAL_IMPORTED &&
-                active.executableFile?.isFile == true
-            val readiness = RuntimeInstallationState(report.isReady, exec.getOrNull()?.allowed == true, gamePresent)
+                active.executableFile?.isFile == true &&
+                active.executableFile?.canonicalFile?.toPath()?.startsWith(File(filesDir, "game_data").canonicalFile.toPath()) == true
+            val dxvkReady = graphics.dxvk == "FILES_PRESENT_UNVERIFIED"
+            val snapshot = com.dnctf.movingout2.runtime.LaunchReadinessSnapshot(
+                gameImportedToAppStorage = gamePresent,
+                runtimeBundleReady = report.isReady && dxvkReady,
+                execProbeAllowed = exec.getOrNull()?.allowed == true,
+                vulkanAvailable = vulkanAvailable,
+                refreshComplete = graphicsProbeComplete
+            )
+            val decision = launchReadinessCoordinator.evaluate(snapshot)
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                playButton.isEnabled = readiness.canLaunch
-                playButton.alpha = if (readiness.canLaunch) 1f else 0.55f
+                lastLaunchReady = decision.playEnabled
+                val running = activeWineSession?.state == WineSessionState.RUNNING
+                playButton.isEnabled = decision.playEnabled || running
+                playButton.alpha = if (playButton.isEnabled) 1f else 0.55f
                 val execText = exec.getOrNull()?.let { "${it.capability}: ${it.detail}" }
                     ?: "EXEC_PROBE_FAILED: ${exec.exceptionOrNull()?.message}"
                 val gameText = when {
                     active == null -> "Game: NOT_SELECTED"
-                    active.source != com.dnctf.movingout2.core.model.InstallationSource.INTERNAL_IMPORTED -> "Game: FILES_PRESENT (SAF source must be imported into app storage before launch)"
-                    gamePresent -> "Game: FILES_PRESENT"
+                    active.source != com.dnctf.movingout2.core.model.InstallationSource.INTERNAL_IMPORTED ->
+                        "Game: FILES_PRESENT (automatic SAF import pending)"
+                    gamePresent -> "Game: IMPORTED_TO_APP_STORAGE"
                     else -> "Game: ${active.validationStatus}"
                 }
-                runtimeStatus.text = "Runtime bundle: READY\nBox64 execution: ${if (readiness.execProbeAllowed) "ALLOWED" else "BLOCKED"}\n${execText}\n${gameText}\nLaunch readiness: ${readiness.launchReadiness}\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${graphics.notes.joinToString("\n")}"
+                runtimeStatus.text = "Runtime bundle: READY\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\nBox64 execution: ${if (snapshot.execProbeAllowed) "ALLOWED" else "BLOCKED"}\n${execText}\n${gameText}\nVulkan: ${if (vulkanAvailable) "AVAILABLE" else if (graphicsProbeComplete) "UNAVAILABLE" else "CHECKING"}\nLaunch readiness: ${decision.readiness}\n${graphics.notes.joinToString("\n")}"
+                if (decision.shouldAutoLaunch && !running) {
+                    diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "auto-launch", "All game/runtime/exec/Vulkan checks passed; triggering one automatic launch for this Activity session."))
+                    playButton.post { if (!isFinishing && !isDestroyed) startGameSession() }
+                }
             }
         }, "runtime-launch-readiness").apply { isDaemon = true; start() }
     }
@@ -563,8 +644,8 @@ class MainActivity : Activity() {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 val activeGame = gameRegistry.registerSafFolder(uri)
                 activateControllerProfileForGame(activeGame)
-                status.text = formatReport(GameInstallationManager(this).validate(uri))
-                refreshRuntimeStatus()
+                status.text = formatReport(GameInstallationManager(this).validate(uri)) + "\n\nAutomatic copy into app storage is starting…"
+                startSafGameImport(uri)
             } catch (e: Exception) { status.text = "Folder import failed safely: ${e.message ?: e.javaClass.simpleName}" }
             pickRuntimeZip -> {
                 runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
