@@ -1,15 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <!-- moving box -->
-    <path android:fillColor="#FFF3E0" android:pathData="M22,35L53,20L86,34L54,50z"/>
-    <path android:fillColor="#E58B32" android:pathData="M22,35L54,50L54,86L22,69z"/>
-    <path android:fillColor="#C66A20" android:pathData="M54,50L86,34L86,70L54,86z"/>
-    <!-- packing tape -->
-    <path android:fillColor="#FFE082" android:pathData="M47,26L59,21L59,48L47,43z"/>
-    <path android:fillColor="#FFF8E1" android:pathData="M47,43L59,48L59,86L47,80z"/>
-    <!-- wing/motion arrow -->
-    <path android:fillColor="#FFFFFF" android:pathData="M12,18L33,18L33,10L45,25L33,40L33,32L12,32z"/>
-    <!-- stylized numeral 2 -->
-    <path android:fillColor="#FFFFFF" android:pathData="M62,55C62,48 68,43 75,43C82,43 87,48 87,55C87,61 82,66 77,70L69,76L88,76L88,84L60,84L60,77L72,66C78,61 80,59 80,55C80,52 78,50 75,50C72,50 70,52 70,55z"/>
-</vector>
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/moving_out_2_logo"
+    android:gravity="center" />
