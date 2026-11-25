@@ -39,12 +39,24 @@ class WineRuntimeLauncher(
     private val sharedInput = File(context.filesDir, "xinput_shm.bin")
     private val validator = RuntimeBundleValidator()
     private val inputBridge = RuntimeInputBridge()
+    private val execCapabilityProbe = AndroidExecCapabilityProbe(context, diagnostics)
 
     fun prepare(gameExe: File, options: WineLaunchOptions = WineLaunchOptions()): LaunchPreparationResult {
         val report = validator.validate(bundleRoot)
         val blockers = report.blockers.toMutableList()
         if (!report.isReady) return LaunchPreparationResult.MissingPayload(blockers)
         val root = report.root ?: return LaunchPreparationResult.MissingPayload(listOf("Runtime bundle root is unavailable."))
+        val box64Candidate = report.box64 ?: return LaunchPreparationResult.MissingPayload(listOf("Box64 host executable is unavailable."))
+        val execCapability = execCapabilityProbe.probe(box64Candidate)
+        if (!execCapability.allowed) {
+            val detail = when (execCapability.capability) {
+                AndroidExecCapability.EXEC_BLOCKED_SELINUX_EACCES ->
+                    "Android denied executable launch (EACCES/SELinux execute_no_trans). Runtime launch is blocked before wineserver startup. ${execCapability.detail}"
+                else -> "Android executable capability probe failed; runtime launch is blocked before wineserver startup. ${execCapability.detail}"
+            }
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "exec-probe", detail))
+            return LaunchPreparationResult.MissingPayload(listOf(detail))
+        }
         val properties = Properties()
         val manifestFile = File(root, "runtime-manifest.json")
         if (manifestFile.isFile) {
@@ -101,14 +113,20 @@ class WineRuntimeLauncher(
             if (!sharedInput.exists()) sharedInput.writeBytes(ByteArray(128))
             val zPath = toWineZPath(gameExe)
             val args = WineLaunchCommand.arguments(wine!!.absolutePath, zPath, options.width, options.height)
-            val env = WineLaunchCommand.environment(prefix, sharedInput, report.libraryDirectory!!, options.fpsCap, if (options.useTurnip && turnipDir != null) icd else null, dxvkDlls).toMutableMap()
+            val hostLibraryDirectory = turnipLibrary?.parentFile ?: File(context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
+            val env = WineLaunchCommand.environment(
+                prefix, sharedInput, hostLibraryDirectory, options.fpsCap,
+                if (options.useTurnip && turnipDir != null) icd else null, dxvkDlls,
+                guestLibraryDirectory = report.libraryDirectory,
+                guestBinaryDirectory = wine!!.parentFile
+            ).toMutableMap()
             properties.stringPropertyNames().filter { it.startsWith("profile_env_") }.forEach { p ->
                 val envKey = p.removePrefix("profile_env_")
                 if (envKey.startsWith("BOX64_DYNAREC") || envKey == "WINEDLLOVERRIDES") env[envKey] = properties.getProperty(p)
             }
 
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "launcher", "Prepared Wine prefix and launch plan; execution compatibility remains unverified."))
-            return LaunchPreparationResult.Prepared(WineLaunchPlan(box64!!, args, env, gameExe.parentFile ?: root, prefix, gameExe))
+            return LaunchPreparationResult.Prepared(WineLaunchPlan(execCapability.executable ?: box64Candidate, args, env, gameExe.parentFile ?: root, prefix, gameExe))
         } catch (e: Exception) {
             return LaunchPreparationResult.MissingPayload(listOf("Wine prefix preparation failed: ${e.message ?: e.javaClass.simpleName}"))
         }
