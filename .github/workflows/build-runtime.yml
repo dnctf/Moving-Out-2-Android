@@ -157,7 +157,7 @@ jobs:
               [[ -n "$path" && -e "$path" ]] || continue
               resolved="$(readlink -f "$path")"
               [[ -x "$resolved" && -s "$resolved" ]] || continue
-              if ! header="$(llvm-readelf -h "$resolved" 2>/dev/null)"; then
+              if ! header="$(readelf -h "$resolved" 2>/dev/null)"; then
                 continue
               fi
               if grep -Eq 'Class:.*ELF64' <<<"$header" &&
@@ -188,8 +188,8 @@ jobs:
           cp -aL "$WINE_LIB_DIR" "$RUNNER_TEMP/runtime-input/wine/lib/wine"
           find -L "$RUNNER_TEMP/runtime-input/wine/lib/wine" -type f -name '*.so*' -print -quit | grep -q .
           echo "Resolved Wine ELF launchers:"
-          llvm-readelf -h "$WINE64" | grep -E 'Class:|Machine:'
-          llvm-readelf -h "$WINESERVER" | grep -E 'Class:|Machine:'
+          readelf -h "$WINE64" | grep -E 'Class:|Machine:'
+          readelf -h "$WINESERVER" | grep -E 'Class:|Machine:'
           echo "Wine source: Ubuntu signed apt packages wine64 + libwine:amd64"
           dpkg-query -W -f='${Package}=${Version}\n' wine64 libwine:amd64 | tee "$RUNNER_TEMP/wine-package-versions.txt"
 
@@ -224,20 +224,20 @@ jobs:
           DXVK_DIR="$RUNNER_TEMP/runtime-input/dxvk/x64"
           XINPUT_DIR="$RUNNER_TEMP/runtime-input/xinput"
           BOX64="$RUNNER_TEMP/runtime-input/box64/box64"
-          llvm-readelf -h "$BOX64" | grep -Eq 'Class:.*ELF64'
-          llvm-readelf -h "$BOX64" | grep -Eq 'Machine:.*AArch64'
+          readelf -h "$BOX64" | grep -Eq 'Class:.*ELF64'
+          readelf -h "$BOX64" | grep -Eq 'Machine:.*AArch64'
           for f in "$WINE_DIR/bin/wine64" "$WINE_DIR/bin/wineserver"; do
-            llvm-readelf -h "$f" | grep -Eq 'Class:.*ELF64'
-            llvm-readelf -h "$f" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
+            readelf -h "$f" | grep -Eq 'Class:.*ELF64'
+            readelf -h "$f" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
           done
           find -L "$WINE_DIR/lib/wine" -type f -name '*.so*' -print0 | while IFS= read -r -d '' f; do
-            llvm-readelf -h "$f" | grep -Eq 'Class:.*ELF64'
-            llvm-readelf -h "$f" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
-            llvm-readelf -h "$f" | grep -Eq 'Type:.*DYN'
+            readelf -h "$f" | grep -Eq 'Class:.*ELF64'
+            readelf -h "$f" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
+            readelf -h "$f" | grep -Eq 'Type:.*DYN'
           done
           for f in "$DXVK_DIR/d3d11.dll" "$DXVK_DIR/dxgi.dll" "$XINPUT_DIR/xinput1_3.dll" "$XINPUT_DIR/xinput1_4.dll"; do
-            llvm-readobj --file-headers "$f" | grep -Eq 'Format:.*COFF-x86-64'
-            llvm-readobj --file-headers "$f" | grep -Eqi 'Magic:.*0x20b'
+            objdump -p "$f" | objdump -f "$f" | grep -q 'architecture: i386:x86-64'
+            objdump -p "$f" | grep -Eqi 'Magic[[:space:]]+020b'
           done
 
       - name: Package runtime manifest v2
