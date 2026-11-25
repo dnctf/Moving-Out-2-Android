@@ -16,7 +16,7 @@ class RuntimeManifestParserTest {
    "box64" -> RuntimeBinaryInspector.ELF64_AARCH64
    "turnipSo" -> RuntimeBinaryInspector.ELF64_AARCH64_SHARED
    "wine64", "wineserver" -> RuntimeBinaryInspector.ELF64_X86_64
-   "d3d11", "dxgi" -> RuntimeBinaryInspector.PE32_PLUS_X86_64
+   "d3d11", "dxgi", "xinput1_3", "xinput1_4" -> RuntimeBinaryInspector.PE32_PLUS_X86_64
    else -> "JSON"
   }
   components.put(key,JSONObject().put("included",true).put("path",path).put("sha256",sha(f)).put("abi",abi))}
@@ -27,6 +27,8 @@ class RuntimeManifestParserTest {
   components.put("wineLib",JSONObject().put("included",true).put("path","wine/lib/wine").put("sha256",hashDir(lib)).put("abi","DIRECTORY_SHA256_X86_64"))
   put("d3d11","dxvk/x64/d3d11.dll","d3d")
   put("dxgi","dxvk/x64/dxgi.dll","dxgi")
+  put("xinput1_3","wine/lib/wine/x86_64-windows/xinput1_3.dll","xinput3")
+  put("xinput1_4","wine/lib/wine/x86_64-windows/xinput1_4.dll","xinput4")
   components.put("turnip",JSONObject().put("included",turnip))
   if(turnip){put("turnipSo","turnip/libvulkan_freedreno.so","vk");put("turnipIcd","turnip/freedreno_icd.aarch64.json","{}")}
   File(root,"runtime-manifest.json").writeText(JSONObject().put("schemaVersion",2).put("targetAbi","arm64-v8a").put("provenance",JSONObject().put("packager","unit-test").put("manifestFormat","role-validated-abi-v2")).put("components",components).put("defaultLaunchProfile",JSONObject()).toString())
@@ -42,6 +44,26 @@ class RuntimeManifestParserTest {
   val result=RuntimeManifestParser().validate(root)
   assertFalse(result.valid)
   assertTrue(result.errors.any{it.contains("ABI must be declared")})
+  root.deleteRecursively()
+ }
+ @Test fun rejectsMissingXinputComponents() {
+  val root=fixture()
+  val json=JSONObject(File(root,"runtime-manifest.json").readText())
+  json.getJSONObject("components").remove("xinput1_3")
+  File(root,"runtime-manifest.json").writeText(json.toString())
+  val result=RuntimeManifestParser().validate(root)
+  assertFalse(result.valid)
+  assertTrue(result.errors.any{it.contains("xinput1_3")})
+  root.deleteRecursively()
+ }
+ @Test fun rejectsWrongXinputAbi() {
+  val root=fixture()
+  val json=JSONObject(File(root,"runtime-manifest.json").readText())
+  json.getJSONObject("components").getJSONObject("xinput1_4").put("abi",RuntimeBinaryInspector.ELF64_X86_64)
+  File(root,"runtime-manifest.json").writeText(json.toString())
+  val result=RuntimeManifestParser().validate(root)
+  assertFalse(result.valid)
+  assertTrue(result.errors.any{it.contains("xinput1_4") && it.contains("ABI")})
   root.deleteRecursively()
  }
  @Test fun rejectsWrongAbi(){val root=fixture();val j=JSONObject(File(root,"runtime-manifest.json").readText()).put("targetAbi","x86_64");File(root,"runtime-manifest.json").writeText(j.toString());assertFalse(RuntimeManifestParser().validate(root).valid);root.deleteRecursively()}

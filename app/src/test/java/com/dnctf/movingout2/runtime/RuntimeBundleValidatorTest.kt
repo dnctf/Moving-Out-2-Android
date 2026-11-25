@@ -115,7 +115,7 @@ class RuntimeBundleValidatorTest {
             val abi = when (key) {
                 "box64" -> RuntimeBinaryInspector.ELF64_AARCH64
                 "wine64", "wineserver" -> RuntimeBinaryInspector.ELF64_X86_64
-                "d3d11", "dxgi" -> RuntimeBinaryInspector.PE32_PLUS_X86_64
+                "d3d11", "dxgi", "xinput1_3", "xinput1_4" -> RuntimeBinaryInspector.PE32_PLUS_X86_64
                 else -> "JSON"
             }
             components.put(
@@ -133,6 +133,8 @@ class RuntimeBundleValidatorTest {
         addFile("wineserver", "wine/bin/wineserver", arm64Elf(machine = 62), executable = true)
         addFile("d3d11", "dxvk/x64/d3d11.dll", pe32PlusX64())
         addFile("dxgi", "dxvk/x64/dxgi.dll", pe32PlusX64())
+        addFile("xinput1_3", "wine/lib/wine/x86_64-windows/xinput1_3.dll", pe32PlusX64())
+        addFile("xinput1_4", "wine/lib/wine/x86_64-windows/xinput1_4.dll", pe32PlusX64())
 
         val libraryDirectory = File(root, "wine/lib/wine").apply { mkdirs() }
         File(libraryDirectory, "module.so").writeBytes(arm64Elf(machine = 62).also { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).putLong(24, 0L) })

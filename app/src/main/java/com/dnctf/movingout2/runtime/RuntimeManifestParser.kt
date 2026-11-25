@@ -69,6 +69,8 @@ class RuntimeManifestParser {
         verify("wineLib", "wine/lib/wine", true, "DIRECTORY_SHA256_X86_64", directory = true)
         verify("d3d11", "dxvk/x64/d3d11.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
         verify("dxgi", "dxvk/x64/dxgi.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
+        verify("xinput1_3", "wine/lib/wine/x86_64-windows/xinput1_3.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
+        verify("xinput1_4", "wine/lib/wine/x86_64-windows/xinput1_4.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
         if (components.optJSONObject("turnip")?.optBoolean("included", false) == true) {
             verify("turnipSo", "turnip/libvulkan_freedreno.so", true, RuntimeBinaryInspector.ELF64_AARCH64_SHARED)
             verify("turnipIcd", "turnip/freedreno_icd.aarch64.json", true, "JSON")

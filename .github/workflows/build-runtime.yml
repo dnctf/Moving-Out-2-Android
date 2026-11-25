@@ -1,0 +1,243 @@
+name: Build Runtime Bundle
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-runtime.yml"
+      - "scripts/**"
+      - "native/wine-xinput/**"
+      - "app/src/main/java/com/dnctf/movingout2/runtime/**"
+      - "app/src/test/java/com/dnctf/movingout2/runtime/**"
+  workflow_dispatch:
+    inputs:
+      dxvk_url:
+        description: "Verified DXVK release archive URL (x64 package)"
+        required: true
+        type: string
+      dxvk_sha256:
+        description: "Expected SHA-256 of the DXVK archive"
+        required: true
+        type: string
+      bundle_version:
+        description: "Runtime bundle version"
+        required: false
+        default: "0.1.0"
+        type: string
+      publish_prerelease:
+        description: "Publish GitHub pre-release after every validation passes"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-runtime-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-runtime:
+    name: Build and audit standalone runtime
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_NDK_VERSION: "27.2.12479018"
+      ANDROID_PLATFORM: "android-28"
+      BOX64_REPOSITORY: "https://github.com/ptitSeb/box64.git"
+      BOX64_REF: "main"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configure Android SDK and NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/android/sdk}}"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -maxdepth 5 -type f -name sdkmanager | sort | tail -n1)"
+          fi
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" "ndk;${ANDROID_NDK_VERSION}" "cmake;3.22.1" "platforms;android-35" "build-tools;35.0.0"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$SDK_ROOT/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+          test -x "$SDK_ROOT/ndk/${ANDROID_NDK_VERSION}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang"
+          test -x "$SDK_ROOT/cmake/3.22.1/bin/cmake"
+
+      - name: Install build and audit dependencies
+        run: |
+          sudo dpkg --add-architecture amd64
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake git curl ca-certificates unzip zip file binutils llvm jq \
+            gcc-mingw-w64-x86-64-posix shellcheck python3-yaml wine64 libwine:amd64
+
+      - name: Validate YAML and shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c "import yaml; yaml.safe_load(open('.github/workflows/build-runtime.yml', encoding='utf-8'))"
+          bash -n scripts/package_runtime_bundle.sh
+          bash -n scripts/audit_runtime_bundle.sh
+          bash -n native/wine-xinput/build_wine_xinput.sh
+          shellcheck scripts/package_runtime_bundle.sh scripts/audit_runtime_bundle.sh native/wine-xinput/build_wine_xinput.sh
+
+      - name: Build Wine XInput bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          MINGW_CC=x86_64-w64-mingw32-gcc-posix native/wine-xinput/build_wine_xinput.sh "$RUNNER_TEMP/xinput"
+          test -s "$RUNNER_TEMP/xinput/xinput1_3.dll"
+          test -s "$RUNNER_TEMP/xinput/xinput1_4.dll"
+
+      - name: Build Box64 for standalone Android API 28
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$BOX64_REF" "$BOX64_REPOSITORY" "$RUNNER_TEMP/box64-src"
+          NDK_TOOLCHAIN="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake"
+          CMAKE_BIN="$ANDROID_SDK_ROOT/cmake/3.22.1/bin/cmake"
+          export PATH="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
+          CMAKE_ARGS=(
+            -S "$RUNNER_TEMP/box64-src"
+            -B "$RUNNER_TEMP/box64-build"
+            -DCMAKE_TOOLCHAIN_FILE="$NDK_TOOLCHAIN"
+            -DANDROID=ON
+            -DTERMUX=OFF
+            -DARM64=ON
+            -DARM_DYNAREC=ON
+            -DNO_LIB_INSTALL=ON
+            -DNO_CONF_INSTALL=ON
+            -DANDROID_ABI=arm64-v8a
+            -DANDROID_PLATFORM=android-28
+            -DCMAKE_BUILD_TYPE=Release
+          )
+          "$CMAKE_BIN" "${CMAKE_ARGS[@]}"
+          "$CMAKE_BIN" --build "$RUNNER_TEMP/box64-build" --parallel 2
+          BOX64_BIN="$RUNNER_TEMP/box64-build/box64"
+          if [[ ! -s "$BOX64_BIN" ]]; then
+            echo "::error::Expected Box64 executable at box64-build/box64; refusing to guess an alternate artifact."
+            find "$RUNNER_TEMP/box64-build" -maxdepth 4 -type f -name box64 -print
+            exit 1
+          fi
+          if strings "$BOX64_BIN" | grep -Fq "/data/data/com.termux"; then
+            echo "::error::Standalone Box64 binary embeds a Termux private path."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/runtime-input/box64"
+          cp "$BOX64_BIN" "$RUNNER_TEMP/runtime-input/box64/box64"
+
+      - name: Stage signed Ubuntu Wine x86_64 runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          WINE64="$(find /usr -type f -name wine64 -perm -111 -print -quit)"
+          WINESERVER="$(find /usr -type f -name wineserver -perm -111 -print -quit)"
+          WINE_LIB_DIR="/usr/lib/x86_64-linux-gnu/wine"
+          [[ -n "$WINE64" && -s "$WINE64" ]]
+          [[ -n "$WINESERVER" && -s "$WINESERVER" ]]
+          [[ -d "$WINE_LIB_DIR" ]]
+          mkdir -p "$RUNNER_TEMP/runtime-input/wine/bin" "$RUNNER_TEMP/runtime-input/wine/lib"
+          install -m 0755 "$WINE64" "$RUNNER_TEMP/runtime-input/wine/bin/wine64"
+          install -m 0755 "$WINESERVER" "$RUNNER_TEMP/runtime-input/wine/bin/wineserver"
+          cp -a "$WINE_LIB_DIR" "$RUNNER_TEMP/runtime-input/wine/lib/wine"
+          find "$RUNNER_TEMP/runtime-input/wine/lib/wine" -type f -name '*.so*' -print -quit | grep -q .
+          echo "Wine source: Ubuntu signed apt packages wine64 + libwine:amd64"
+          dpkg-query -W -f='${Package}=${Version}\n' wine64 libwine:amd64 | tee "$RUNNER_TEMP/wine-package-versions.txt"
+
+      - name: Download and verify DXVK release
+        shell: bash
+        env:
+          DXVK_URL: ${{ inputs.dxvk_url }}
+          DXVK_SHA256: ${{ inputs.dxvk_sha256 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$DXVK_URL" || ! "$DXVK_SHA256" =~ ^[a-fA-F0-9]{64}$ ]]; then
+            echo "::error::A DXVK release URL and its independently verified 64-character SHA-256 are required. Supply them via workflow_dispatch."
+            exit 2
+          fi
+          curl --fail --location --retry 3 --retry-all-errors "$DXVK_URL" -o "$RUNNER_TEMP/dxvk.tar.gz"
+          printf '%s  %s\n' "$DXVK_SHA256" "$RUNNER_TEMP/dxvk.tar.gz" | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/dxvk-extract" "$RUNNER_TEMP/runtime-input/dxvk/x64"
+          tar -xzf "$RUNNER_TEMP/dxvk.tar.gz" -C "$RUNNER_TEMP/dxvk-extract"
+          D3D11="$(find "$RUNNER_TEMP/dxvk-extract" -type f -path '*/x64/d3d11.dll' -print -quit)"
+          DXGI="$(find "$RUNNER_TEMP/dxvk-extract" -type f -path '*/x64/dxgi.dll' -print -quit)"
+          [[ -s "$D3D11" && -s "$DXGI" ]]
+          install -m 0644 "$D3D11" "$RUNNER_TEMP/runtime-input/dxvk/x64/d3d11.dll"
+          install -m 0644 "$DXGI" "$RUNNER_TEMP/runtime-input/dxvk/x64/dxgi.dll"
+
+      - name: Audit all runtime binary ABIs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/runtime-input/xinput"
+          cp "$RUNNER_TEMP/xinput/"*.dll "$RUNNER_TEMP/runtime-input/xinput/"
+          WINE_DIR="$RUNNER_TEMP/runtime-input/wine"
+          DXVK_DIR="$RUNNER_TEMP/runtime-input/dxvk/x64"
+          XINPUT_DIR="$RUNNER_TEMP/runtime-input/xinput"
+          BOX64="$RUNNER_TEMP/runtime-input/box64/box64"
+          llvm-readelf -h "$BOX64" | grep -Eq 'Class:.*ELF64'
+          llvm-readelf -h "$BOX64" | grep -Eq 'Machine:.*AArch64'
+          for f in "$WINE_DIR/bin/wine64" "$WINE_DIR/bin/wineserver"; do
+            llvm-readelf -h "$f" | grep -Eq 'Class:.*ELF64'
+            llvm-readelf -h "$f" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
+          done
+          find "$WINE_DIR/lib/wine" -type f -name '*.so*' -print0 | while IFS= read -r -d '' f; do
+            llvm-readelf -h "$f" | grep -Eq 'Class:.*ELF64'
+            llvm-readelf -h "$f" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
+            llvm-readelf -h "$f" | grep -Eq 'Type:.*DYN'
+          done
+          for f in "$DXVK_DIR/d3d11.dll" "$DXVK_DIR/dxgi.dll" "$XINPUT_DIR/xinput1_3.dll" "$XINPUT_DIR/xinput1_4.dll"; do
+            llvm-readobj --file-headers "$f" | grep -Eq 'Format:.*COFF-x86-64'
+            llvm-readobj --file-headers "$f" | grep -Eq 'Magic:.*PE32\+'
+          done
+
+      - name: Package runtime manifest v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          scripts/package_runtime_bundle.sh \
+            --box64 "$RUNNER_TEMP/runtime-input/box64/box64" \
+            --wine-dir "$RUNNER_TEMP/runtime-input/wine" \
+            --dxvk-dir "$RUNNER_TEMP/runtime-input/dxvk/x64" \
+            --xinput-dir "$RUNNER_TEMP/runtime-input/xinput" \
+            --bundle-version "${{ inputs.bundle_version || '0.1.0' }}" \
+            --output "dist/moving-out-2-runtime-${{ github.run_number }}.zip"
+          test -s dist/SHA256SUMS.txt
+          cat dist/SHA256SUMS.txt
+
+      - name: Run Kotlin unit tests
+        run: gradle --no-daemon testDebugUnitTest
+
+      - name: Upload runtime bundle and provenance
+        uses: actions/upload-artifact@v6
+        with:
+          name: moving-out-2-runtime-${{ github.run_number }}
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+            "$RUNNER_TEMP/wine-package-versions.txt"
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub pre-release
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: runtime-v${{ inputs.bundle_version }}-${{ github.run_number }}
+          name: Moving Out 2 Runtime ${{ inputs.bundle_version }} (pre-release)
+          prerelease: true
+          files: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+          generate_release_notes: true
