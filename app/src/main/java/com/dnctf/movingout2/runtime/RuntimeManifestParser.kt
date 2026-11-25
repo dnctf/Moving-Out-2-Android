@@ -71,6 +71,10 @@ class RuntimeManifestParser {
         verify("dxgi", "dxvk/x64/dxgi.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
         verify("xinput1_3", "wine/lib/wine/x86_64-windows/xinput1_3.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
         verify("xinput1_4", "wine/lib/wine/x86_64-windows/xinput1_4.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
+        verify("xinput9_1_0", "wine/lib/wine/x86_64-windows/xinput9_1_0.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
+        verify("vcruntime140", "wine/lib/wine/x86_64-windows/vcruntime140.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
+        verify("vcruntime140_1", "wine/lib/wine/x86_64-windows/vcruntime140_1.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
+        verify("msvcp140", "wine/lib/wine/x86_64-windows/msvcp140.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
         if (components.optJSONObject("turnip")?.optBoolean("included", false) == true) {
             verify("turnipSo", "turnip/libvulkan_freedreno.so", true, RuntimeBinaryInspector.ELF64_AARCH64_SHARED)
             verify("turnipIcd", "turnip/freedreno_icd.aarch64.json", true, "JSON")
