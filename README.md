@@ -187,8 +187,10 @@ Runtime package schema v2 contains the ARM64 Box64 host binary, x86_64 Wine exec
 
 ### Android APK Pre-Release
 
+The alpha APK is signed so Android Package Installer can install it. The current CI fallback uses a runner-generated debug key: it is suitable for installation/testing, but its signing identity is not stable across fresh CI runners. A subsequent build may therefore require uninstalling the prior alpha before installing the new one. Before stable/public distribution, configure a persistent private release keystore in GitHub Actions secrets and switch the release signing configuration to that key.
+
 APK pre-releases are published independently by the **Publish Android APK Pre-Release** GitHub Actions workflow. Each release includes:
-- ARM64 Android APK (release variant; currently unsigned unless signing is configured).
+- ARM64 Android APK (release variant, signed with a CI-generated Android debug key for alpha testing).
 - `SHA256SUMS.txt` for integrity verification.
 - Release notes describing the build, installation, limitations and test status.
 
