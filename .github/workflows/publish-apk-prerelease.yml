@@ -87,13 +87,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          APK="app/build/outputs/apk/release/app-release.apk"
           test -s "$APK"
           mkdir -p release-output
           cp "$APK" "release-output/Moving-Out-2-Android-${{ steps.version.outputs.version }}-arm64-v8a-unsigned.apk"
           APK_OUT="$(find release-output -maxdepth 1 -name '*.apk' -print -quit)"
           sha256sum "$APK_OUT" > release-output/SHA256SUMS.txt
           unzip -t "$APK_OUT"
+          APKSIGNER="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/android/sdk}}/build-tools/35.0.0/apksigner"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK_OUT"
           unzip -l "$APK_OUT" | grep -F "lib/arm64-v8a/libvulkan_probe.so"
           unzip -l "$APK_OUT" | grep -F "lib/arm64-v8a/libmo2_input_bridge.so"
           unzip -l "$APK_OUT" | grep -F "assets/runtime/xinput1_3.dll"
@@ -122,7 +125,7 @@ jobs:
           **Platform:** Android ARM64 (arm64-v8a)  
           **Minimum Android:** Android 8.0 (API 26)  
           **Target SDK:** Android 15 (API 35)  
-          **Build:** Release variant, unsigned APK
+          **Build:** Release variant, debug-key signed APK (alpha/testing only)
 
           ### Included
           - Android launcher and game library/import workflow.
@@ -134,14 +137,14 @@ jobs:
 
           ### Installation
           1. Download the APK asset below.
-          2. Verify it with the SHA256SUMS.txt file.
+          2. Verify it with the SHA256SUMS.txt file. The APK signature is checked by CI using apksigner.
           3. Enable installation from this source when Android prompts.
           4. Install the APK.
           5. Import the separately distributed runtime bundle from the app's runtime setup flow.
           6. Import your own legally obtained Moving Out 2 Windows game files.
 
           ### Important limitations
-          - This is an unsigned early-access build; Android may require uninstalling a differently signed prior build before installation.
+          - This alpha APK is signed with the CI-generated Android debug key so Android Package Installer can install it. The key is ephemeral per fresh CI runner; a later build may require uninstalling this version before upgrading. A persistent private release keystore is required for stable in-place updates.
           - No Moving Out 2 game files are included.
           - Automated CI verifies compilation, packaging and unit tests. Actual launch, Vulkan presentation, compatibility and FPS still require physical-device testing.
           - Runtime bundle is distributed separately: https://github.com/$GITHUB_REPOSITORY/releases/tag/runtime-v0.1.0-23
