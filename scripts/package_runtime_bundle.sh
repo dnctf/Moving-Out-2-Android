@@ -41,28 +41,7 @@ cp -aL "$WINE_DIR/lib/wine" "$ROOT/wine/lib/wine";mkdir -p "$ROOT/wine/lib/wine/
 cp "$XINPUT_DIR/xinput1_3.dll" "$ROOT/wine/lib/wine/x86_64-windows/";cp "$XINPUT_DIR/xinput1_4.dll" "$ROOT/wine/lib/wine/x86_64-windows/"
 if find "$ROOT/wine/lib/wine" -type l -print -quit | grep -q .; then echo "Wine runtime contains unresolved symlinks; refusing to create a non-portable Android ZIP." >&2; exit 1; fi
 if [[ -n "$TURNIP_SO" ]];then mkdir -p "$ROOT/turnip";cp "$TURNIP_SO" "$ROOT/turnip/libvulkan_freedreno.so";cp "$(dirname "$TURNIP_SO")/freedreno_icd.aarch64.json" "$ROOT/turnip/";fi
-sha(){ sha256sum "$1" | awk '{print $1}';}
-hash_dir(){ (cd "$1" && find -L . -type f -print0 | sort -z | xargs -0 sha256sum) | sha256sum | awk '{print $1}';}
-cat > "$ROOT/runtime-manifest.json" <<JSON
-{
- "schemaVersion":2,"targetAbi":"arm64-v8a","bundleVersion":"$VERSION",
- "provenance":{"packager":"scripts/package_runtime_bundle.sh","manifestFormat":"role-validated-abi-v2"},
- "components":{
-  "box64":{"included":true,"path":"box64/bin/box64","abi":"ELF64_AARCH64","sha256":"$(sha "$ROOT/box64/bin/box64")"},
-  "wine64":{"included":true,"path":"wine/bin/wine64","abi":"ELF64_X86_64","sha256":"$(sha "$ROOT/wine/bin/wine64")"},
-  "wineserver":{"included":true,"path":"wine/bin/wineserver","abi":"ELF64_X86_64","sha256":"$(sha "$ROOT/wine/bin/wineserver")"},
-  "wineLib":{"included":true,"path":"wine/lib/wine","abi":"DIRECTORY_SHA256_X86_64","sha256":"$(hash_dir "$ROOT/wine/lib/wine")"},
-  "d3d11":{"included":true,"path":"dxvk/x64/d3d11.dll","abi":"PE32_PLUS_X86_64","sha256":"$(sha "$ROOT/dxvk/x64/d3d11.dll")"},
-  "dxgi":{"included":true,"path":"dxvk/x64/dxgi.dll","abi":"PE32_PLUS_X86_64","sha256":"$(sha "$ROOT/dxvk/x64/dxgi.dll")"},
-  "xinput1_3":{"included":true,"path":"wine/lib/wine/x86_64-windows/xinput1_3.dll","abi":"PE32_PLUS_X86_64","sha256":"$(sha "$ROOT/wine/lib/wine/x86_64-windows/xinput1_3.dll")"},
-  "xinput1_4":{"included":true,"path":"wine/lib/wine/x86_64-windows/xinput1_4.dll","abi":"PE32_PLUS_X86_64","sha256":"$(sha "$ROOT/wine/lib/wine/x86_64-windows/xinput1_4.dll")"},
-  "turnip":{"included":$([[ -n "$TURNIP_SO" ]] && echo true || echo false)},
-  "turnipSo":{"included":$([[ -n "$TURNIP_SO" ]] && echo true || echo false), "path":"turnip/libvulkan_freedreno.so","abi":"ELF64_AARCH64_SHARED","sha256":"$([[ -n "$TURNIP_SO" ]] && sha "$ROOT/turnip/libvulkan_freedreno.so" || echo "")"},
-  "turnipIcd":{"included":$([[ -n "$TURNIP_SO" ]] && echo true || echo false), "path":"turnip/freedreno_icd.aarch64.json","abi":"JSON","sha256":"$([[ -n "$TURNIP_SO" ]] && sha "$ROOT/turnip/freedreno_icd.aarch64.json" || echo "")}
- },
- "defaultLaunchProfile":{"arguments":["-force-d3d11"],"environment":{"WINEDLLOVERRIDES":"d3d11,dxgi,xinput1_3,xinput1_4=n,b","BOX64_DYNAREC":"1","BOX64_DYNAREC_BIGBLOCK":"1","BOX64_DYNAREC_STRONGMEM":"1","BOX64_DYNAREC_SAFEFLAGS":"1"}}
-}
-JSON
+python3 scripts/write_runtime_manifest.py --root "$ROOT" --version "$VERSION"
 mkdir -p "$OUT_DIR";rm -f "$OUTPUT";(cd "$ROOT" && zip -qr "$OUTPUT" .)
 (cd "$OUT_DIR" && sha256sum "$(basename "$OUTPUT")" > SHA256SUMS.txt)
 echo "Runtime bundle created: $OUTPUT"
