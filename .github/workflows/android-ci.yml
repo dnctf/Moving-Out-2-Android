@@ -17,6 +17,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      BOX64_REPOSITORY: https://github.com/ptitSeb/box64.git
+      BOX64_REF: 9d0e5b1c0a3a8def60e63bdbda37ac9617d17bcb
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -106,6 +109,15 @@ jobs:
           cp native/wine-xinput/out/xinput1_4.dll app/src/main/assets/runtime/
           test -s app/src/main/assets/runtime/xinput1_3.dll
           test -s app/src/main/assets/runtime/xinput1_4.dll
+      - name: Build and package Box64 native executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/build_box64_android.sh "$RUNNER_TEMP/box64"
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          install -m 0755 "$RUNNER_TEMP/box64/libbox64.so" app/src/main/jniLibs/arm64-v8a/libbox64.so
+          readelf -h app/src/main/jniLibs/arm64-v8a/libbox64.so | grep -Eq 'Machine:.*AArch64'
+          test -s app/src/main/jniLibs/arm64-v8a/libbox64.so
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
@@ -120,6 +132,8 @@ jobs:
           set -euo pipefail
           APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
           test -f "$APK_PATH"
+          unzip -l "$APK_PATH" | grep -F "lib/arm64-v8a/libbox64.so"
+          unzip -lv "$APK_PATH" | grep -F "lib/arm64-v8a/libbox64.so" | grep -Eq "Defl:N"
           unzip -l "$APK_PATH" | grep -F "lib/arm64-v8a/libvulkan_probe.so"
           unzip -l "$APK_PATH" | grep -F "lib/arm64-v8a/libmo2_input_bridge.so"
           unzip -l "$APK_PATH" | grep -F "assets/runtime/xinput1_3.dll"
