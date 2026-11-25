@@ -248,7 +248,7 @@ class RuntimeRepositoryInstaller(
             }
             val connection = open(url)
             try {
-                if (offset > 0L) connection.setRequestProperty("Range", runtimeRangeHeader(offset))
+                runtimeRangeHeader(offset)?.let { connection.setRequestProperty("Range", it) }
                 val responseCode = connection.responseCode
                 ensureAllowedGitHubResponse(connection)
                 if (responseCode == HttpURLConnection.HTTP_REQUESTED_RANGE_NOT_SATISFIABLE) {
