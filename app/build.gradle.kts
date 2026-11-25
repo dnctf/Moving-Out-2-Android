@@ -20,6 +20,7 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            // Keep executable ELF payloads as extracted native files under nativeLibraryDir.
             keepDebugSymbols += "**/libbox64.so"
         }
     }
