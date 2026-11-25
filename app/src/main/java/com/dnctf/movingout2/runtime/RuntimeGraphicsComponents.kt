@@ -65,7 +65,7 @@ object RuntimeGraphicsComponents {
         val turnipIcd = manifestFile("turnipIcd") ?: legacyFile("turnip_dir")?.walkTopDown()
             ?.maxDepth(8)?.firstOrNull { it.isFile && it.extension.equals("json", true) }
         val turnipStatus = when {
-            turnipSo == null && turnipIcd == null -> "NOT_BUNDLED"
+            turnipSo == null && turnipIcd == null -> "NOT_CONFIGURED"
             turnipSo?.let(::isArm64Elf) == true && turnipIcd?.isFile == true &&
                 runCatching { readBoundedText(turnipIcd, 8192).contains("library_path") }.getOrDefault(false) ->
                 if (manifestFile("turnipSo") != null) "BUNDLE_AVAILABLE_NOT_SELECTED" else "FILES_PRESENT_UNVERIFIED"
