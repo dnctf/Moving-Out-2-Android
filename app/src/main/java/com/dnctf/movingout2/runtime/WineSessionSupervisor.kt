@@ -271,7 +271,8 @@ class WineSessionSupervisor(
             hostLibraryDirectory = hostLibDir,
             fpsCap = options.fpsCap,
             guestLibraryDirectory = report.libraryDirectory,
-            guestBinaryDirectory = wineCandidate.parentFile
+            guestBinaryDirectory = wineCandidate.parentFile,
+            useDxvk = options.useDxvk
         ).toMutableMap()
         activeSessionEnvironment = env.toMap()
 
@@ -330,7 +331,7 @@ class WineSessionSupervisor(
         val bootArgs = WineLaunchCommand.winebootArguments(wine.absolutePath)
         val env = buildMap {
             put("WINEPREFIX", prefix.absolutePath)
-            put("WINEDLLOVERRIDES", "xinput1_3,xinput1_4=n,b")
+            put("WINEDLLOVERRIDES", "xinput1_3,xinput1_4,xinput9_1_0=n,b")
             put("LD_LIBRARY_PATH", context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
             put("BOX64_PATH", wine.parentFile?.absolutePath.orEmpty())
             put("BOX64_DYNAREC", "1")
@@ -358,9 +359,12 @@ class WineSessionSupervisor(
     private fun deployXInputDlls() {
         val system32 = File(prefix, "drive_c/windows/system32")
         system32.mkdirs()
-        for (dll in listOf("xinput1_3.dll", "xinput1_4.dll")) {
+        for (dll in listOf("xinput1_3.dll", "xinput1_4.dll", "xinput9_1_0.dll", "vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")) {
             val dest = File(system32, dll)
-            val bundleDll = File(bundleRoot, "xinput/$dll")
+            val bundleDll = when (dll) {
+                "xinput1_3.dll", "xinput1_4.dll", "xinput9_1_0.dll" -> File(bundleRoot, "xinput/$dll").takeIf { it.isFile } ?: File(bundleRoot, "wine/lib/wine/x86_64-windows/$dll")
+                else -> File(bundleRoot, "wine/lib/wine/x86_64-windows/$dll")
+            }
             if (bundleDll.isFile) {
                 bundleDll.copyTo(dest, overwrite = true)
             } else {
