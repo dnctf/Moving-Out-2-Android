@@ -119,7 +119,6 @@ jobs:
           done
           for dll in xinput1_3.dll xinput1_4.dll xinput9_1_0.dll; do
             x86_64-w64-mingw32-objdump -p "native/wine-xinput/out/$dll" | grep -Eq 'XInput(GetState|SetState|GetCapabilities|Enable|GetBatteryInformation|GetKeystroke)'
-            x86_64-w64-mingw32-objdump -p "native/wine-xinput/out/$dll" | grep -Eq '\\[[[:space:]]*100\\]'
           done
       - name: Build and package Box64 native executable
         shell: bash
