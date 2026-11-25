@@ -497,7 +497,7 @@ class MainActivity : Activity() {
         val root = File(filesDir, "native_runtime/bundle")
         playButton.isEnabled = false
         runtimeStatus.text = "Starting Box64 / Wine session…"
-        val supervisor = WineSessionSupervisor(this, root, active.id, diagnosticLog)
+        val supervisor = WineSessionSupervisor(this, root, "moving-out-2", diagnosticLog)
         Thread({
             val started = runCatching { supervisor.startSession(gameExe) }
             runOnUiThread {
