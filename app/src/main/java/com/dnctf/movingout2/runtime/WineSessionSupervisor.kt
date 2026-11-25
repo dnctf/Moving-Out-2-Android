@@ -180,6 +180,8 @@ class WineSessionSupervisor(
     private val stateRef = AtomicReference(WineSessionState.IDLE)
     private val validator = RuntimeBundleValidator()
     private val inputBridge = RuntimeInputBridge()
+    @Volatile private var activeBox64Executable: File? = null
+    @Volatile private var activeSessionEnvironment: Map<String, String>? = null
     private val execProbe = AndroidExecCapabilityProbe(context, diagnostics)
 
     @Volatile var wineserverProcess: ProcessResult? = null
@@ -221,6 +223,7 @@ class WineSessionSupervisor(
             return false
         }
         val activeBox64 = capability.executable ?: box64Candidate
+        activeBox64Executable = activeBox64
 
         val wineCandidate = report.wine64 ?: run {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Wine64 binary unavailable"))
@@ -269,6 +272,7 @@ class WineSessionSupervisor(
             guestLibraryDirectory = report.libraryDirectory,
             guestBinaryDirectory = wineCandidate.parentFile
         ).toMutableMap()
+        activeSessionEnvironment = env.toMap()
 
         // 3. STARTING_WINESERVER
         transitionTo(WineSessionState.STARTING_WINESERVER)
@@ -445,11 +449,13 @@ class WineSessionSupervisor(
         targetProcess = null
 
         // 3. Stop wineserver process via wineserver -k + destroyForcibly fallback
-        val b64 = box64Override ?: RuntimeBundleValidator().validate(bundleRoot).box64
+        val b64 = box64Override ?: activeBox64Executable
         val ws = wineserverOverride ?: WineServerResolver.resolve(bundleRoot)
-        val env = envOverride ?: mapOf("WINEPREFIX" to prefix.absolutePath)
+        val env = envOverride ?: activeSessionEnvironment ?: mapOf("WINEPREFIX" to prefix.absolutePath)
         if (b64 != null && ws != null) {
             reapWineserver(b64, ws, env)
+        } else {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "supervisor", "Skipping wineserver cleanup: no validated nativeLibraryDir Box64 executable is retained."))
         }
         wineserverProcess?.let { sp ->
             if (sp.process.isAlive) {
