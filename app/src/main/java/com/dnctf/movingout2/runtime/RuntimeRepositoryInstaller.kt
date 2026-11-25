@@ -79,16 +79,18 @@ class RuntimeRepositoryInstaller(
         try {
             onProgress("Extracting runtime bundle safely…")
             val counts = extract(archive, staging)
-            val report = validator.validate(staging)
-            if (!report.isReady) throw IllegalStateException(
-                "Downloaded runtime failed manifest/ABI validation: " + report.blockers.joinToString("; ")
-            )
+            // ZIP archives do not reliably preserve POSIX executable bits; restore them
+            // before validation because the validator deliberately requires executable files.
             listOf("box64/bin/box64", "wine/bin/wine64", "wine/bin/wineserver").forEach { relative ->
                 val file = File(staging, relative)
                 if (!file.setExecutable(true, false) && !file.canExecute()) {
                     throw IllegalStateException("Unable to mark runtime executable: $relative")
                 }
             }
+            val report = validator.validate(staging)
+            if (!report.isReady) throw IllegalStateException(
+                "Downloaded runtime failed manifest/ABI validation: " + report.blockers.joinToString("; ")
+            )
             val finalCheck = validator.validate(staging)
             if (!finalCheck.isReady) throw IllegalStateException("Runtime failed post-extraction validation.")
             if (target.exists() && !target.renameTo(backup)) throw IllegalStateException("Cannot preserve current runtime bundle.")
