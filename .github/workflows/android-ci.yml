@@ -40,7 +40,50 @@ jobs:
           fi
           echo "Using sdkmanager: $SDKMANAGER"
           yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
-          "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+
+          SDK_PACKAGES=(
+            "platform-tools"
+            "platforms;android-35"
+            "build-tools;35.0.0"
+            "ndk;27.2.12479018"
+            "cmake;3.22.1"
+          )
+          verify_sdk_packages() {
+            [[ -x "$SDK_ROOT/platform-tools/adb" ]] &&
+            [[ -f "$SDK_ROOT/platforms/android-35/android.jar" ]] &&
+            [[ -x "$SDK_ROOT/build-tools/35.0.0/aapt" ]] &&
+            [[ -x "$SDK_ROOT/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/clang" ]] &&
+            [[ -x "$SDK_ROOT/cmake/3.22.1/bin/cmake" ]]
+          }
+
+          for attempt in 1 2 3; do
+            echo "Installing Android SDK packages (attempt $attempt/3)."
+            if "$SDKMANAGER" --sdk_root="$SDK_ROOT" "${SDK_PACKAGES[@]}" && verify_sdk_packages; then
+              echo "Android SDK package installation and critical-tool verification passed."
+              exit 0
+            fi
+
+            echo "::warning::Android SDK installation or verification failed on attempt $attempt/3."
+            # sdkmanager can leave a partially extracted directory after a transient
+            # archive/channel read error. Remove only the affected package when its
+            # required executable is absent; preserve complete installations and all
+            # unrelated SDK components.
+            if [[ -d "$SDK_ROOT/ndk/27.2.12479018" ]] &&
+               [[ ! -x "$SDK_ROOT/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/clang" ]]; then
+              rm -rf "$SDK_ROOT/ndk/27.2.12479018"
+            fi
+            if [[ -d "$SDK_ROOT/cmake/3.22.1" ]] &&
+               [[ ! -x "$SDK_ROOT/cmake/3.22.1/bin/cmake" ]]; then
+              rm -rf "$SDK_ROOT/cmake/3.22.1"
+            fi
+
+            if [[ "$attempt" -lt 3 ]]; then
+              sleep "$((attempt * 10))"
+            fi
+          done
+
+          echo "::error::Android SDK packages could not be installed and verified after 3 attempts."
+          exit 1
       - name: Install MinGW-w64
         run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64-posix
       - name: Validate runtime bundle packager syntax
