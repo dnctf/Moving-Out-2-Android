@@ -242,11 +242,11 @@ jobs:
           retention-days: 30
 
       - name: Publish GitHub pre-release
-        if: github.event_name == 'workflow_dispatch' && inputs.publish_prerelease
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_prerelease)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: runtime-v${{ inputs.bundle_version }}-${{ github.run_number }}
-          name: Moving Out 2 Runtime ${{ inputs.bundle_version }} (pre-release)
+          tag_name: runtime-v${{ inputs.bundle_version || '0.1.0' }}-${{ github.run_number }}
+          name: Moving Out 2 Runtime ${{ inputs.bundle_version || '0.1.0' }} (pre-release)
           prerelease: true
           files: |
             dist/*.zip
