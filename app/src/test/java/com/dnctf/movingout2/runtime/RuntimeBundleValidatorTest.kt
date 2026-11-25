@@ -134,7 +134,7 @@ class RuntimeBundleValidatorTest {
         addFile("dxgi", "dxvk/x64/dxgi.dll", pe32PlusX64())
 
         val libraryDirectory = File(root, "wine/lib/wine").apply { mkdirs() }
-        File(libraryDirectory, "module.so").writeBytes(arm64Elf(machine = 62))
+        File(libraryDirectory, "module.so").writeBytes(arm64Elf(machine = 62).also { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).putLong(24, 0L) })
         components.put(
             "wineLib",
             JSONObject()
