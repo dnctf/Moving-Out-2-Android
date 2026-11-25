@@ -1,6 +1,11 @@
 name: Build and Publish ARM64 Runtime Bundle
 
 on:
+  push:
+    branches: [build/runtime-release-pipeline]
+    paths:
+      - ".github/workflows/build-runtime-release.yml"
+      - "scripts/package_runtime_bundle.sh"
   workflow_dispatch:
     inputs:
       runtime_version:
@@ -61,7 +66,7 @@ jobs:
       - name: Build Box64 for Android ARM64
         shell: bash
         env:
-          BOX64_VERSION: ${{ inputs.box64_version }}
+          BOX64_VERSION: ${{ inputs.box64_version || 'v0.4.4' }}
         run: |
           set -euo pipefail
           git clone --depth 1 --branch "$BOX64_VERSION" https://github.com/ptitSeb/box64.git box64-src
@@ -87,7 +92,7 @@ jobs:
       - name: Download and verify Wine x86_64
         shell: bash
         env:
-          WINE_VERSION: ${{ inputs.wine_version }}
+          WINE_VERSION: ${{ inputs.wine_version || '11.22' }}
         run: |
           set -euo pipefail
           API="https://api.github.com/repos/Kron4ek/Wine-Builds/releases/tags/$WINE_VERSION"
@@ -116,7 +121,7 @@ jobs:
 
       - name: Download and verify DXVK for Vulkan 1.1 devices
         env:
-          DXVK_VERSION: ${{ inputs.dxvk_version }}
+          DXVK_VERSION: ${{ inputs.dxvk_version || '1.10.3' }}
         run: |
           set -euo pipefail
           case "$DXVK_VERSION" in
@@ -137,7 +142,7 @@ jobs:
 
       - name: Package and validate runtime manifest v2
         env:
-          RUNTIME_VERSION: ${{ inputs.runtime_version }}
+          RUNTIME_VERSION: ${{ inputs.runtime_version || format('0.0.{0}', github.run_number) }}
         run: |
           set -euo pipefail
           chmod +x scripts/package_runtime_bundle.sh
@@ -164,6 +169,7 @@ jobs:
           retention-days: 30
 
       - name: Publish runtime release consumed by the app
+        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: runtime-v${{ inputs.runtime_version }}
