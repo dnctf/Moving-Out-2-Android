@@ -19,6 +19,15 @@ class RuntimeBinaryInspectorTest {
         b.putLong(96,120); b.putLong(104,120)
         return bytes
     }
+    @Test fun acceptsSharedObjectsWithZeroEntryPointButStillRequiresExecutableLoadSegment() {
+        val root=Files.createTempDirectory("abi-shared").toFile()
+        val shared=File(root,"libvulkan_freedreno.so").apply { writeBytes(elf(183)) }
+        ByteBuffer.wrap(shared.readBytes()).order(ByteOrder.LITTLE_ENDIAN).putLong(24, 0L).array().let(shared::writeBytes)
+        assertTrue(RuntimeBinaryInspector.matches(shared,RuntimeBinaryInspector.ELF64_AARCH64_SHARED))
+        assertFalse(RuntimeBinaryInspector.matches(shared,RuntimeBinaryInspector.ELF64_AARCH64))
+        root.deleteRecursively()
+    }
+
     @Test fun distinguishesHostArm64AndGuestX8664Elf() {
         val root=Files.createTempDirectory("abi-inspector").toFile()
         val host=File(root,"box64").apply{writeBytes(elf(183))}
