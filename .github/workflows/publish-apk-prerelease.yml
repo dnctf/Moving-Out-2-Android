@@ -161,10 +161,45 @@ jobs:
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
           TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          gh release create "$RELEASE_TAG" "$APK_PATH" release-output/moving-out-2-runtime-arm64-v8a.zip release-output/moving-out-2-runtime-arm64-v8a.zip.sha256 release-output/SHA256SUMS.txt \
-            --repo "$GITHUB_REPOSITORY" --target "$TARGET_SHA" --prerelease \
-            --title "Moving Out 2 Android $RELEASE_VERSION (Integrated Pre-release)" \
-            --notes "Install the APK, connect to the internet, and launch. The app downloads and validates the matching runtime from this same release. Import your own legally obtained game files. Alpha APK uses an ephemeral CI debug signing key; uninstall an older build if Android rejects an update. No game files are included. Physical-device launch and graphics compatibility still require testing."
+          set -euo pipefail
+          ASSETS=(
+            "$APK_PATH"
+            "release-output/moving-out-2-runtime-arm64-v8a.zip"
+            "release-output/moving-out-2-runtime-arm64-v8a.zip.sha256"
+            "release-output/SHA256SUMS.txt"
+          )
+          NOTES="Install the APK, connect to the internet, and launch. The app downloads and validates the matching runtime from this same release. Import your own legally obtained game files. Alpha APK uses an ephemeral CI debug signing key; uninstall an older build if Android rejects an update. No game files are included. Physical-device launch and graphics compatibility still require testing."
+
+          # GitHub may return a transient 5xx after accepting a release request.
+          # Check for an existing release on every retry and repair its assets.
+          published=false
+          for attempt in 1 2 3 4 5; do
+            if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "Release $RELEASE_TAG already exists; ensuring all assets are present."
+              if gh release upload "$RELEASE_TAG" "${ASSETS[@]}" --repo "$GITHUB_REPOSITORY" --clobber; then
+                published=true
+                break
+              fi
+              echo "Asset upload attempt $attempt/5 failed." >&2
+            else
+              if gh release create "$RELEASE_TAG" "${ASSETS[@]}" \
+                --repo "$GITHUB_REPOSITORY" --target "$TARGET_SHA" --prerelease \
+                --title "Moving Out 2 Android $RELEASE_VERSION (Integrated Pre-release)" \
+                --notes "$NOTES"; then
+                published=true
+                break
+              fi
+              echo "Release creation attempt $attempt/5 failed; checking whether GitHub created it anyway." >&2
+            fi
+            if (( attempt < 5 )); then sleep $((attempt * 5)); fi
+          done
+
+          if [[ "$published" != true ]]; then
+            echo "Unable to publish $RELEASE_TAG after 5 attempts." >&2
+            exit 1
+          fi
+
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isPrerelease,assets
       - uses: actions/upload-artifact@v6
         with:
           name: moving-out-2-android-integrated-release
