@@ -197,7 +197,7 @@ class RuntimeBundleValidatorTest {
 
         val report = RuntimeBundleValidator().validate(root)
         assertEquals(RuntimeBundleStatus.INCOMPLETE, report.status)
-        assertTrue(report.blockers.any { it.contains("box64") && it.contains("ELF AArch64") })
+        assertTrue(report.blockers.any { it.contains("box64") && it.contains("ELF64_AARCH64") })
         root.deleteRecursively()
     }
 
@@ -213,7 +213,7 @@ class RuntimeBundleValidatorTest {
 
         val report = RuntimeBundleValidator().validate(root)
         assertEquals(RuntimeBundleStatus.INCOMPLETE, report.status)
-        assertTrue(report.blockers.any { it.contains("box64") && it.contains("ELF AArch64") })
+        assertTrue(report.blockers.any { it.contains("box64") && it.contains("ELF64_AARCH64") })
         root.deleteRecursively()
     }
 
@@ -229,7 +229,7 @@ class RuntimeBundleValidatorTest {
 
         val report = RuntimeBundleValidator().validate(root)
         assertEquals(RuntimeBundleStatus.INCOMPLETE, report.status)
-        assertTrue(report.blockers.any { it.contains("box64") && it.contains("ELF AArch64") })
+        assertTrue(report.blockers.any { it.contains("box64") && it.contains("ELF64_AARCH64") })
         root.deleteRecursively()
     }
 
@@ -249,7 +249,7 @@ class RuntimeBundleValidatorTest {
         File(root, "bin/box64").writeBytes(byteArrayOf(0, 1, 2))
         val report = RuntimeBundleValidator().validate(root)
         assertEquals(RuntimeBundleStatus.INCOMPLETE, report.status)
-        assertTrue(report.blockers.any { it.contains("ELF AArch64") })
+        assertTrue(report.blockers.any { it.contains("ELF64_AARCH64") })
         root.deleteRecursively()
     }
     @Test fun rejectsManifestPathTraversal() {
