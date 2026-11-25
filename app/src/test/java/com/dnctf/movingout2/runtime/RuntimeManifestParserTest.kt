@@ -33,6 +33,16 @@ class RuntimeManifestParserTest {
  }
  private fun hashDir(dir:File):String{val listing=StringBuilder();dir.walkTopDown().filter{it.isFile}.sortedBy{it.relativeTo(dir).invariantSeparatorsPath}.forEach{f->listing.append(sha(f)).append("  ./").append(f.relativeTo(dir).invariantSeparatorsPath).append('\n')};val d=MessageDigest.getInstance("SHA-256");d.update(listing.toString().toByteArray(Charsets.UTF_8));return d.digest().joinToString(""){"%02x".format(it)}}
  @Test fun acceptsValidBundleWithAndWithoutTurnip(){val a=fixture();assertTrue(RuntimeManifestParser().validate(a).errors.toString(),RuntimeManifestParser().validate(a).valid);a.deleteRecursively();val b=fixture(true);assertTrue(RuntimeManifestParser().validate(b).errors.toString(),RuntimeManifestParser().validate(b).valid);b.deleteRecursively()}
+ @Test fun rejectsComponentWithoutExplicitAbiProvenance(){
+  val root=fixture()
+  val json=JSONObject(File(root,"runtime-manifest.json").readText())
+  json.getJSONObject("components").getJSONObject("box64").remove("abi")
+  File(root,"runtime-manifest.json").writeText(json.toString())
+  val result=RuntimeManifestParser().validate(root)
+  assertFalse(result.valid)
+  assertTrue(result.errors.any{it.contains("ABI must be declared")})
+  root.deleteRecursively()
+ }
  @Test fun rejectsWrongAbi(){val root=fixture();val j=JSONObject(File(root,"runtime-manifest.json").readText()).put("targetAbi","x86_64");File(root,"runtime-manifest.json").writeText(j.toString());assertFalse(RuntimeManifestParser().validate(root).valid);root.deleteRecursively()}
  @Test fun rejectsPathTraversal(){val root=fixture();val j=JSONObject(File(root,"runtime-manifest.json").readText());j.getJSONObject("components").getJSONObject("box64").put("path","../outside.so");File(root,"runtime-manifest.json").writeText(j.toString());assertTrue(RuntimeManifestParser().validate(root).errors.any{it.contains("Unsafe path")});root.deleteRecursively()}
  @Test fun rejectsChecksumMismatch(){val root=fixture();File(root,"dxvk/x64/dxgi.dll").writeText("changed");assertTrue(RuntimeManifestParser().validate(root).errors.any{it.contains("SHA-256 mismatch")});root.deleteRecursively()}
