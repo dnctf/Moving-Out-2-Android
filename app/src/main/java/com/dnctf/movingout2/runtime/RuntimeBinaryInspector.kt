@@ -40,7 +40,7 @@ internal object RuntimeBinaryInspector {
             val ehsize = h.getShort(52).toInt() and 0xffff
             val phentsize = h.getShort(54).toInt() and 0xffff
             val phnum = h.getShort(56).toInt() and 0xffff
-            if ((type != ET_EXEC && type != ET_DYN) || machine != expectedMachine || version != 1 ||
+            if ((if (requireEntryPoint) type != ET_EXEC && type != ET_DYN else type != ET_DYN) || machine != expectedMachine || version != 1 ||
                 (requireEntryPoint && entry <= 0) || ehsize != 64 || phentsize != 56 || phnum !in 1..4096 ||
                 phoff < 64 || phoff > length) return@use false
             val tableBytes = phentsize.toLong() * phnum
