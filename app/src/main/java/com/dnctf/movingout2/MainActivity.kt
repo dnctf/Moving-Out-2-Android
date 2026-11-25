@@ -242,7 +242,7 @@ class MainActivity : Activity() {
                 if (device.abi.none { it == "arm64-v8a" }) {
                     throw IllegalStateException("Unsupported CPU ABI. This runtime requires arm64-v8a.")
                 }
-                com.dnctf.movingout2.runtime.RuntimeRepositoryInstaller(this).installLatest { message ->
+                com.dnctf.movingout2.runtime.RuntimeRepositoryInstaller(this, diagnostics = diagnosticLog).installLatest { message ->
                     runOnUiThread { if (!isFinishing && !isDestroyed) runtimeStatus.text = message }
                 }
             }
