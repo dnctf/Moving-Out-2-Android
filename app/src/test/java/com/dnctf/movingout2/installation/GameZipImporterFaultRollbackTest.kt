@@ -19,10 +19,18 @@ class GameZipImporterFaultRollbackTest {
             assertSame(lock1, lock2)
 
             assertTrue(lock1.tryLock())
-            assertFalse(lock2.tryLock())
+
+            val secondThreadAcquired = java.util.concurrent.atomic.AtomicBoolean(false)
+            val thread = Thread {
+                val acquired = lock2.tryLock()
+                secondThreadAcquired.set(acquired)
+                if (acquired) lock2.unlock()
+            }
+            thread.start()
+            thread.join()
+            assertFalse("Second concurrent thread must not acquire lock held by another thread", secondThreadAcquired.get())
+
             lock1.unlock()
-            assertTrue(lock2.tryLock())
-            lock2.unlock()
         } finally {
             tempDir.deleteRecursively()
         }
