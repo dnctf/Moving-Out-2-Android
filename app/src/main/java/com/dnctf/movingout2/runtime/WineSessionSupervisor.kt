@@ -366,12 +366,12 @@ class WineSessionSupervisor(
             return
         }
         val current = runCatching { userReg.readText() }.getOrDefault("")
-        val marker = "[Software\\\\Wine\\\\Direct3D]"
+        val marker = "[Software\\Wine\\Direct3D]"
         if (!current.contains(marker)) {
             userReg.appendText(
-                "\\n[Software\\\\Wine\\\\Direct3D]\\n" +
+                "\n[Software\\Wine\\Direct3D]\n" +
                     "\"csmt\"=\"enabled\"\\n" +
-                    "\\n[Software\\\\Wine\\\\WineDbg]\\n" +
+                    "\n[Software\\Wine\\WineDbg]\n" +
                     "\"ShowCrashDialog\"=dword:00000000\\n"
             )
         }
