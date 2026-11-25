@@ -97,6 +97,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          chmod +x native/wine-xinput/build_wine_xinput.sh
           MINGW_CC=x86_64-w64-mingw32-gcc-posix native/wine-xinput/build_wine_xinput.sh "$RUNNER_TEMP/xinput"
           test -s "$RUNNER_TEMP/xinput/xinput1_3.dll"
           test -s "$RUNNER_TEMP/xinput/xinput1_4.dll"
