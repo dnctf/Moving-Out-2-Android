@@ -19,7 +19,8 @@ data class LaunchReadinessDecision(
     val readiness: String
 )
 
-class LaunchReadinessCoordinator {
+class LaunchReadinessCoordinator(initiallyLaunched: Boolean = false) {
+    private var hasAutoLaunchedInSession = initiallyLaunched
     private var hasAutoLaunchedInSession = false
 
     @Synchronized
@@ -33,6 +34,9 @@ class LaunchReadinessCoordinator {
         if (trigger) hasAutoLaunchedInSession = true
         return LaunchReadinessDecision(true, trigger, "READY")
     }
+
+    @Synchronized
+    fun markAutoLaunched() { hasAutoLaunchedInSession = true }
 
     @Synchronized
     fun hasAutoLaunched(): Boolean = hasAutoLaunchedInSession
