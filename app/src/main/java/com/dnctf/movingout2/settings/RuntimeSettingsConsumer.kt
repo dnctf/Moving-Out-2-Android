@@ -69,7 +69,8 @@ class RuntimeSettingsConsumer {
             height = scaledH,
             fpsCap = fps,
             useTurnip = turnipIcdFile != null && turnipIcdFile.isFile,
-            useDxvk = dxvkDirectory != null && dxvkDirectory.isDirectory
+            useDxvk = dxvkDirectory != null && dxvkDirectory.isDirectory,
+            environmentOverrides = env.toMap()
         )
 
         return ConsumedLaunchConfiguration(options, env, scaledW, scaledH)
