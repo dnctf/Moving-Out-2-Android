@@ -141,7 +141,7 @@ class RuntimeBundleValidatorTest {
                 .put("included", true)
                 .put("path", "wine/lib/wine")
                 .put("sha256", directorySha256(libraryDirectory))
-                .put("abi", "DIRECTORY_SHA256")
+                .put("abi", "DIRECTORY_SHA256_X86_64")
         )
         components.put("turnip", JSONObject().put("included", false))
 
