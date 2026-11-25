@@ -272,8 +272,10 @@ class WineSessionSupervisor(
             fpsCap = options.fpsCap,
             guestLibraryDirectory = report.libraryDirectory,
             guestBinaryDirectory = wineCandidate.parentFile,
+            dxvkDirectory = File(bundleRoot, "dxvk/x64").takeIf { options.useDxvk && it.isDirectory },
             useDxvk = options.useDxvk
         ).toMutableMap()
+        env.putAll(options.environmentOverrides)
         activeSessionEnvironment = env.toMap()
 
         // 3. STARTING_WINESERVER
