@@ -241,7 +241,7 @@ class WineSessionSupervisor(
 
         // 2. BOOTSTRAPPING_PREFIX
         transitionTo(WineSessionState.BOOTSTRAPPING_PREFIX)
-        val bootstrapOk = bootstrapPrefix(activeBox64, wineCandidate)
+        val bootstrapOk = bootstrapPrefix(activeBox64, wineCandidate, report.libraryDirectory)
         if (!bootstrapOk) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Prefix bootstrap failed"))
             transitionTo(WineSessionState.FAILED)
@@ -311,7 +311,7 @@ class WineSessionSupervisor(
         return true
     }
 
-    private fun bootstrapPrefix(box64: File, wine: File): Boolean {
+    private fun bootstrapPrefix(box64: File, wine: File, guestLibraryDirectory: File?): Boolean {
         val systemReg = File(prefix, "system.reg")
         val system32 = File(prefix, "drive_c/windows/system32")
         system32.mkdirs()
@@ -323,11 +323,16 @@ class WineSessionSupervisor(
 
         diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor", "Initializing new WINEPREFIX at ${prefix.absolutePath}"))
         val bootArgs = WineLaunchCommand.winebootArguments(wine.absolutePath)
-        val env = mapOf(
-            "WINEPREFIX" to prefix.absolutePath,
-            "WINEDLLOVERRIDES" to "xinput1_3,xinput1_4=n,b",
-            "LD_LIBRARY_PATH" to (context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
-        )
+        val env = buildMap {
+            put("WINEPREFIX", prefix.absolutePath)
+            put("WINEDLLOVERRIDES", "xinput1_3,xinput1_4=n,b")
+            put("LD_LIBRARY_PATH", context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
+            put("BOX64_PATH", wine.parentFile?.absolutePath.orEmpty())
+            put("BOX64_DYNAREC", "1")
+            guestLibraryDirectory?.takeIf { it.isDirectory && it.canRead() }?.let {
+                put("BOX64_LD_LIBRARY_PATH", it.absolutePath)
+            }
+        }
 
         return try {
             val proc = runner.start(box64, bootArgs, env, prefix, "BOX64-WINE")
