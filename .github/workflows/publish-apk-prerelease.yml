@@ -1,8 +1,5 @@
 name: Publish Integrated Android APK Pre-Release
 on:
-  push:
-    branches: [main]
-    paths: [".github/workflows/publish-apk-prerelease.yml"]
   workflow_run:
     workflows: ["Build Runtime Bundle"]
     types: [completed]
@@ -22,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: main
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
       - name: Validate release version
         id: version
@@ -36,10 +33,10 @@ jobs:
       - name: Download runtime artifact from successful runtime build
         uses: actions/download-artifact@v6
         with:
-          name: moving-out-2-runtime-${{ github.event_name == 'workflow_run' && github.event.workflow_run.run_number || '48' }}
+          name: moving-out-2-runtime-${{ github.event.workflow_run.run_number }}
           path: runtime-artifact
           repository: ${{ github.repository }}
-          run-id: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || '45634308671' }}
+          run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
       - name: Verify runtime archive
         run: |
@@ -47,7 +44,7 @@ jobs:
           test -s runtime-artifact/moving-out-2-runtime-arm64-v8a.zip
           test -s runtime-artifact/moving-out-2-runtime-arm64-v8a.zip.sha256
           EXPECTED_SHA="$(awk '{print $1}' runtime-artifact/moving-out-2-runtime-arm64-v8a.zip.sha256)"
-          printf "%s  %s\\n" "$EXPECTED_SHA" runtime-artifact/moving-out-2-runtime-arm64-v8a.zip | sha256sum --check
+          printf '%s  %s\n' "$EXPECTED_SHA" runtime-artifact/moving-out-2-runtime-arm64-v8a.zip | sha256sum --check
           unzip -p runtime-artifact/moving-out-2-runtime-arm64-v8a.zip runtime-manifest.json | python3 -m json.tool >/dev/null
           unzip -t runtime-artifact/moving-out-2-runtime-arm64-v8a.zip >/dev/null
       - uses: actions/setup-java@v6
@@ -64,6 +61,21 @@ jobs:
           yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
           "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+      - name: Stage Box64 as an APK native executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          BOX64_LIB="app/src/main/jniLibs/arm64-v8a/libbox64.so"
+          unzip -p runtime-artifact/moving-out-2-runtime-arm64-v8a.zip box64/bin/box64 > "$BOX64_LIB"
+          chmod 0755 "$BOX64_LIB"
+          test -s "$BOX64_LIB"
+          readelf -h "$BOX64_LIB" | grep -Eq 'Class:.*ELF64'
+          readelf -h "$BOX64_LIB" | grep -Eq 'Machine:.*AArch64'
+          readelf -h "$BOX64_LIB" | grep -Eq 'Type:.*DYN'
+          cmp "$BOX64_LIB" <(unzip -p runtime-artifact/moving-out-2-runtime-arm64-v8a.zip box64/bin/box64)
+          echo "APK Box64 payload: $BOX64_LIB"
+          sha256sum "$BOX64_LIB"
       - name: Build XInput assets
         run: |
           set -euo pipefail
@@ -91,6 +103,7 @@ jobs:
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
           unzip -t "$APK" >/dev/null
           unzip -l "$APK" | grep -F "lib/arm64-v8a/libvulkan_probe.so"
+          unzip -l "$APK" | grep -F "lib/arm64-v8a/libbox64.so"
           unzip -l "$APK" | grep -F "lib/arm64-v8a/libmo2_input_bridge.so"
           unzip -l "$APK" | grep -F "assets/runtime/xinput1_3.dll"
           unzip -l "$APK" | grep -F "assets/runtime/xinput1_4.dll"
@@ -124,9 +137,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           gh release create "$RELEASE_TAG" "$APK_PATH" release-output/moving-out-2-runtime-arm64-v8a.zip release-output/moving-out-2-runtime-arm64-v8a.zip.sha256 release-output/SHA256SUMS.txt \
-            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --repo "$GITHUB_REPOSITORY" --target "$TARGET_SHA" --prerelease \
             --title "Moving Out 2 Android $RELEASE_VERSION (Integrated Pre-release)" \
             --notes "Install the APK, connect to the internet, and launch. The app downloads and validates the matching runtime from this same release. Import your own legally obtained game files. Alpha APK uses an ephemeral CI debug signing key; uninstall an older build if Android rejects an update. No game files are included. Physical-device launch and graphics compatibility still require testing."
       - uses: actions/upload-artifact@v6
