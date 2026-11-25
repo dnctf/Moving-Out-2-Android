@@ -9,16 +9,20 @@ import java.nio.ByteOrder
 internal object RuntimeBinaryInspector {
     const val ELF64_AARCH64 = "ELF64_AARCH64"
     const val ELF64_X86_64 = "ELF64_X86_64"
+    const val ELF64_AARCH64_SHARED = "ELF64_AARCH64_SHARED"
+    const val ELF64_X86_64_SHARED = "ELF64_X86_64_SHARED"
     const val PE32_PLUS_X86_64 = "PE32_PLUS_X86_64"
 
     fun matches(file: File, format: String): Boolean = when (format) {
         ELF64_AARCH64 -> validElf64(file, EM_AARCH64)
         ELF64_X86_64 -> validElf64(file, EM_X86_64)
+        ELF64_AARCH64_SHARED -> validElf64(file, EM_AARCH64, requireEntryPoint = false)
+        ELF64_X86_64_SHARED -> validElf64(file, EM_X86_64, requireEntryPoint = false)
         PE32_PLUS_X86_64 -> validPe32PlusX64(file)
         else -> false
     }
 
-    fun validElf64(file: File, expectedMachine: Int): Boolean = runCatching {
+    fun validElf64(file: File, expectedMachine: Int, requireEntryPoint: Boolean = true): Boolean = runCatching {
         RandomAccessFile(file, "r").use { input ->
             val length = input.length()
             if (length < ELF_HEADER_SIZE) return@use false
@@ -37,7 +41,7 @@ internal object RuntimeBinaryInspector {
             val phentsize = h.getShort(54).toInt() and 0xffff
             val phnum = h.getShort(56).toInt() and 0xffff
             if ((type != ET_EXEC && type != ET_DYN) || machine != expectedMachine || version != 1 ||
-                entry <= 0 || ehsize != 64 || phentsize != 56 || phnum !in 1..4096 ||
+                (requireEntryPoint && entry <= 0) || ehsize != 64 || phentsize != 56 || phnum !in 1..4096 ||
                 phoff < 64 || phoff > length) return@use false
             val tableBytes = phentsize.toLong() * phnum
             if (tableBytes > length - phoff) return@use false
@@ -55,7 +59,7 @@ internal object RuntimeBinaryInspector {
                 val memsz = p.getLong(40)
                 if (offset < 0 || vaddr < 0 || filesz < 0 || memsz <= 0 || memsz < filesz ||
                     offset > length || filesz > length - offset || vaddr > Long.MAX_VALUE - memsz) return@use false
-                if ((flags and PF_X) != 0 && entry >= vaddr && entry < vaddr + memsz) executableEntry = true
+                if ((flags and PF_X) != 0 && (!requireEntryPoint || (entry >= vaddr && entry < vaddr + memsz))) executableEntry = true
             }
             executableEntry
         }
