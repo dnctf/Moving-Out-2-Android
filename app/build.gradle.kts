@@ -17,7 +17,7 @@ android {
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
-    buildTypes {
+    packaging {\n        jniLibs { useLegacyPackaging = true }\n    }\n\n    buildTypes {
         release {
             isMinifyEnabled = false
         }
