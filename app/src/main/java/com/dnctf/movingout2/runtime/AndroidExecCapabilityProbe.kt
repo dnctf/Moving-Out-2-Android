@@ -3,6 +3,7 @@ package com.dnctf.movingout2.runtime
 import android.content.Context
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 
 enum class AndroidExecCapability {
     EXEC_ALLOWED_APP_DATA,
@@ -62,12 +63,24 @@ class AndroidExecCapabilityProbe(
         if (appData.allowed) return appData
 
         val packaged = File(nativeLibraryDirectory, "libbox64.so")
-        if (packaged.isFile && packaged.canExecute()) {
+        val samePayload = packaged.isFile && packaged.canExecute() &&
+            RuntimeBinaryInspector.matches(packaged, RuntimeBinaryInspector.ELF64_AARCH64) &&
+            sha256(packaged) == sha256(appDataExecutable)
+        if (samePayload) {
             val nativeResult = executeCandidate(packaged, AndroidExecCapability.EXEC_ALLOWED_NATIVE_LIB_DIR)
             if (nativeResult.allowed) return nativeResult
             if (nativeResult.capability == AndroidExecCapability.EXEC_BLOCKED_SELINUX_EACCES) return nativeResult
         }
         return appData
+    }
+
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     private fun executeCandidate(file: File, success: AndroidExecCapability): AndroidExecProbeResult {
