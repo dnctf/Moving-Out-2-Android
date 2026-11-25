@@ -7,7 +7,7 @@ package com.dnctf.movingout2.installation
 internal object UnityDataDirectoryLocator {
     fun directoryName(executableName: String): String {
         val baseName = executableName.substringAfterLast('/').substringBeforeLast('.', executableName).trim()
-        require(baseName.isNotBlank() && baseName.none { it == '/' || it == '\\\\' }) {
+        require(baseName.isNotBlank() && baseName.none { it == '/' || it == '\\' }) {
             "Invalid game executable name."
         }
         return "${baseName}_Data"
