@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 usage(){ echo "Usage: $0 --box64 FILE --wine-dir DIR --dxvk-dir DIR [--turnip-so FILE] [--bundle-version VERSION] --output ZIP" >&2; }
-BOX64= WINE_DIR= DXVK_DIR= TURNIP_SO= VERSION=1 OUTPUT=
+BOX64= WINE_DIR= DXVK_DIR= TURNIP_SO= VERSION=1 OUTPUT= BOX64_VERSION=unknown WINE_VERSION=unknown DXVK_VERSION=unknown
 while (($#)); do case "$1" in
  --box64) BOX64=${2:?};shift 2;; --wine-dir) WINE_DIR=${2:?};shift 2;; --dxvk-dir) DXVK_DIR=${2:?};shift 2;;
- --turnip-so) TURNIP_SO=${2:?};shift 2;; --bundle-version) VERSION=${2:?};shift 2;; --output) OUTPUT=${2:?};shift 2;;
+ --turnip-so) TURNIP_SO=${2:?};shift 2;; --bundle-version) VERSION=${2:?};shift 2;; --box64-version) BOX64_VERSION=${2:?};shift 2;; --wine-version) WINE_VERSION=${2:?};shift 2;; --dxvk-version) DXVK_VERSION=${2:?};shift 2;; --output) OUTPUT=${2:?};shift 2;;
  -h|--help) usage;exit 0;; *) echo "Unknown argument: $1" >&2;usage;exit 2;; esac; done
 [[ -n "$BOX64" && -n "$WINE_DIR" && -n "$DXVK_DIR" && -n "$OUTPUT" ]] || { usage;exit 2; }
 [[ "$VERSION" =~ ^[A-Za-z0-9._+-]+$ ]] || { echo "Invalid bundle version." >&2; exit 2; }
@@ -42,7 +42,7 @@ hash_dir(){ (cd "$1" && find . -type f -print0 | sort -z | xargs -0 sha256sum) |
 cat > "$ROOT/runtime-manifest.json" <<JSON
 {
  "schemaVersion":2,"targetAbi":"arm64-v8a","bundleVersion":"$VERSION",
- "provenance":{"packager":"scripts/package_runtime_bundle.sh","manifestFormat":"role-validated-abi-v2"},
+ "provenance":{"packager":"scripts/package_runtime_bundle.sh","manifestFormat":"role-validated-abi-v2","box64Version":"$BOX64_VERSION","wineVersion":"$WINE_VERSION","dxvkVersion":"$DXVK_VERSION"},
  "components":{
   "box64":{"included":true,"path":"box64/bin/box64","abi":"ELF64_AARCH64","sha256":"$(sha "$ROOT/box64/bin/box64")"},
   "wine64":{"included":true,"path":"wine/bin/wine64","abi":"ELF64_X86_64","sha256":"$(sha "$ROOT/wine/bin/wine64")"},
