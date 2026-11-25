@@ -42,7 +42,18 @@ static BOOL init_mapping(void) {
  if(prior!=0){while(InterlockedCompareExchange(&initState,2,2)!=2) Sleep(1); return view!=NULL;}
  char path[2048]={0}; DWORD n=GetEnvironmentVariableA("MO2_XINPUT_SHM_PATH",path,sizeof(path));
  if(n>0 && n<sizeof(path)){
-  fileHandle=CreateFileA(path,GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
+  /* Wine maps Android app-private paths through Z:\\; also accept Wine's
+     explicit Unix-path namespace for callers that pass a POSIX path. */
+  for (int attempt=0; attempt < 3 && fileHandle == INVALID_HANDLE_VALUE; ++attempt) {
+   fileHandle=CreateFileA(path,GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
+   if (fileHandle == INVALID_HANDLE_VALUE && GetLastError() == ERROR_SHARING_VIOLATION) Sleep(25u * (attempt + 1));
+   else break;
+  }
+  if(fileHandle==INVALID_HANDLE_VALUE && path[0]=='/') {
+   char unixPath[2100] = "\\\\?\\unix\\";
+   strncat(unixPath, path, sizeof(unixPath)-strlen(unixPath)-1);
+   fileHandle=CreateFileA(unixPath,GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
+  }
   if(fileHandle!=INVALID_HANDLE_VALUE){
    LARGE_INTEGER sz;
    if(GetFileSizeEx(fileHandle,&sz)&&sz.QuadPart>=MO2X_SIZE){
@@ -76,4 +87,8 @@ __declspec(dllexport) DWORD WINAPI XInputGetCapabilities(DWORD user,DWORD flags,
 __declspec(dllexport) void WINAPI XInputEnable(BOOL enabled){(void)enabled;}
 __declspec(dllexport) DWORD WINAPI XInputGetBatteryInformation(DWORD user,BYTE type,XINPUT_BATTERY_INFORMATION*b){(void)type;if(!b)return ERROR_INVALID_PARAMETER;Slot x;if(!read_slot(user,&x))return ERROR_DEVICE_NOT_CONNECTED;b->BatteryType=BATTERY_TYPE_WIRED;b->BatteryLevel=BATTERY_LEVEL_FULL;return ERROR_SUCCESS;}
 __declspec(dllexport) DWORD WINAPI XInputGetKeystroke(DWORD user,DWORD reserved,XINPUT_KEYSTROKE*k){(void)reserved;if(!k)return ERROR_INVALID_PARAMETER;Slot x;return read_slot(user,&x)?ERROR_EMPTY:ERROR_DEVICE_NOT_CONNECTED;}
+__declspec(dllexport) DWORD WINAPI XInputGetStateEx(DWORD user,XINPUT_STATE*s){return XInputGetState(user,s);}
+__declspec(dllexport) DWORD WINAPI XInputWaitForGuideButton(DWORD user,DWORD flags,DWORD timeout){(void)user;(void)flags;(void)timeout;return ERROR_EMPTY;}
+__declspec(dllexport) DWORD WINAPI XInputCancelGuideButtonWait(DWORD user){(void)user;return ERROR_SUCCESS;}
+__declspec(dllexport) DWORD WINAPI XInputPowerOffController(DWORD user){(void)user;return ERROR_SUCCESS;}
 BOOL WINAPI DllMain(HINSTANCE h,DWORD reason,LPVOID reserved){(void)reserved;if(reason==DLL_PROCESS_ATTACH){DisableThreadLibraryCalls(h);/* XInput exports initialize the shared mapping lazily outside the loader lock. */}if(reason==DLL_PROCESS_DETACH){if(view)UnmapViewOfFile(view);if(mappingHandle)CloseHandle(mappingHandle);if(fileHandle!=INVALID_HANDLE_VALUE)CloseHandle(fileHandle);view=NULL;mappingHandle=NULL;fileHandle=INVALID_HANDLE_VALUE;}return TRUE;}
