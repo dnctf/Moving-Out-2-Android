@@ -1,168 +1,107 @@
-name: Publish Android APK Pre-Release
-
+name: Publish Integrated Android APK Pre-Release
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "App pre-release version (without app-v prefix)"
-        required: true
-        default: "0.2.0-alpha.2"
-        type: string
-
+  workflow_run:
+    workflows: ["Build Runtime Bundle"]
+    types: [completed]
+    branches: [main]
 permissions:
+  actions: read
   contents: write
-
 concurrency:
-  group: android-apk-prerelease
+  group: android-integrated-prerelease
   cancel-in-progress: false
-
 jobs:
   build-and-publish:
-    name: Build, verify and publish ARM64 APK
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_sha == github.sha
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
+          ref: main
           fetch-depth: 0
-
       - name: Validate release version
         id: version
         shell: bash
-        env:
-          INPUT_VERSION: ${{ inputs.version || '0.2.0-alpha.2' }}
         run: |
           set -euo pipefail
-          [[ "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]] || {
-            echo "::error::Invalid version: $INPUT_VERSION"
-            exit 1
-          }
-          APP_VERSION="$(sed -nE 's/^[[:space:]]*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts | head -n1)"
-          if [[ "$APP_VERSION" != "$INPUT_VERSION" ]]; then
-            echo "::error::Release input $INPUT_VERSION does not match app/build.gradle.kts versionName $APP_VERSION"
-            exit 1
-          fi
-          echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=app-v$INPUT_VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v6
+          VERSION="$(sed -nE 's/^[[:space:]]*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts | head -n1)"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=app-v$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Download runtime artifact from successful runtime build
+        uses: actions/download-artifact@v6
+        with:
+          name: moving-out-2-runtime-${{ github.event.workflow_run.run_number }}
+          path: runtime-artifact
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Verify runtime archive
+        run: |
+          set -euo pipefail
+          test -s runtime-artifact/moving-out-2-runtime-arm64-v8a.zip
+          test -s runtime-artifact/moving-out-2-runtime-arm64-v8a.zip.sha256
+          sha256sum --check runtime-artifact/moving-out-2-runtime-arm64-v8a.zip.sha256
+          unzip -p runtime-artifact/moving-out-2-runtime-arm64-v8a.zip runtime-manifest.json | python3 -m json.tool >/dev/null
+          unzip -t runtime-artifact/moving-out-2-runtime-arm64-v8a.zip >/dev/null
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
-
-      - name: Configure Android SDK packages
-        shell: bash
+      - name: Configure Android SDK
         run: |
           set -euo pipefail
-          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/android/sdk}}"
+          SDK_ROOT="$ANDROID_SDK_ROOT"
           SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -maxdepth 5 -type f -name sdkmanager | sort | tail -n1)"
-          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -name sdkmanager -type f | sort | tail -n1)"; fi
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
           "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
-
-      - name: Install MinGW-w64
-        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64-posix
-
-      - name: Build XInput DLL assets
-        shell: bash
+      - name: Build XInput assets
         run: |
           set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64-posix
           chmod +x native/wine-xinput/build_wine_xinput.sh
           MINGW_CC=x86_64-w64-mingw32-gcc-posix native/wine-xinput/build_wine_xinput.sh native/wine-xinput/out
           mkdir -p app/src/main/assets/runtime
-          cp native/wine-xinput/out/xinput1_3.dll app/src/main/assets/runtime/
-          cp native/wine-xinput/out/xinput1_4.dll app/src/main/assets/runtime/
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+          cp native/wine-xinput/out/xinput1_3.dll native/wine-xinput/out/xinput1_4.dll app/src/main/assets/runtime/
+      - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "8.9"
-
-      - name: Run unit tests
-        run: gradle --no-daemon testDebugUnitTest
-
-      - name: Build release APK
-        run: gradle --no-daemon assembleRelease
-
-      - name: Verify APK and generate checksums
-        shell: bash
+      - name: Unit tests and release APK
+        run: |
+          gradle --no-daemon testDebugUnitTest
+          gradle --no-daemon assembleRelease
+      - name: Verify APK, sign and checksums
         run: |
           set -euo pipefail
-          APK="app/build/outputs/apk/release/app-release.apk"
-          test -s "$APK"
           mkdir -p release-output
-          cp "$APK" "release-output/Moving-Out-2-Android-${{ steps.version.outputs.version }}-arm64-v8a-debug-signed.apk"
-          APK_OUT="$(find release-output -maxdepth 1 -name '*.apk' -print -quit)"
-          sha256sum "$APK_OUT" > release-output/SHA256SUMS.txt
-          unzip -t "$APK_OUT"
-          APKSIGNER="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/android/sdk}}/build-tools/35.0.0/apksigner"
-          test -x "$APKSIGNER"
-          "$APKSIGNER" verify --verbose --print-certs "$APK_OUT"
-          unzip -l "$APK_OUT" | grep -F "lib/arm64-v8a/libvulkan_probe.so"
-          unzip -l "$APK_OUT" | grep -F "lib/arm64-v8a/libmo2_input_bridge.so"
-          unzip -l "$APK_OUT" | grep -F "assets/runtime/xinput1_3.dll"
-          unzip -l "$APK_OUT" | grep -F "assets/runtime/xinput1_4.dll"
-          echo "APK_PATH=$APK_OUT" >> "$GITHUB_ENV"
-
-      - name: Publish GitHub pre-release
+          APK="release-output/Moving-Out-2-Android-v${{ steps.version.outputs.version }}-arm64-v8a.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$APK"
+          cp runtime-artifact/moving-out-2-runtime-arm64-v8a.zip release-output/
+          cp runtime-artifact/moving-out-2-runtime-arm64-v8a.zip.sha256 release-output/
+          "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          unzip -t "$APK" >/dev/null
+          unzip -l "$APK" | grep -F "assets/runtime/xinput1_3.dll"
+          unzip -l "$APK" | grep -F "assets/runtime/xinput1_4.dll"
+          (cd release-output && sha256sum "Moving-Out-2-Android-v${{ steps.version.outputs.version }}-arm64-v8a.apk" moving-out-2-runtime-arm64-v8a.zip > SHA256SUMS.txt)
+          sha256sum --check release-output/SHA256SUMS.txt
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+      - name: Publish single integrated pre-release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
-        shell: bash
         run: |
-          set -euo pipefail
-          gh release create "$RELEASE_TAG" \
-            "$APK_PATH" \
-            release-output/SHA256SUMS.txt \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "Moving Out 2 Android $RELEASE_VERSION (Pre-release)" \
-            --prerelease \
-            --notes-file - <<EOF
-          ## Moving Out 2 Android — $RELEASE_VERSION
-
-          **Channel:** Early access / pre-release  
-          **Platform:** Android ARM64 (arm64-v8a)  
-          **Minimum Android:** Android 8.0 (API 26)  
-          **Target SDK:** Android 15 (API 35)  
-          **Build:** Release variant, debug-key signed APK (alpha/testing only)
-
-          ### Included
-          - Android launcher and game library/import workflow.
-          - Box64/Wine runtime integration and runtime bundle downloader.
-          - Vulkan native probe and SurfaceView presentation bridge.
-          - XInput 1.3 / 1.4 bridge assets.
-          - Touch controller and physical gamepad input integration.
-          - Runtime settings and telemetry overlay.
-
-          ### Installation
-          1. Download the APK asset below.
-          2. Verify it with the SHA256SUMS.txt file. The APK signature is checked by CI using apksigner.
-          3. Enable installation from this source when Android prompts.
-          4. Install the APK.
-          5. Import the separately distributed runtime bundle from the app's runtime setup flow.
-          6. Import your own legally obtained Moving Out 2 Windows game files.
-
-          ### Important limitations
-          - This alpha APK is signed with the CI-generated Android debug key so Android Package Installer can install it. The key is ephemeral per fresh CI runner; a later build may require uninstalling this version before upgrading. A persistent private release keystore is required for stable in-place updates.
-          - No Moving Out 2 game files are included.
-          - Automated CI verifies compilation, packaging and unit tests. Actual launch, Vulkan presentation, compatibility and FPS still require physical-device testing.
-          - Runtime bundle is distributed separately: https://github.com/$GITHUB_REPOSITORY/releases/tag/runtime-v0.1.0-34
-
-          ### Verification
-          SHA-256 is provided in `SHA256SUMS.txt`. Verify before installation.
-
-          **Not affiliated with Team17 or SMG Studio.**
-          EOF
-
-      - name: Upload APK build artifact
-        uses: actions/upload-artifact@v6
+          gh release create "$RELEASE_TAG" "$APK_PATH" release-output/moving-out-2-runtime-arm64-v8a.zip release-output/moving-out-2-runtime-arm64-v8a.zip.sha256 release-output/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "Moving Out 2 Android $RELEASE_VERSION (Integrated Pre-release)" \
+            --notes "Install the APK, connect to the internet, and launch. The app downloads and validates the matching runtime from this same release. Import your own legally obtained game files. Alpha APK uses an ephemeral CI debug signing key; uninstall an older build if Android rejects an update. No game files are included. Physical-device launch and graphics compatibility still require testing."
+      - uses: actions/upload-artifact@v6
         with:
-          name: moving-out-2-android-release-apk
+          name: moving-out-2-android-integrated-release
           path: release-output/*
           retention-days: 30
