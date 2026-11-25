@@ -103,10 +103,13 @@ class WineRuntimeLauncher(
             if (!system32.mkdirs() && !system32.isDirectory) throw IOException("Unable to create WINEPREFIX system32.")
             val dxvkDlls = if (options.useDxvk) dxvkDir!! else null
             if (dxvkDlls != null) for (dll in listOf("d3d11.dll", "dxgi.dll")) copyFile(File(dxvkDlls, dll), File(system32, dll))
-            for (dll in listOf("xinput1_3.dll", "xinput1_4.dll")) {
-                val bundleDll = File(root, "xinput/$dll")
+            for (dll in listOf("xinput1_3.dll", "xinput1_4.dll", "xinput9_1_0.dll", "vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")) {
+                val bundleDll = when (dll) {
+                    "xinput1_3.dll", "xinput1_4.dll", "xinput9_1_0.dll" -> File(root, "xinput/$dll").takeIf { it.isFile } ?: File(root, "wine/lib/wine/x86_64-windows/$dll")
+                    else -> File(root, "wine/lib/wine/x86_64-windows/$dll")
+                }
                 if (bundleDll.isFile) copyFile(bundleDll, File(system32, dll))
-                else {
+                else if (dll.startsWith("xinput")) {
                     val assetDll = File(context.filesDir, "runtime/$dll")
                     if (assetDll.isFile) copyFile(assetDll, File(system32, dll))
                     else context.assets.open("runtime/$dll").use { input -> File(system32, dll).outputStream().use(input::copyTo) }
@@ -121,7 +124,8 @@ class WineRuntimeLauncher(
                 prefix, sharedInput, hostLibraryDirectory, options.fpsCap,
                 if (options.useTurnip && turnipDir != null) icd else null, dxvkDlls,
                 guestLibraryDirectory = if (manifestFile.isFile) report.libraryDirectory else null,
-                guestBinaryDirectory = wine!!.parentFile
+                guestBinaryDirectory = wine!!.parentFile,
+                useDxvk = options.useDxvk
             ).toMutableMap()
             properties.stringPropertyNames().filter { it.startsWith("profile_env_") }.forEach { p ->
                 val envKey = p.removePrefix("profile_env_")
