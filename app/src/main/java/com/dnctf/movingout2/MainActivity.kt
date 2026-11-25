@@ -407,7 +407,8 @@ class MainActivity : Activity() {
                 if (active.metadataVersion != null) append("\nIL2CPP metadata: v").append(active.metadataVersion)
                 if (active.missingFiles.isNotEmpty()) append("\nMissing:\n- ").append(active.missingFiles.joinToString("\n- "))
                 if (active.accessErrors.isNotEmpty()) append("\nAccess errors:\n- ").append(active.accessErrors.joinToString("\n- "))
-                append("\n\nGame files: ").append(if (active.isReadyToLaunch) "READY" else "NOT READY")\n                append("Runtime/exec/Vulkan readiness: shown in the Runtime panel")
+                append("\n\nGame files: ").append(if (active.isReadyToLaunch) "READY" else "NOT READY")
+                append("Runtime/exec/Vulkan readiness: shown in the Runtime panel")
             }
         }
         refreshRuntimeStatus()
