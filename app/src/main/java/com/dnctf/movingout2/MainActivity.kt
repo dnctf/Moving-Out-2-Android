@@ -19,6 +19,7 @@ import android.widget.CheckBox
 import android.widget.Button
 import android.widget.ScrollView
 import com.dnctf.movingout2.runtime.RuntimeDiagnostics
+import com.dnctf.movingout2.compatibility.DeviceDiagnosticsProvider
 import com.dnctf.movingout2.input.RuntimeInputBridge
 import com.dnctf.movingout2.input.ControllerInputCoordinator
 import com.dnctf.movingout2.input.VirtualControllerView
@@ -47,6 +48,7 @@ class MainActivity : Activity() {
     private lateinit var gameRegistry: com.dnctf.movingout2.installation.GameRegistry
     private lateinit var physicalGamepadManager: PhysicalGamepadManager
     private val inputBridge = RuntimeInputBridge()
+    private val runtimeInstallInProgress = AtomicBoolean(false)
     private val diagnosticLog = RuntimeDiagnostics()
     private var pendingDiagnosticZip: File? = null
     private val pickDiagnosticDestination = 1004
@@ -90,6 +92,7 @@ class MainActivity : Activity() {
         status.text = if (repository.savedUri() != null) "Saved installation folder found. Tap Revalidate to check current access." else "Import the game ZIP or select an existing game folder. Runtime: RUNTIME_NOT_INSTALLED."
         refreshRuntimeStatus()
         probeGraphicsAsync()
+        ensureRuntimeInstalledOnFirstLaunch()
     }
 
 
@@ -208,25 +211,54 @@ class MainActivity : Activity() {
         }, pickRuntimeBundle)
     }
 
+    private fun ensureRuntimeInstalledOnFirstLaunch() {
+        val report = RuntimeBundleValidator().validate(File(filesDir, "native_runtime/bundle"))
+        if (report.isReady) return
+        if (android.os.Build.SUPPORTED_ABIS.none { it == "arm64-v8a" }) {
+            runtimeStatus.text = "Automatic setup stopped: this app requires an ARM64 (arm64-v8a) Android device."
+            return
+        }
+        runtimeStatus.text = "First-run setup: runtime missing. Preparing automatic download…"
+        startRuntimeRepositoryInstall(automatic = true)
+    }
+
     private fun downloadRuntimeFromRepository() {
-        runtimeStatus.text = "Runtime repository: checking GitHub Releases…"
+        startRuntimeRepositoryInstall(automatic = false)
+    }
+
+    private fun startRuntimeRepositoryInstall(automatic: Boolean) {
+        if (!runtimeInstallInProgress.compareAndSet(false, true)) {
+            runtimeStatus.text = "Runtime setup is already running. Please wait for it to finish."
+            return
+        }
+        runtimeStatus.text = if (automatic) {
+            "First-run setup: checking device and runtime release…"
+        } else {
+            "Runtime repair: checking device and GitHub Releases…"
+        }
         Thread({
             val result = runCatching {
+                val device = DeviceDiagnosticsProvider.collect(this)
+                if (device.abi.none { it == "arm64-v8a" }) {
+                    throw IllegalStateException("Unsupported CPU ABI. This runtime requires arm64-v8a.")
+                }
                 com.dnctf.movingout2.runtime.RuntimeRepositoryInstaller(this).installLatest { message ->
-                    runOnUiThread { runtimeStatus.text = message }
+                    runOnUiThread { if (!isFinishing && !isDestroyed) runtimeStatus.text = message }
                 }
             }
+            runtimeInstallInProgress.set(false)
             runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 result.onSuccess { installed ->
                     refreshRuntimeStatus()
-                    runtimeStatus.append("\nDownloaded release: ${installed.version}\nFiles: ${installed.files} | Expanded: ${installed.bytes / (1024 * 1024)} MiB")
-                    Toast.makeText(this, "Runtime downloaded and validated.", Toast.LENGTH_LONG).show()
+                    runtimeStatus.append("\nRuntime release: ${installed.version}\nFiles: ${installed.files} | Extracted: ${installed.bytes / (1024 * 1024)} MiB\nIntegrity: SHA-256 + manifest + ABI validation passed.")
+                    Toast.makeText(this, "Runtime setup completed and verified.", Toast.LENGTH_LONG).show()
                 }.onFailure { error ->
-                    runtimeStatus.text = "Automatic runtime download failed: ${error.message ?: error.javaClass.simpleName}\nExisting runtime bundle was preserved."
-                    Toast.makeText(this, "Runtime download failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    runtimeStatus.text = "Runtime setup failed safely: ${error.message ?: error.javaClass.simpleName}\nExisting runtime was preserved. Check free storage and network, then tap Repair runtime."
+                    Toast.makeText(this, "Runtime setup failed: ${error.message}", Toast.LENGTH_LONG).show()
                 }
             }
-        }, "runtime-repository-installer").apply { isDaemon = true; start() }
+        }, "runtime-repository-installer").apply { isDaemon = false; start() }
     }
 
     private fun openGameZipPicker() {
@@ -338,17 +370,23 @@ class MainActivity : Activity() {
     private fun probeGraphicsAsync() {
         graphicsStatus.text = "Probing Vulkan loader and physical device..."
         Thread({
+            val device = runCatching { DeviceDiagnosticsProvider.collect(this) }
             val result = runCatching { VulkanCapabilities.probe(this) }
             runOnUiThread {
+                val deviceText = device.getOrNull()?.let {
+                    "Device: ${it.manufacturer} ${it.model}\\nSoC: ${it.soc}\\nCPU ABI: ${it.abi.joinToString()}\\nRAM: ${it.ramBytes?.div(1024 * 1024) ?: "unknown"} MiB (free ${it.availableRamBytes?.div(1024 * 1024) ?: "unknown"} MiB)\\nGPU family hint: ${it.gpuVendorHint}"
+                } ?: "Device detection unavailable."
                 graphicsStatus.text = result.fold({ probe ->
                     buildString {
-                        append("Native Vulkan: ").append(probe.nativeProbeStatus ?: "unavailable")
-                        append("\nAPI: ").append(probe.apiVersion ?: "unknown")
-                        append("\nGPU: ").append(probe.gpuVendor ?: "unknown").append(" / ").append(probe.gpuName ?: "unknown")
-                        append("\nExtensions: ").append(probe.extensions.size)
-                        if (probe.blockers.isNotEmpty()) append("\n\nNotes:\n- ").append(probe.blockers.joinToString("\n- "))
+                        append(deviceText)
+                        append("\\n\\nActive Vulkan driver: ").append(probe.nativeProbeStatus ?: "unavailable")
+                        append("\\nVulkan API: ").append(probe.apiVersion ?: "unknown")
+                        append("\\nGPU: ").append(probe.gpuVendor ?: "unknown").append(" / ").append(probe.gpuName ?: "unknown")
+                        append("\\nDevice extensions: ").append(probe.extensions.size)
+                        append("\\nDriver policy: use the Android system Vulkan driver; do not force-load Turnip unless device/driver compatibility is verified.")
+                        if (probe.blockers.isNotEmpty()) append("\\n\\nNotes:\\n- ").append(probe.blockers.joinToString("\\n- "))
                     }
-                }, { "Graphics probe failed: ${it.message ?: it.javaClass.simpleName}" })
+                }, { deviceText + "\\n\\nVulkan probe failed: ${it.message ?: it.javaClass.simpleName}" })
             }
         }, "graphics-probe").apply { isDaemon = true; start() }
     }
