@@ -447,7 +447,7 @@ class RuntimeRepositoryInstaller(
     }
 
     companion object {
-        private const val MAX_DOWNLOAD_ATTEMPTS = 5
+        private const val MAX_DOWNLOAD_ATTEMPTS = 6
         private const val RETRY_BACKOFF_MS = 1_000L
         private val ALLOWED_GITHUB_HOSTS = setOf(
             "api.github.com",
