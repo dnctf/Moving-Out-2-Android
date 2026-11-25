@@ -117,7 +117,7 @@ class WineRuntimeLauncher(
             val env = WineLaunchCommand.environment(
                 prefix, sharedInput, hostLibraryDirectory, options.fpsCap,
                 if (options.useTurnip && turnipDir != null) icd else null, dxvkDlls,
-                guestLibraryDirectory = report.libraryDirectory,
+                guestLibraryDirectory = if (manifestFile.isFile) report.libraryDirectory else null,
                 guestBinaryDirectory = wine!!.parentFile
             ).toMutableMap()
             properties.stringPropertyNames().filter { it.startsWith("profile_env_") }.forEach { p ->
@@ -171,13 +171,21 @@ class WineRuntimeLauncher(
             return false
         }
         val validated = validator.validate(bundleRoot)
-        val libraryPath = validated.libraryDirectory?.absolutePath.orEmpty()
+        val box64 = validated.box64
+        if (box64 == null || !validated.isReady) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "wineserver", "Cleanup blocked: validated Box64 host executable is unavailable."))
+            return false
+        }
         val environment = buildMap {
             put("WINEPREFIX", prefix.absolutePath)
-            if (libraryPath.isNotBlank()) put("LD_LIBRARY_PATH", libraryPath)
+            put("LD_LIBRARY_PATH", context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
+            if (File(bundleRoot, "runtime-manifest.json").isFile && validated.libraryDirectory != null) {
+                put("BOX64_LD_LIBRARY_PATH", validated.libraryDirectory.absolutePath)
+            }
+            put("BOX64_PATH", server.parentFile?.absolutePath.orEmpty())
         }
         return runCatching {
-            val result = RuntimeProcess(diagnostics).start(server, listOf("-k"), environment, prefix).waitFor(5000)
+            val result = RuntimeProcess(diagnostics).start(box64, listOf(server.absolutePath, "-k"), environment, prefix).waitFor(5000)
             val success = !result.timedOut && result.exitCode == 0
             diagnostics.record(RuntimeDiagnostic(if (success) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.WARNING, "wineserver", "Cleanup command exit=${result.exitCode}, timedOut=${result.timedOut}."))
             success
