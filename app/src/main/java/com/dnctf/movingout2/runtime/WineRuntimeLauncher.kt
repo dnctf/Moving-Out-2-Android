@@ -174,9 +174,9 @@ class WineRuntimeLauncher(
             return false
         }
         val validated = validator.validate(bundleRoot)
-        val box64 = activeBox64Executable?.takeIf { it.isFile && it.canExecute() } ?: validated.box64
+        val box64 = activeBox64Executable?.takeIf { it.isFile && it.canExecute() }
         if (box64 == null || !validated.isReady) {
-            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "wineserver", "Cleanup blocked: validated Box64 host executable is unavailable."))
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "wineserver", "Cleanup blocked: extracted nativeLibraryDir Box64 executable is unavailable; refusing filesDir execution."))
             return false
         }
         val environment = buildMap {
