@@ -119,7 +119,26 @@ To maintain rigorous engineering honesty, project verification is explicitly div
 
 ---
 
-## 4. How to Build & Run Tests
+## 4. Automatic First-Run Runtime Setup
+
+On first app launch, the launcher checks the device's ARM64 ABI, collects device and
+Vulkan information, downloads the newest published `runtime-v*` bundle, verifies its
+SHA-256 and manifest v2, checks free storage, extracts into a staging directory, and
+activates it only after validation succeeds. If setup fails, use **Repair / download
+runtime** from the launcher to retry.
+
+The installer requires sufficient internal storage for the downloaded archive, expanded
+runtime and a safety reserve. Runtime files are kept in the app-private directory. The
+app prefers the Android system Vulkan driver; optional Turnip payloads are not forced
+onto devices based only on a GPU-family guess. Android system/kernel drivers cannot be
+silently replaced by an ordinary app.
+
+See [Automatic Runtime Downloads](docs/AUTOMATIC_RUNTIME_DOWNLOADS.md) for the release
+asset contract, extraction rules, storage requirements and device-driver policy.
+
+---
+
+## 5. How to Build & Run Tests
 
 ### Prerequisites
 - JDK 17 (Temurin recommended)
