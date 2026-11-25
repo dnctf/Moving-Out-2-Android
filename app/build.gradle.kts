@@ -27,6 +27,12 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // Alpha distribution must be installable. Until a persistent private
+            // release keystore is configured, use Android's generated debug key.
+            // This signs the APK but does not provide a stable upgrade identity
+            // across fresh CI runners; configure a private release keystore before
+            // public/stable distribution.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
