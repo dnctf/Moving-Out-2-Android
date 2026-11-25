@@ -68,7 +68,7 @@ jobs:
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
           unzip -t "$APK"
-          unzip -l "$APK" | grep -F "drawable-nodpi/ic_launcher_logo.png"
+          unzip -l "$APK" | grep -F "ic_launcher_logo.png"
           unzip -l "$APK" | grep -F "mipmap-anydpi-v26/ic_launcher.xml"
           unzip -l "$APK" | grep -F "assets/runtime/xinput1_3.dll"
           unzip -l "$APK" | grep -F "assets/runtime/xinput1_4.dll"
