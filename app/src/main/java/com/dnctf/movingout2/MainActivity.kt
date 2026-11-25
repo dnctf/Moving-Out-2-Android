@@ -59,42 +59,61 @@ class MainActivity : Activity() {
     private val pickFolder = 1001
     private val pickRuntimeBundle = 1002
     private val pickGameZip = 1003
+    private val pickRuntimeZip = 1007
     private val pickControllerProfileImport = 1005
     private val pickControllerProfileExport = 1006
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        repository = InstallationRepository(this)
-        gameRegistry = com.dnctf.movingout2.installation.GameRegistry(this, repository)
-        val activeGame = gameRegistry.getActiveGame()
-        controllerProfileGameKey = controllerProfileStorageKey(activeGame?.id)
-        val storedProfile = ControllerProfileRepository.load(this, controllerProfileGameKey)
-        val legacyProfile = if (controllerProfileGameKey == "moving-out-2") null
-            else ControllerProfileRepository.load(this, "moving-out-2")
-        controllerProfile = storedProfile ?: legacyProfile ?: ControllerProfile.presets.first()
-        if (storedProfile == null && legacyProfile != null) {
-            ControllerProfileRepository.save(this, controllerProfileGameKey, legacyProfile)
-        }
-        inputBridge.initialize(RuntimeLaunchConfig(filesDir).sharedMemoryFile.absolutePath)
-        inputCoordinator = ControllerInputCoordinator(inputBridge, controllerProfile)
-        physicalGamepadManager = PhysicalGamepadManager(
-            this,
-            onDeviceState = { deviceId, _, state, connected ->
-                inputCoordinator.updatePhysicalDevice(deviceId, state, connected)
-            },
-            onAggregateState = { /* Per-device routing owns XInput slots; do not merge all pads into player 0. */ }
+        // Render a usable launcher shell before touching native/JNI or persisted repositories.
+        val views = LauncherHomeView.create(
+            this, ::openFolderPicker, ::revalidateSavedFolder,
+            ::openRuntimeZipPicker, ::openRuntimeFolderPicker,
+            ::downloadRuntimeFromRepository, ::openGameZipPicker, ::showSettings,
+            ::showControllerTest, ::exportDiagnostics
         )
-        val views = LauncherHomeView.create(this, ::openFolderPicker, ::revalidateSavedFolder, ::openRuntimeBundlePicker, ::downloadRuntimeFromRepository, ::openGameZipPicker, ::showSettings, ::showControllerTest, ::exportDiagnostics)
         status = views.status
         runtimeStatus = views.runtimeStatus
         graphicsStatus = views.graphicsStatus
         setContentView(views.root)
-        status.text = if (repository.savedUri() != null) "Saved installation folder found. Tap Revalidate to check current access." else "Import the game ZIP or select an existing game folder. Runtime: RUNTIME_NOT_INSTALLED."
-        refreshRuntimeStatus()
-        probeGraphicsAsync()
-        ensureRuntimeInstalledOnFirstLaunch()
+        status.text = "Starting launcher…"
+        runtimeStatus.text = "Checking runtime installation…"
+        graphicsStatus.text = "Device diagnostics are starting…"
+        try {
+            repository = InstallationRepository(this)
+            gameRegistry = com.dnctf.movingout2.installation.GameRegistry(this, repository)
+            val activeGame = gameRegistry.getActiveGame()
+            controllerProfileGameKey = controllerProfileStorageKey(activeGame?.id)
+            val storedProfile = ControllerProfileRepository.load(this, controllerProfileGameKey)
+            val legacyProfile = if (controllerProfileGameKey == "moving-out-2") null
+                else ControllerProfileRepository.load(this, "moving-out-2")
+            controllerProfile = storedProfile ?: legacyProfile ?: ControllerProfile.presets.first()
+            if (storedProfile == null && legacyProfile != null) ControllerProfileRepository.save(this, controllerProfileGameKey, legacyProfile)
+            runCatching { inputBridge.initialize(RuntimeLaunchConfig(filesDir).sharedMemoryFile.absolutePath) }
+                .onFailure { error -> diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "input-bridge-init", "${error.javaClass.name}: ${error.message ?: "no message"}")) }
+            inputCoordinator = ControllerInputCoordinator(inputBridge, controllerProfile)
+            physicalGamepadManager = PhysicalGamepadManager(
+                this,
+                onDeviceState = { deviceId, _, state, connected ->
+                    if (::inputCoordinator.isInitialized) inputCoordinator.updatePhysicalDevice(deviceId, state, connected)
+                },
+                onAggregateState = { /* Per-device routing owns XInput slots. */ }
+            )
+            status.text = if (repository.savedUri() != null) "Saved installation folder found. Tap Revalidate to check current access."
+                else "Import the game ZIP or select an existing game folder."
+            refreshRuntimeStatus()
+            probeGraphicsAsync()
+            ensureRuntimeInstalledOnFirstLaunch()
+        } catch (error: Throwable) {
+            val trace = java.io.StringWriter().also { error.printStackTrace(java.io.PrintWriter(it)) }.toString()
+            diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "launcher-onCreate",
+                "${error.javaClass.name}: ${error.message ?: "no message"}\n$trace"))
+            status.text = "Launcher initialization failed safely. UI is available, but a subsystem could not start.\n${error.javaClass.simpleName}: ${error.message ?: "no message"}\nExport diagnostics and share the report."
+            runtimeStatus.text = "Runtime setup is paused until launcher initialization is repaired."
+            graphicsStatus.text = "Device probe was not started."
+            Toast.makeText(this, "Launcher initialization failed: ${error.message}", Toast.LENGTH_LONG).show()
+        }
     }
-
 
     private fun activateControllerProfileForGame(game: com.dnctf.movingout2.installation.RegisteredGame?) {
         val nextKey = controllerProfileStorageKey(game?.id)
@@ -169,20 +188,20 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        inputCoordinator.resume()
-        physicalGamepadManager.register()
+        if (::inputCoordinator.isInitialized) inputCoordinator.resume()
+        if (::physicalGamepadManager.isInitialized) physicalGamepadManager.register()
     }
 
     override fun onPause() {
         // Disable coordinator callbacks first: unregister() emits a final neutral device state.
         // That callback must not reconnect the XInput slot while the Activity is pausing.
-        inputCoordinator.resetAndDisconnect()
-        physicalGamepadManager.unregister()
+        if (::inputCoordinator.isInitialized) inputCoordinator.resetAndDisconnect()
+        if (::physicalGamepadManager.isInitialized) physicalGamepadManager.unregister()
         super.onPause()
     }
 
     override fun onDestroy() {
-        inputCoordinator.destroy()
+        if (::inputCoordinator.isInitialized) inputCoordinator.destroy()
         super.onDestroy()
     }
 
@@ -205,7 +224,15 @@ class MainActivity : Activity() {
         }, pickFolder)
     }
 
-    private fun openRuntimeBundlePicker() {
+    private fun openRuntimeZipPicker() {
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/zip"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }, pickRuntimeZip)
+    }
+
+    private fun openRuntimeFolderPicker() {
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }, pickRuntimeBundle)
