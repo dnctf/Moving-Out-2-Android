@@ -27,10 +27,14 @@ data class RuntimeRepositoryInstallResult(val version: String, val files: Int, v
 internal fun latestRuntimePrerelease(releases: JSONArray): JSONObject? {
     val candidates = (0 until releases.length()).mapNotNull { index ->
         releases.optJSONObject(index)?.takeIf { release ->
-            release.optBoolean("prerelease", false) &&
-                !release.optBoolean("draft", false) &&
-                release.optString("tag_name").startsWith("runtime-v") &&
-                release.optString("published_at").isNotBlank()
+            if (!release.optBoolean("prerelease", false) ||
+                release.optBoolean("draft", false) ||
+                !release.optString("tag_name").startsWith("runtime-v") ||
+                release.optString("published_at").isBlank()) return@takeIf false
+            val assets = release.optJSONArray("assets") ?: return@takeIf false
+            val names = (0 until assets.length()).mapNotNull { assets.optJSONObject(it)?.optString("name") }.toSet()
+            names.contains("moving-out-2-runtime-arm64-v8a.zip") &&
+                names.contains("moving-out-2-runtime-arm64-v8a.zip.sha256")
         }
     }
     return candidates.maxByOrNull { it.optString("published_at") }
