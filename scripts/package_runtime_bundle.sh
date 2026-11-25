@@ -41,8 +41,14 @@ cp -aL "$WINE_DIR/lib/wine" "$ROOT/wine/lib/wine";mkdir -p "$ROOT/wine/lib/wine/
 cp "$XINPUT_DIR/xinput1_3.dll" "$ROOT/wine/lib/wine/x86_64-windows/";cp "$XINPUT_DIR/xinput1_4.dll" "$ROOT/wine/lib/wine/x86_64-windows/"
 if find "$ROOT/wine/lib/wine" -type l -print -quit | grep -q .; then echo "Wine runtime contains unresolved symlinks; refusing to create a non-portable Android ZIP." >&2; exit 1; fi
 if [[ -n "$TURNIP_SO" ]];then mkdir -p "$ROOT/turnip";cp "$TURNIP_SO" "$ROOT/turnip/libvulkan_freedreno.so";cp "$(dirname "$TURNIP_SO")/freedreno_icd.aarch64.json" "$ROOT/turnip/";fi
+MANIFEST_FILE="$ROOT/runtime-manifest.json"
 python3 scripts/write_runtime_manifest.py --root "$ROOT" --version "$VERSION"
-mkdir -p "$OUT_DIR";rm -f "$OUTPUT";(cd "$ROOT" && zip -qr "$OUTPUT" .)
+python3 -m json.tool "$MANIFEST_FILE" > /dev/null
+mkdir -p "$OUT_DIR"
+rm -f "$OUTPUT"
+(cd "$ROOT" && zip -qr "$OUTPUT" .)
+unzip -p "$OUTPUT" runtime-manifest.json | python3 -m json.tool > /dev/null
 (cd "$OUT_DIR" && sha256sum "$(basename "$OUTPUT")" > SHA256SUMS.txt)
+test -s "$OUT_DIR/SHA256SUMS.txt"
 echo "Runtime bundle created: $OUTPUT"
 echo "SHA256SUMS: $OUT_DIR/SHA256SUMS.txt"
