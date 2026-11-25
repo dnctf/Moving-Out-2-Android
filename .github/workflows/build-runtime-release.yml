@@ -2,7 +2,7 @@ name: Build and Publish ARM64 Runtime Bundle
 
 on:
   push:
-    branches: [build/runtime-release-pipeline]
+    branches: [main, build/runtime-release-pipeline]
     paths:
       - ".github/workflows/build-runtime-release.yml"
       - "scripts/package_runtime_bundle.sh"
