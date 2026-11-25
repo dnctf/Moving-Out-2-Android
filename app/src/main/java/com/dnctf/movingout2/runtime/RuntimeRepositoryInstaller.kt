@@ -276,8 +276,9 @@ class RuntimeRepositoryInstaller(
                     runtimeContentRangeStart(connection.getHeaderField("Content-Range"))
                         ?: throw IOException("Runtime server returned 206 without a valid Content-Range header.")
                 } else 0L
-                if (append && responseStart != offset) {
-                    throw IOException("Runtime resume offset mismatch: requested=$offset, server=$responseStart.")
+                val requiredStart = if (append) offset else 0L
+                if (responseStart != requiredStart) {
+                    throw IOException("Runtime range offset mismatch: requested=$requiredStart, server=$responseStart.")
                 }
                 val responseLength = connection.contentLengthLong
                 val expectedTotal = if (responseCode == HttpURLConnection.HTTP_PARTIAL) {
