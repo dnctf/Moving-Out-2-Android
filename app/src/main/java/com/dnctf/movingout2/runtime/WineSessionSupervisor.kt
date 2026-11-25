@@ -254,6 +254,7 @@ class WineSessionSupervisor(
 
         // Setup input IPC & DLLs
         deployXInputDlls()
+        configureWinePrefixRegistry()
         sharedInput.parentFile?.mkdirs()
         if (!sharedInput.exists()) sharedInput.writeBytes(ByteArray(128))
         if (!inputBridge.isNativeAvailable() || !inputBridge.initialize(sharedInput.absolutePath)) {
@@ -355,6 +356,24 @@ class WineSessionSupervisor(
         } catch (e: Exception) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "wineboot invocation threw: ${e.message}"))
             false
+        }
+    }
+
+    private fun configureWinePrefixRegistry() {
+        val userReg = File(prefix, "user.reg")
+        if (!userReg.isFile) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "supervisor", "Wine user.reg not present after wineboot; registry tuning skipped."))
+            return
+        }
+        val current = runCatching { userReg.readText() }.getOrDefault("")
+        val marker = "[Software\\\\Wine\\\\Direct3D]"
+        if (!current.contains(marker)) {
+            userReg.appendText(
+                "\\n[Software\\\\Wine\\\\Direct3D]\\n" +
+                    "\"csmt\"=\"enabled\"\\n" +
+                    "\\n[Software\\\\Wine\\\\WineDbg]\\n" +
+                    "\"ShowCrashDialog\"=dword:00000000\\n"
+            )
         }
     }
 
