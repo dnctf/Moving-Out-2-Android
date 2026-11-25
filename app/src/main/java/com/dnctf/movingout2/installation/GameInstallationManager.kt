@@ -20,11 +20,7 @@ data class SafInstallationReport(
 }
 
 class GameInstallationManager(private val context: Context) {
-    private val required = listOf(
-        "mo2.exe", "GameAssembly.dll", "UnityPlayer.dll", "baselib.dll",
-        "MovingOut2_Data/il2cpp_data/Metadata/global-metadata.dat"
-    )
-    private val peFiles = required.dropLast(1)
+    private val peFiles = listOf("mo2.exe", "GameAssembly.dll", "UnityPlayer.dll", "baselib.dll")
 
     fun validate(uri: Uri): SafInstallationReport {
         val errors = mutableListOf<String>()
@@ -40,6 +36,9 @@ class GameInstallationManager(private val context: Context) {
             ))
         }
 
+        val executable = find(root, "mo2.exe")
+        val metadataRelative = UnityDataDirectoryLocator.metadataFilePath(executable?.name ?: "mo2.exe")
+        val required = peFiles + metadataRelative
         val resolved = mutableMapOf<String, DocumentFile>()
         required.forEach { path ->
             val file = find(root, path)
@@ -52,7 +51,7 @@ class GameInstallationManager(private val context: Context) {
         }
         // Compute this stage before metadata-header and PE architecture checks, matching filesystem validation.
         val corePass = InstallationStagePolicy.coreFilesPassed(missing, errors, persisted && root.canRead())
-        val metadataDir = find(root, "MovingOut2_Data/il2cpp_data/Metadata")
+        val metadataDir = find(root, UnityDataDirectoryLocator.metadataPath(executable?.name ?: "mo2.exe"))
         val metadataDirOk = metadataDir?.isDirectory == true && metadataDir.canRead()
         val metadataBytes = resolved[required.last()]?.let { read(it, 8) }
         val metadataVersion = metadataBytes?.let(UnityGameProfileDetector::detectMetadataVersion)
@@ -76,7 +75,7 @@ class GameInstallationManager(private val context: Context) {
         val importErrors = importAnalyses.mapNotNull { (path, analysis) ->
             analysis.errors.takeIf { it.isNotEmpty() }?.let { path to it }
         }.toMap()
-        val globalManagers = find(root, "MovingOut2_Data/globalgamemanagers")
+        val globalManagers = find(root, UnityDataDirectoryLocator.globalManagersPath(executable?.name ?: "mo2.exe"))
         val unityVersion = globalManagers?.let { read(it, 256 * 1024) }?.let(UnityGameProfileDetector::detectUnityVersion)
         val structurePass = metadataDirOk
         val versionPass = allPeX64 && metadataVersion != null
