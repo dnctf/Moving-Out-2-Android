@@ -16,6 +16,7 @@ class RuntimeSettingsConsumerTest {
         assertEquals(810, config.effectiveHeight)
         assertEquals(1440, config.launchOptions.width)
         assertEquals(810, config.launchOptions.height)
+        assertEquals(config.environmentOverrides, config.launchOptions.environmentOverrides)
     }
 
     @Test
