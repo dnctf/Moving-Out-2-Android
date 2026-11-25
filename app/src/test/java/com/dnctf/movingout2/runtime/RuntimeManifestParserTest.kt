@@ -12,17 +12,23 @@ class RuntimeManifestParserTest {
  private fun fixture(turnip:Boolean=false):File{
   val root=Files.createTempDirectory("manifest-v1").toFile()
   val components=JSONObject()
-  fun put(key:String,path:String,contents:String){val f=File(root,path);f.parentFile.mkdirs();f.writeText(contents);components.put(key,JSONObject().put("included",true).put("path",path).put("sha256",sha(f)))}
+  fun put(key:String,path:String,contents:String){val f=File(root,path);f.parentFile.mkdirs();f.writeText(contents);val abi = when (key) {
+   "box64", "turnipSo" -> RuntimeBinaryInspector.ELF64_AARCH64
+   "wine64", "wineserver" -> RuntimeBinaryInspector.ELF64_X86_64
+   "d3d11", "dxgi" -> RuntimeBinaryInspector.PE32_PLUS_X86_64
+   else -> "JSON"
+  }
+  components.put(key,JSONObject().put("included",true).put("path",path).put("sha256",sha(f)).put("abi",abi))}
   put("box64","box64/bin/box64","box64")
   put("wine64","wine/bin/wine64","wine64")
   put("wineserver","wine/bin/wineserver","server")
   val lib=File(root,"wine/lib/wine");lib.mkdirs();File(lib,"module.so").writeText("module")
-  components.put("wineLib",JSONObject().put("included",true).put("path","wine/lib/wine").put("sha256",hashDir(lib)))
+  components.put("wineLib",JSONObject().put("included",true).put("path","wine/lib/wine").put("sha256",hashDir(lib)).put("abi","DIRECTORY_SHA256"))
   put("d3d11","dxvk/x64/d3d11.dll","d3d")
   put("dxgi","dxvk/x64/dxgi.dll","dxgi")
   components.put("turnip",JSONObject().put("included",turnip))
   if(turnip){put("turnipSo","turnip/libvulkan_freedreno.so","vk");put("turnipIcd","turnip/freedreno_icd.aarch64.json","{}")}
-  File(root,"runtime-manifest.json").writeText(JSONObject().put("schemaVersion",1).put("targetAbi","arm64-v8a").put("components",components).put("defaultLaunchProfile",JSONObject()).toString())
+  File(root,"runtime-manifest.json").writeText(JSONObject().put("schemaVersion",2).put("targetAbi","arm64-v8a").put("components",components).put("defaultLaunchProfile",JSONObject()).toString())
   return root
  }
  private fun hashDir(dir:File):String{val listing=StringBuilder();dir.walkTopDown().filter{it.isFile}.sortedBy{it.relativeTo(dir).invariantSeparatorsPath}.forEach{f->listing.append(sha(f)).append("  ./").append(f.relativeTo(dir).invariantSeparatorsPath).append('\n')};val d=MessageDigest.getInstance("SHA-256");d.update(listing.toString().toByteArray(Charsets.UTF_8));return d.digest().joinToString(""){"%02x".format(it)}}
