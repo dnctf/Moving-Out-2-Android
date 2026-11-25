@@ -19,9 +19,9 @@ check_elf_shared(){ check_elf "$1" "$2"; readelf -h "$1" | grep -Eq "Type:.*DYN"
 if [[ -n "$TURNIP_SO" ]]; then check_elf_shared "$TURNIP_SO" "AArch64"; fi
 check_guest_libs(){
   local count
-  count="$(find "$WINE_DIR/lib/wine" -type f -name '*.so' | wc -l)"
+  count="$(find "$WINE_DIR/lib/wine" -type f \\( -name '*.so' -o -name '*.so.*' \\) | wc -l)"
   [[ "$count" -gt 0 ]] || { echo "Wine guest library directory has no shared .so objects." >&2; exit 1; }
-  while IFS= read -r -d '' lib; do check_elf_shared "$lib" "Advanced Micro Devices X86-64"; done < <(find "$WINE_DIR/lib/wine" -type f -name '*.so' -print0)
+  while IFS= read -r -d '' lib; do check_elf_shared "$lib" "Advanced Micro Devices X86-64"; done < <(find "$WINE_DIR/lib/wine" -type f \\( -name '*.so' -o -name '*.so.*' \\) -print0)
 }
 check_guest_libs
 check_pe_x64(){
