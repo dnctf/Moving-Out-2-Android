@@ -48,6 +48,33 @@ class AndroidExecCapabilityProbeTest {
         root.deleteRecursively()
     }
 
+    @Test fun nativeLibraryProbeReceivesRuntimeSearchPaths() {
+        val root = Files.createTempDirectory("exec-probe-env").toFile()
+        val bundleRoot = File(root, "bundle")
+        val appData = File(bundleRoot, "box64/bin/box64").apply {
+            parentFile?.mkdirs()
+            writeBytes(arm64Elf())
+            setExecutable(true)
+        }
+        val nativeDir = File(root, "native").apply { mkdirs() }
+        File(nativeDir, "libbox64.so").apply {
+            writeBytes(appData.readBytes())
+            setExecutable(true)
+        }
+        var environment: Map<String, String> = emptyMap()
+        val probe = AndroidExecCapabilityProbe(nativeDir, executor =
+            AndroidBinaryExecutor { _, _, env ->
+                environment = env
+                ProbeExecution(0, "box64 version", "")
+            })
+        val result = probe.probe(appData)
+        assertTrue(result.allowed)
+        assertEquals(File(bundleRoot, "wine/bin").absolutePath, environment["BOX64_PATH"])
+        assertEquals(File(bundleRoot, "wine/lib/wine").absolutePath, environment["BOX64_LD_LIBRARY_PATH"])
+        assertEquals(nativeDir.absolutePath, environment["LD_LIBRARY_PATH"])
+        root.deleteRecursively()
+    }
+
     @Test fun refusesMismatchedPackagedBox64InsteadOfExecutingFilesDirCopy() {
         val root = Files.createTempDirectory("exec-probe-native-mismatch").toFile()
         val appData = File(root, "bundle/box64").apply {
