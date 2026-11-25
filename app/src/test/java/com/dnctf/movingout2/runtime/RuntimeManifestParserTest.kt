@@ -33,11 +33,21 @@ class RuntimeManifestParserTest {
   components.put("wineLib",JSONObject().put("included",true).put("path","wine/lib/wine").put("sha256",hashDir(lib)).put("abi","DIRECTORY_SHA256_X86_64"))
   components.put("turnip",JSONObject().put("included",turnip))
   if(turnip){put("turnipSo","turnip/libvulkan_freedreno.so","vk");put("turnipIcd","turnip/freedreno_icd.aarch64.json","{}")}
-  File(root,"runtime-manifest.json").writeText(JSONObject().put("schemaVersion",2).put("targetAbi","arm64-v8a").put("provenance",JSONObject().put("packager","unit-test").put("manifestFormat","role-validated-abi-v2")).put("components",components).put("defaultLaunchProfile",JSONObject()).toString())
+  File(root,"runtime-manifest.json").writeText(JSONObject().put("schemaVersion",2).put("targetAbi","arm64-v8a").put("provenance",JSONObject().put("packager","scripts/package_runtime_bundle.sh").put("manifestFormat","role-validated-abi-v2")).put("components",components).put("defaultLaunchProfile",JSONObject()).toString())
   return root
  }
  private fun hashDir(dir:File):String{val listing=StringBuilder();dir.walkTopDown().filter{it.isFile}.sortedBy{it.relativeTo(dir).invariantSeparatorsPath}.forEach{f->listing.append(sha(f)).append("  ./").append(f.relativeTo(dir).invariantSeparatorsPath).append('\n')};val d=MessageDigest.getInstance("SHA-256");d.update(listing.toString().toByteArray(Charsets.UTF_8));return d.digest().joinToString(""){"%02x".format(it)}}
  @Test fun acceptsValidBundleWithAndWithoutTurnip(){val a=fixture();assertTrue(RuntimeManifestParser().validate(a).errors.toString(),RuntimeManifestParser().validate(a).valid);a.deleteRecursively();val b=fixture(true);assertTrue(RuntimeManifestParser().validate(b).errors.toString(),RuntimeManifestParser().validate(b).valid);b.deleteRecursively()}
+ @Test fun rejectsUnexpectedPackagerProvenance(){
+  val root=fixture()
+  val json=JSONObject(File(root,"runtime-manifest.json").readText())
+  json.getJSONObject("provenance").put("packager","untrusted-packager.sh")
+  File(root,"runtime-manifest.json").writeText(json.toString())
+  val result=RuntimeManifestParser().validate(root)
+  assertFalse(result.valid)
+  assertTrue(result.errors.any{it.contains("provenance")})
+  root.deleteRecursively()
+ }
  @Test fun rejectsComponentWithoutExplicitAbiProvenance(){
   val root=fixture()
   val json=JSONObject(File(root,"runtime-manifest.json").readText())

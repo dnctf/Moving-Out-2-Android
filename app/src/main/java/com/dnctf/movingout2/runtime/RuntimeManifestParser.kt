@@ -25,7 +25,7 @@ class RuntimeManifestParser {
         if (json.optInt("schemaVersion", -1) != 2) errors += "schemaVersion must be 2 (explicit component ABI/provenance required)"
         if (json.optString("targetAbi") != "arm64-v8a") errors += "targetAbi must be arm64-v8a"
         val provenance = json.optJSONObject("provenance")
-        if (provenance == null || provenance.optString("packager").isBlank() ||
+        if (provenance == null || provenance.optString("packager") != "scripts/package_runtime_bundle.sh" ||
             provenance.optString("manifestFormat") != "role-validated-abi-v2") {
             errors += "Manifest provenance is missing or unsupported."
         }
