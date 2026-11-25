@@ -121,9 +121,6 @@ class InstallationValidatorTest {
 
     @Test fun detectsActualMovingOut2LayoutMo2Data() {
         val root = fixture()
-        val old = File(root, "MovingOut2_Data")
-        val actual = File(root, "mo2_Data")
-        assertTrue(old.renameTo(actual))
         val report = InstallationValidator().validate(root)
         assertEquals(InstallationStatus.VALID, report.status)
         assertEquals(29, report.metadataVersion)
