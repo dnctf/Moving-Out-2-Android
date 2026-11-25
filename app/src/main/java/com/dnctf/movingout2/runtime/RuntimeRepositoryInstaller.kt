@@ -13,14 +13,21 @@ import java.security.MessageDigest
 import java.util.Locale
 import java.util.zip.ZipFile
 
-internal fun isSafeRuntimeArchiveEntry(name: String, isDirectory: Boolean): Boolean {
-    if (name.isBlank() || name.contains(':') || name.any { it.code < 32 || it.code == 127 }) return false
-    val normalized = name.replace(0x5c.toChar(), '/')
-    if (normalized.startsWith('/')) return false
-    val path = if (isDirectory) normalized.removeSuffix("/") else normalized
-    if (path.isEmpty()) return false
-    return path.split('/').none { it.isEmpty() || it == "." || it == ".." }
+internal fun normalizeRuntimeArchiveEntry(name: String, isDirectory: Boolean): String? {
+    if (name.isBlank() || name.contains(':') || name.any { it.code < 32 || it.code == 127 }) return null
+    var path = name.replace(0x5c.toChar(), '/')
+    if (path.startsWith('/')) return null
+    // zip(1) commonly emits "./" prefixes for archives created with "zip -r bundle.zip .".
+    // Strip only harmless leading "./" segments; traversal segments remain rejected below.
+    while (path.startsWith("./")) path = path.substring(2)
+    if (isDirectory) path = path.removeSuffix("/")
+    if (path.isEmpty()) return if (isDirectory) "" else null
+    if (path.split('/').any { it.isEmpty() || it == "." || it == ".." }) return null
+    return path
 }
+
+internal fun isSafeRuntimeArchiveEntry(name: String, isDirectory: Boolean): Boolean =
+    normalizeRuntimeArchiveEntry(name, isDirectory) != null
 
 data class RuntimeRepositoryInstallResult(val version: String, val files: Int, val bytes: Long)
 
@@ -264,9 +271,9 @@ class RuntimeRepositoryInstaller(
                 if (!isSafeRuntimeArchiveEntry(entry.name, entry.isDirectory)) {
                     throw IllegalStateException("Unsafe runtime archive path rejected: ${entry.name.take(120)}")
                 }
-                val normalized = entry.name.replace(0x5c.toChar(), '/').let {
-                    if (entry.isDirectory) it.removeSuffix("/") else it
-                }
+                val normalized = normalizeRuntimeArchiveEntry(entry.name, entry.isDirectory)
+                    ?: throw IllegalStateException("Unsafe runtime archive path rejected: ${entry.name.take(120)}")
+                if (normalized.isEmpty()) continue // harmless archive root directory entry "./"
                 if (!seen.add(normalized)) throw IllegalStateException("Runtime archive contains duplicate path: $normalized")
                 if (!entry.isDirectory) {
                     if (entry.size < 0L) throw IllegalStateException("Runtime archive entry has unknown expanded size: $normalized")
@@ -290,9 +297,9 @@ class RuntimeRepositoryInstaller(
             val allForExtraction = archive.entries()
             while (allForExtraction.hasMoreElements()) {
                 val entry = allForExtraction.nextElement()
-                val normalized = entry.name.replace(0x5c.toChar(), '/').let {
-                    if (entry.isDirectory) it.removeSuffix("/") else it
-                }
+                val normalized = normalizeRuntimeArchiveEntry(entry.name, entry.isDirectory)
+                    ?: throw IllegalStateException("Unsafe runtime archive path rejected during extraction: ${entry.name.take(120)}")
+                if (normalized.isEmpty()) continue
                 val output = File(destination, normalized).canonicalFile
                 if (!output.toPath().startsWith(canonicalRoot)) {
                     throw IllegalStateException("Runtime archive path escapes staging directory.")
