@@ -68,7 +68,7 @@ class MainActivity : Activity() {
         physicalGamepadManager = PhysicalGamepadManager(this) { state ->
             inputCoordinator.updatePhysicalState(state)
         }
-        val views = LauncherHomeView.create(this, ::openFolderPicker, ::revalidateSavedFolder, ::openRuntimeBundlePicker, ::openGameZipPicker, ::showSettings, ::showControllerTest, ::exportDiagnostics)
+        val views = LauncherHomeView.create(this, ::openFolderPicker, ::revalidateSavedFolder, ::openRuntimeBundlePicker, ::downloadRuntimeFromRepository, ::openGameZipPicker, ::showSettings, ::showControllerTest, ::exportDiagnostics)
         status = views.status
         runtimeStatus = views.runtimeStatus
         graphicsStatus = views.graphicsStatus
@@ -179,6 +179,27 @@ class MainActivity : Activity() {
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
         }, pickRuntimeBundle)
+    }
+
+    private fun downloadRuntimeFromRepository() {
+        runtimeStatus.text = "Runtime repository: checking GitHub Releases…"
+        Thread({
+            val result = runCatching {
+                com.dnctf.movingout2.runtime.RuntimeRepositoryInstaller(this).installLatest { message ->
+                    runOnUiThread { runtimeStatus.text = message }
+                }
+            }
+            runOnUiThread {
+                result.onSuccess { installed ->
+                    refreshRuntimeStatus()
+                    runtimeStatus.append("\nDownloaded release: ${installed.version}\nFiles: ${installed.files} | Expanded: ${installed.bytes / (1024 * 1024)} MiB")
+                    Toast.makeText(this, "Runtime downloaded and validated.", Toast.LENGTH_LONG).show()
+                }.onFailure { error ->
+                    runtimeStatus.text = "Automatic runtime download failed: ${error.message ?: error.javaClass.simpleName}\nExisting runtime bundle was preserved."
+                    Toast.makeText(this, "Runtime download failed: ${error.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }, "runtime-repository-installer").apply { isDaemon = true; start() }
     }
 
     private fun openGameZipPicker() {
