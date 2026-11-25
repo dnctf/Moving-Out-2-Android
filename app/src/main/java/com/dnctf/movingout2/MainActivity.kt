@@ -18,6 +18,7 @@ import android.widget.Toast
 import android.widget.CheckBox
 import android.widget.Button
 import android.widget.ScrollView
+import com.dnctf.movingout2.runtime.RuntimeDiagnostic
 import com.dnctf.movingout2.runtime.RuntimeDiagnostics
 import com.dnctf.movingout2.compatibility.DeviceDiagnosticsProvider
 import com.dnctf.movingout2.input.RuntimeInputBridge
