@@ -56,7 +56,7 @@ class InstallationValidator {
             null
         }
         val metadataDirOk = metadataDir?.isDirectory == true && metadataDir.canRead() && isWithinRoot(root, metadataDir)
-        if (!metadataDirOk && missing.none { it.endsWith("global-metadata.dat") }) missing += "MovingOut2_Data/il2cpp_data/Metadata/"
+        if (!metadataDirOk && missing.none { it.endsWith("global-metadata.dat") }) missing += "${UnityDataDirectoryLocator.metadataPath(executable?.name ?: "mo2.exe")}/"
         stages += StageResult(ValidationStage.STRUCTURE, metadataDirOk,
             if (metadataDirOk) emptyList() else listOf("Metadata directory missing, not a directory, unreadable, or outside selected root"))
 
