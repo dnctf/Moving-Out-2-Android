@@ -100,6 +100,29 @@ class AndroidExecCapabilityProbeTest {
         root.deleteRecursively()
     }
 
+    @Test fun refusesAppDataFallbackWhenNativeLibraryPayloadIsRequired() {
+        val root = Files.createTempDirectory("exec-probe-no-fallback").toFile()
+        val binary = File(root, "bundle/box64/bin/box64").apply {
+            parentFile?.mkdirs()
+            writeBytes(arm64Elf())
+            setExecutable(true)
+        }
+        var executed = false
+        val probe = AndroidExecCapabilityProbe(
+            File(root, "native"),
+            executor = AndroidBinaryExecutor { _, _, _ ->
+                executed = true
+                ProbeExecution(0, "unexpected", "")
+            },
+            allowBundleFallback = false
+        )
+        val result = probe.probe(binary)
+        assertFalse(result.allowed)
+        assertFalse(executed)
+        assertTrue(result.detail.contains("refusing filesDir execution"))
+        root.deleteRecursively()
+    }
+
     @Test fun reportsAppDataExecutionSuccess() {
         val root = Files.createTempDirectory("exec-probe").toFile()
         val binary = File(root, "box64").apply { writeText("fixture"); setExecutable(true) }
