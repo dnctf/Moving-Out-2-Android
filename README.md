@@ -198,9 +198,9 @@ This project publishes the Android application and the emulation runtime as **se
 
 ### Latest Runtime Bundle
 
-- **Runtime release:** [Moving Out 2 Runtime 0.1.0 (pre-release)](https://github.com/dnctf/Moving-Out-2-Android/releases/tag/runtime-v0.1.0-33)
-- **Runtime archive:** [moving-out-2-runtime-arm64-v8a.zip](https://github.com/dnctf/Moving-Out-2-Android/releases/download/runtime-v0.1.0-33/moving-out-2-runtime-arm64-v8a.zip)
-- **Runtime checksums:** [SHA256SUMS.txt](https://github.com/dnctf/Moving-Out-2-Android/releases/download/runtime-v0.1.0-33/SHA256SUMS.txt)
+- **Runtime release:** [Moving Out 2 Runtime 0.1.0 (pre-release)](https://github.com/dnctf/Moving-Out-2-Android/releases/tag/runtime-v0.1.0-34)
+- **Runtime archive:** [moving-out-2-runtime-arm64-v8a.zip](https://github.com/dnctf/Moving-Out-2-Android/releases/download/runtime-v0.1.0-34/moving-out-2-runtime-arm64-v8a.zip)
+- **Runtime checksums:** [SHA256SUMS.txt](https://github.com/dnctf/Moving-Out-2-Android/releases/download/runtime-v0.1.0-34/SHA256SUMS.txt)
 
 Runtime package schema v2 contains the ARM64 Box64 host binary, x86_64 Wine executables and guest libraries, DXVK D3D11/DXGI DLLs, XInput 1.3/1.4 DLLs, and a manifest with component ABI declarations and SHA-256 hashes. Optional Turnip components are included only when supplied to the packager.
 
