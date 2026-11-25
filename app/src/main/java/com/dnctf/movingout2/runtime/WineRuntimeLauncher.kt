@@ -40,8 +40,10 @@ class WineRuntimeLauncher(
     private val validator = RuntimeBundleValidator()
     private val inputBridge = RuntimeInputBridge()
     private val execCapabilityProbe = AndroidExecCapabilityProbe(context, diagnostics)
+    @Volatile private var activeBox64Executable: File? = null
 
     fun prepare(gameExe: File, options: WineLaunchOptions = WineLaunchOptions()): LaunchPreparationResult {
+        activeBox64Executable = null
         val report = validator.validate(bundleRoot)
         val blockers = report.blockers.toMutableList()
         if (!report.isReady) return LaunchPreparationResult.MissingPayload(blockers)
@@ -57,6 +59,7 @@ class WineRuntimeLauncher(
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "exec-probe", detail))
             return LaunchPreparationResult.MissingPayload(listOf(detail))
         }
+        activeBox64Executable = execCapability.executable ?: box64Candidate
         val properties = Properties()
         val manifestFile = File(root, "runtime-manifest.json")
         if (manifestFile.isFile) {
@@ -171,7 +174,7 @@ class WineRuntimeLauncher(
             return false
         }
         val validated = validator.validate(bundleRoot)
-        val box64 = validated.box64
+        val box64 = activeBox64Executable?.takeIf { it.isFile && it.canExecute() } ?: validated.box64
         if (box64 == null || !validated.isReady) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "wineserver", "Cleanup blocked: validated Box64 host executable is unavailable."))
             return false
