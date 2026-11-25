@@ -28,6 +28,13 @@ class RuntimeBundleValidator {
    requireFormat("d3d11", map["d3d11"], RuntimeBinaryInspector.PE32_PLUS_X86_64)
    requireFormat("dxgi", map["dxgi"], RuntimeBinaryInspector.PE32_PLUS_X86_64)
    map["turnipSo"]?.let { requireFormat("turnipSo", it, RuntimeBinaryInspector.ELF64_AARCH64) }
+   if (libs != null) {
+    libs.walkTopDown().filter { it.isFile && it.extension.equals("so", true) }.forEach { library ->
+     if (!RuntimeBinaryInspector.matches(library, RuntimeBinaryInspector.ELF64_X86_64)) {
+      blockers += "Guest Wine library is not ELF64 x86-64: ${library.relativeTo(canonical).invariantSeparatorsPath}"
+     }
+    }
+   }
    if(box==null||wine==null||server==null||libs==null)blockers+="Required runtime files/directories unresolved."
    val ready=blockers.isEmpty()
    return RuntimeBundleReport(if(ready)RuntimeBundleStatus.READY else RuntimeBundleStatus.INCOMPLETE,canonical,box,wine,server,libs,blockers.distinct(),1)
