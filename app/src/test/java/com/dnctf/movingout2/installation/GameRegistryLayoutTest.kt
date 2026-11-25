@@ -11,10 +11,10 @@ class GameRegistryLayoutTest {
         try {
             File(root, "mo2.exe").writeBytes(byteArrayOf(1))
             val metadata = File(root, "mo2_Data/il2cpp_data/Metadata/global-metadata.dat")
-            metadata.parentFile.mkdirs()
+            requireNotNull(metadata.parentFile).mkdirs()
             metadata.writeBytes(byteArrayOf(0xaf.toByte(), 0x1b, 0xb1.toByte(), 0xfa.toByte()))
             val globalManagers = File(root, "mo2_Data/globalgamemanagers")
-            globalManagers.parentFile.mkdirs()
+            requireNotNull(globalManagers.parentFile).mkdirs()
             globalManagers.writeText("Unity 2021.3.16f1")
             assertEquals(File(root, "mo2_Data").canonicalFile, GameRegistryLayout.dataDirectory(root)?.canonicalFile)
             assertEquals(metadata.canonicalFile, GameRegistryLayout.metadataFile(root, "mo2.exe").canonicalFile)
@@ -29,7 +29,7 @@ class GameRegistryLayoutTest {
         try {
             File(root, "MO2.EXE").writeBytes(byteArrayOf(1))
             val metadata = File(root, "MO2_DATA/IL2CPP_DATA/METADATA/GLOBAL-METADATA.DAT")
-            metadata.parentFile.mkdirs()
+            requireNotNull(metadata.parentFile).mkdirs()
             metadata.writeBytes(byteArrayOf(1))
             val exe = GameRegistryLayout.executable(root)
             assertEquals("MO2.EXE", exe?.name)
