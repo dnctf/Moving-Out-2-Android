@@ -120,18 +120,39 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          retry_gh_api() {
+            local attempt=1 output
+            while (( attempt <= 5 )); do
+              if output="$(gh api "$@" 2>&1)"; then
+                [[ -n "$output" ]] && printf '%s\n' "$output"
+                return 0
+              fi
+              if [[ "$output" == *"HTTP 404"* || "$output" == *"Not Found"* ]]; then
+                echo "Already deleted; treating as success: $*"
+                return 0
+              fi
+              echo "GitHub API attempt $attempt/5 failed: $output" >&2
+              if (( attempt < 5 )); then sleep $((attempt * 3)); fi
+              attempt=$((attempt + 1))
+            done
+            return 1
+          }
+
           echo "Removing all prior releases and tags before publishing the new integrated release."
+          release_rows="$(retry_gh_api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq '.[] | "\(.id)|\(.tag_name)"')"
           while IFS='|' read -r release_id tag; do
             [[ -n "$release_id" ]] || continue
             echo "Deleting obsolete release: $tag (ID $release_id)"
-            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$release_id"
-          done < <(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq '.[] | "\(.id)|\(.tag_name)"')
+            retry_gh_api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$release_id"
+          done <<< "$release_rows"
+
+          tag_rows="$(retry_gh_api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/" --paginate --jq '.[].ref')"
           while IFS= read -r ref; do
-            tag="${ref#refs/tags/}"
+            tag="\${ref#refs/tags/}"
             [[ -n "$tag" ]] || continue
             echo "Deleting obsolete Git tag: $tag"
-            gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag"
-          done < <(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/" --paginate --jq '.[].ref')
+            retry_gh_api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag"
+          done <<< "$tag_rows"
 
       - name: Publish single integrated pre-release
         env:
