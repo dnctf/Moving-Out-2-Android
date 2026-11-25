@@ -8,10 +8,19 @@ import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
+import java.net.SocketException
+import java.io.IOException
 import java.net.URL
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.zip.ZipFile
+
+internal fun runtimeRangeHeader(offset: Long): String? =
+    if (offset > 0L) "bytes=$offset-" else null
+
+internal fun runtimeContentRangeStart(value: String?): Long? =
+    value?.let { Regex("^bytes (\\d+)-\\d+/(?:\\d+|\\*)$").matchEntire(it.trim()) }
+        ?.groupValues?.getOrNull(1)?.toLongOrNull()
 
 internal fun normalizeRuntimeArchiveEntry(name: String, isDirectory: Boolean): String? {
     if (name.isBlank() || name.contains(':') || name.any { it.code < 32 || it.code == 127 }) return null
@@ -137,11 +146,10 @@ class RuntimeRepositoryInstaller(
         if (expectedHash == null || !expectedHash.matches(Regex("[a-f0-9]{64}"))) {
             throw IllegalStateException("Release checksum file is malformed.")
         }
-        archive.delete()
         try {
             download(bundleUrl, archive, onProgress)
         } catch (error: Exception) {
-            archive.delete()
+            // Keep the .part file so a later user retry can resume from its current length.
             throw error
         }
         val actualHash = sha256(archive)
@@ -230,29 +238,93 @@ class RuntimeRepositoryInstaller(
     }
 
     private fun download(url: String, destination: File, onProgress: (String) -> Unit) {
-        val connection = open(url)
-        try {
-            val responseCode = connection.responseCode
-            ensureAllowedGitHubResponse(connection)
-            if (responseCode !in 200..299) throw IllegalStateException("Runtime download failed: HTTP $responseCode; url=$url")
-            val declared = connection.contentLengthLong
-            if (declared > maxDownloadBytes) throw IllegalStateException("Runtime archive exceeds configured download limit.")
-            var total = 0L
-            connection.inputStream.use { input ->
-                FileOutputStream(destination).use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        total += count
-                        if (total > maxDownloadBytes) throw IllegalStateException("Runtime download exceeded configured size limit.")
-                        output.write(buffer, 0, count)
-                        if (declared > 0) onProgress("Downloading runtime: ${(total * 100 / declared).coerceIn(0, 100)}%")
+        val part = File(destination.parentFile ?: appContext.cacheDir, destination.name + ".part")
+        var lastFailure: IOException? = null
+        repeat(MAX_DOWNLOAD_ATTEMPTS) { attempt ->
+            val offset = part.takeIf { it.isFile }?.length() ?: 0L
+            if (offset > maxDownloadBytes) {
+                part.delete()
+                throw IllegalStateException("Partial runtime download exceeds configured size limit.")
+            }
+            val connection = open(url)
+            try {
+                if (offset > 0L) connection.setRequestProperty("Range", runtimeRangeHeader(offset))
+                val responseCode = connection.responseCode
+                ensureAllowedGitHubResponse(connection)
+                if (responseCode == HttpURLConnection.HTTP_REQUESTED_RANGE_NOT_SATISFIABLE) {
+                    val total = Regex("^bytes \\*/(\\d+)$").matchEntire(connection.getHeaderField("Content-Range").orEmpty())
+                        ?.groupValues?.getOrNull(1)?.toLongOrNull()
+                    if (total != null && total == offset && offset > 0L) {
+                        promotePartialDownload(part, destination)
+                        return
+                    }
+                    throw IOException("Runtime server rejected resume offset $offset (HTTP 416).")
+                }
+                if (responseCode != HttpURLConnection.HTTP_OK && responseCode != HttpURLConnection.HTTP_PARTIAL) {
+                    throw IllegalStateException("Runtime download failed: HTTP $responseCode; url=$url")
+                }
+                val append = offset > 0L && responseCode == HttpURLConnection.HTTP_PARTIAL
+                val responseStart = if (responseCode == HttpURLConnection.HTTP_PARTIAL) {
+                    runtimeContentRangeStart(connection.getHeaderField("Content-Range"))
+                        ?: throw IOException("Runtime server returned 206 without a valid Content-Range header.")
+                } else 0L
+                if (append && responseStart != offset) {
+                    throw IOException("Runtime resume offset mismatch: requested=$offset, server=$responseStart.")
+                }
+                val responseLength = connection.contentLengthLong
+                val expectedTotal = if (responseCode == HttpURLConnection.HTTP_PARTIAL) {
+                    Regex("^bytes \\d+-\\d+/(\\d+)$").matchEntire(connection.getHeaderField("Content-Range").orEmpty())
+                        ?.groupValues?.getOrNull(1)?.toLongOrNull() ?: -1L
+                } else responseLength
+                if (expectedTotal > maxDownloadBytes) throw IllegalStateException("Runtime archive exceeds configured download limit.")
+                if (!append && part.exists() && !part.delete()) throw IOException("Unable to restart an invalid partial runtime download.")
+                var written = if (append) offset else 0L
+                connection.inputStream.use { input ->
+                    FileOutputStream(part, append).use { output ->
+                        val buffer = ByteArray(128 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            written += count
+                            if (written > maxDownloadBytes) throw IllegalStateException("Runtime download exceeded configured size limit.")
+                            output.write(buffer, 0, count)
+                            if (expectedTotal > 0L) onProgress("Downloading runtime: ${(written * 100 / expectedTotal).coerceIn(0, 100)}%")
+                        }
+                        output.fd.sync()
                     }
                 }
+                if (written == 0L) throw IOException("Downloaded runtime archive is empty.")
+                if (expectedTotal > 0L && written != expectedTotal) {
+                    throw IOException("Runtime download ended early: received=$written expected=$expectedTotal bytes.")
+                }
+                promotePartialDownload(part, destination)
+                return
+            } catch (error: SocketException) {
+                lastFailure = error
+                record(RuntimeDiagnostic.Severity.WARNING, "Runtime download connection aborted at ${part.length()} bytes; retry=${attempt + 1}/$MAX_DOWNLOAD_ATTEMPTS: ${error.message}")
+            } catch (error: IOException) {
+                lastFailure = error
+                record(RuntimeDiagnostic.Severity.WARNING, "Runtime download I/O failure at ${part.length()} bytes; retry=${attempt + 1}/$MAX_DOWNLOAD_ATTEMPTS: ${error.message}")
+            } finally {
+                connection.disconnect()
             }
-            if (total == 0L) throw IllegalStateException("Downloaded runtime archive is empty.")
-        } finally { connection.disconnect() }
+            if (attempt + 1 < MAX_DOWNLOAD_ATTEMPTS) {
+                try { Thread.sleep(RETRY_BACKOFF_MS * (attempt + 1)) }
+                catch (interrupted: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw IOException("Runtime download retry interrupted.", interrupted)
+                }
+            }
+        }
+        throw IOException("Runtime download failed after $MAX_DOWNLOAD_ATTEMPTS attempts; partial file retained at ${part.absolutePath}.", lastFailure)
+    }
+
+    private fun promotePartialDownload(part: File, destination: File) {
+        if (destination.exists() && !destination.delete()) throw IOException("Unable to replace previous runtime archive.")
+        if (!part.renameTo(destination)) {
+            part.inputStream().use { input -> FileOutputStream(destination).use { output -> input.copyTo(output); output.fd.sync() } }
+            if (!part.delete()) record(RuntimeDiagnostic.Severity.WARNING, "Unable to delete completed partial download: ${part.absolutePath}")
+        }
     }
 
     private fun extract(zip: File, destination: File): Pair<Int, Long> {
@@ -366,6 +438,8 @@ class RuntimeRepositoryInstaller(
     }
 
     companion object {
+        private const val MAX_DOWNLOAD_ATTEMPTS = 5
+        private const val RETRY_BACKOFF_MS = 1_000L
         private val ALLOWED_GITHUB_HOSTS = setOf(
             "api.github.com",
             "github.com",
