@@ -79,6 +79,106 @@ class RuntimeBundleImporter(
         }
     }
 
+
+    /**
+     * Imports the published runtime ZIP directly from Android's Storage Access Framework.
+     * Extraction always occurs in app-private filesDir (never shared/external storage).
+     */
+    fun importZip(uri: Uri): RuntimeImportResult {
+        val journal = ImportDiagnosticJournal(File(contextHolder.filesDir, "diagnostics"))
+        val displayName = runCatching {
+            resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+        }.getOrNull() ?: uri.lastPathSegment ?: "runtime.zip"
+        val availableBefore = runCatching { StatFs(contextHolder.filesDir.absolutePath).availableBytes }
+            .getOrElse { throw IOException("Unable to determine free storage before ZIP import.", it) }
+        journal.checkpoint("RUNTIME_BUNDLE_ZIP", displayName, stage="ZIP_IMPORT_START", availableBytesBefore=availableBefore)
+        if (!displayName.endsWith(".zip", ignoreCase = true)) throw IOException("Selected runtime archive must have a .zip extension.")
+        if (!runtimeBundleStoragePreflight(availableBefore, storageReserveBytes)) {
+            throw IOException("Insufficient storage: keep at least ${storageReserveBytes / (1024 * 1024)} MiB free.")
+        }
+        if (!parent.mkdirs() && !parent.isDirectory) throw IOException("Unable to create private runtime directory: ${parent.absolutePath}")
+        recoverRuntimeBundle(target, backup) { validator.validate(it).isReady }
+        staging.deleteRecursively()
+        if (!staging.mkdirs()) throw IOException("Unable to create runtime staging directory: ${staging.absolutePath}")
+        val counter = Counter()
+        var activated = false
+        try {
+            val input = resolver.openInputStream(uri) ?: throw IOException("Unable to open selected ZIP: $uri")
+            java.util.zip.ZipInputStream(java.io.BufferedInputStream(input)).use { zip ->
+                val seen = mutableSetOf<String>()
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    counter.entries++
+                    if (counter.entries > maxEntries) throw IOException("Runtime ZIP exceeds $maxEntries entries.")
+                    if (!isSafeRuntimeArchiveEntry(entry.name, entry.isDirectory)) {
+                        throw IOException("Unsafe runtime ZIP path rejected: ${entry.name.take(160)}")
+                    }
+                    val normalized = entry.name.replace('\\\\', '/').let { if (entry.isDirectory) it.removeSuffix("/") else it }
+                    val collisionKey = Normalizer.normalize(normalized, Normalizer.Form.NFKC).lowercase(Locale.ROOT)
+                    if (!seen.add(collisionKey)) throw IOException("Duplicate/colliding ZIP path: $normalized")
+                    val output = File(staging, normalized).canonicalFile
+                    if (!output.toPath().startsWith(staging.canonicalFile.toPath())) throw IOException("ZIP entry escapes staging directory: $normalized")
+                    if (entry.isDirectory) {
+                        if (!output.mkdirs() && !output.isDirectory) throw IOException("Unable to create ZIP directory: $normalized")
+                    } else {
+                        val parentDir = output.parentFile ?: throw IOException("ZIP entry has no parent: $normalized")
+                        if (!parentDir.mkdirs() && !parentDir.isDirectory) throw IOException("Unable to create ZIP parent: ${parentDir.absolutePath}")
+                        counter.files++
+                        FileOutputStream(output).use { out ->
+                            val buffer = ByteArray(64 * 1024)
+                            while (true) {
+                                val count = zip.read(buffer)
+                                if (count < 0) break
+                                counter.bytes += count.toLong()
+                                if (counter.bytes > maxBytes) throw IOException("Runtime ZIP expanded beyond configured limit of $maxBytes bytes.")
+                                if (counter.bytes % (4L * 1024L * 1024L) < count) {
+                                    val free = StatFs(parent.absolutePath).availableBytes
+                                    if (!runtimeBundleHasReserve(free, storageReserveBytes)) throw IOException("Runtime ZIP extraction stopped: free storage below reserve.")
+                                }
+                                out.write(buffer, 0, count)
+                            }
+                        }
+                    }
+                    zip.closeEntry()
+                }
+            }
+            if (counter.files == 0 || !File(staging, "runtime-manifest.json").isFile) {
+                throw IOException("Runtime ZIP layout is invalid: runtime-manifest.json must be at the archive root (no enclosing top-level folder).")
+            }
+            val manifestJson = File(staging, "runtime-manifest.json").readText(Charsets.UTF_8)
+            if (!manifestJson.contains("\"schemaVersion\"") || !manifestJson.contains("\"components\"")) {
+                throw IOException("Runtime manifest is malformed or not schema v2.")
+            }
+            grantExecutableFlags(staging)
+            val staged = validator.validate(staging)
+            journal.checkpoint("RUNTIME_BUNDLE_ZIP", displayName, entryCount=counter.entries, extractedBytes=counter.bytes,
+                availableBytesBefore=availableBefore, availableBytesAfter=runCatching { StatFs(parent.absolutePath).availableBytes }.getOrNull(),
+                stage="ZIP_STAGING_VALIDATION", activationStatus=if (staged.isReady) "READY" else "REJECTED",
+                error=if (staged.isReady) null else IOException(staged.blockers.joinToString("; ")))
+            if (!staged.isReady) throw IOException("Runtime ZIP validation failed: ${staged.blockers.joinToString("; ")}")
+            if (target.exists() && !target.renameTo(backup)) throw IOException("Unable to preserve current runtime bundle.")
+            if (!staging.renameTo(target)) throw IOException("Unable to activate extracted runtime ZIP.")
+            activated = true
+            val active = validator.validate(target)
+            if (!active.isReady) throw IOException("Activated runtime ZIP failed validation: ${active.blockers.joinToString("; ")}")
+            if (backup.exists() && !backup.deleteRecursively()) throw IOException("Runtime installed but stale backup could not be removed: ${backup.absolutePath}")
+            journal.checkpoint("RUNTIME_BUNDLE_ZIP", displayName, entryCount=counter.entries, extractedBytes=counter.bytes,
+                availableBytesBefore=availableBefore, availableBytesAfter=runCatching { StatFs(parent.absolutePath).availableBytes }.getOrNull(),
+                stage="ZIP_ACTIVATED", activationStatus="SUCCESS", rollbackStatus="NOT_REQUIRED")
+            return RuntimeImportResult(active, counter.files, counter.bytes)
+        } catch (error: Exception) {
+            val rollback = runCatching { rollbackImport(staging, backup, target, activated, error) }
+            journal.checkpoint("RUNTIME_BUNDLE_ZIP", displayName, entryCount=counter.entries, extractedBytes=counter.bytes,
+                availableBytesBefore=availableBefore, availableBytesAfter=runCatching { StatFs(parent.absolutePath).availableBytes }.getOrNull(),
+                stage="ZIP_IMPORT_FAILED", activationStatus="FAILED",
+                rollbackStatus=if (rollback.isSuccess) "ROLLBACK_COMPLETED" else "ROLLBACK_FAILED",
+                error=rollback.exceptionOrNull() ?: error)
+            if (rollback.isFailure) throw IOException("Runtime ZIP import failed and rollback failed.", rollback.exceptionOrNull())
+            throw error
+        }
+    }
+
     private fun resolverContext() = contextHolder
 
     private val contextHolder: Context = context
