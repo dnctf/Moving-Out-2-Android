@@ -149,6 +149,7 @@ class RuntimeBundleValidatorTest {
             JSONObject()
                 .put("schemaVersion", 2)
                 .put("targetAbi", "arm64-v8a")
+                .put("provenance", JSONObject().put("packager", "unit-test").put("manifestFormat", "role-validated-abi-v2"))
                 .put("components", components)
                 .put("defaultLaunchProfile", JSONObject())
                 .toString()
