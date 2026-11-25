@@ -21,7 +21,6 @@ data class LaunchReadinessDecision(
 
 class LaunchReadinessCoordinator(initiallyLaunched: Boolean = false) {
     private var hasAutoLaunchedInSession = initiallyLaunched
-    private var hasAutoLaunchedInSession = false
 
     @Synchronized
     fun evaluate(snapshot: LaunchReadinessSnapshot): LaunchReadinessDecision {
