@@ -152,7 +152,7 @@ jobs:
           - This alpha APK is signed with the CI-generated Android debug key so Android Package Installer can install it. The key is ephemeral per fresh CI runner; a later build may require uninstalling this version before upgrading. A persistent private release keystore is required for stable in-place updates.
           - No Moving Out 2 game files are included.
           - Automated CI verifies compilation, packaging and unit tests. Actual launch, Vulkan presentation, compatibility and FPS still require physical-device testing.
-          - Runtime bundle is distributed separately: https://github.com/$GITHUB_REPOSITORY/releases/tag/runtime-v0.1.0-33
+          - Runtime bundle is distributed separately: https://github.com/$GITHUB_REPOSITORY/releases/tag/runtime-v0.1.0-34
 
           ### Verification
           SHA-256 is provided in `SHA256SUMS.txt`. Verify before installation.
