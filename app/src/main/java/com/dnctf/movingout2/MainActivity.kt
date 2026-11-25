@@ -631,7 +631,7 @@ class MainActivity : Activity() {
                                 summary.validation.stages.forEach { stage ->
                                     append("\n").append(stage.stage).append(": ").append(if (stage.passed) "PASS" else "FAIL")
                                 }
-                                append("\nRuntime: RUNTIME_NOT_INSTALLED")
+                                append("\nRuntime readiness: shown in the Runtime panel")
                             }
                         }, { "ZIP import failed safely: ${it.message ?: it.javaClass.simpleName}" })
                         refreshRuntimeStatus()
@@ -658,6 +658,6 @@ class MainActivity : Activity() {
                 append("\nPE import analysis notes:")
                 report.importErrors.toSortedMap().forEach { (file, notes) -> append("\n").append(file).append(": ").append(notes.joinToString("; ")) }
             }
-            append("\n\nRuntime: RUNTIME_NOT_INSTALLED")
+            append("\n\nRuntime readiness: shown in the Runtime panel")
         }
 }
