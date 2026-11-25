@@ -148,32 +148,48 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Query package manifests: executable paths can be symlinks and /usr scans
-          # incorrectly miss them or spend minutes traversing unrelated files.
-          WINE64=""
-          WINESERVER=""
-          while IFS= read -r candidate; do
-            [[ -n "$candidate" && -e "$candidate" ]] || continue
-            resolved="$(readlink -f "$candidate")"
-            if [[ -x "$resolved" && -s "$resolved" ]]; then WINE64="$resolved"; break; fi
-          done < <(dpkg-query -L wine64 | grep -E '/(wine64|wine64-stable)$' || true)
-          while IFS= read -r candidate; do
-            [[ -n "$candidate" && -e "$candidate" ]] || continue
-            resolved="$(readlink -f "$candidate")"
-            if [[ -x "$resolved" && -s "$resolved" ]]; then WINESERVER="$resolved"; break; fi
-          done < <(dpkg-query -L wine64 libwine:amd64 | grep -E '/wineserver(-stable)?$' || true)
-          WINE_LIB_DIR="/usr/lib/x86_64-linux-gnu/wine"
+          # Ubuntu's /usr/bin launchers may be shell wrappers. Select only the
+          # real x86_64 ELF executables shipped by the signed Wine packages.
+          find_wine_elf() {
+            local package_list="$1"
+            local path resolved header
+            while IFS= read -r path; do
+              [[ -n "$path" && -e "$path" ]] || continue
+              resolved="$(readlink -f "$path")"
+              [[ -x "$resolved" && -s "$resolved" ]] || continue
+              if ! header="$(llvm-readelf -h "$resolved" 2>/dev/null)"; then
+                continue
+              fi
+              if grep -Eq 'Class:.*ELF64' <<<"$header" &&
+                 grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)' <<<"$header"; then
+                printf '%s\n' "$resolved"
+                return 0
+              fi
+            done <<<"$package_list"
+            return 1
+          }
+          WINE64_PATHS="$(dpkg-query -L wine64)"
+          WINESERVER_PATHS="$(dpkg-query -L wine64 libwine:amd64)"
+          WINE64="$(find_wine_elf "$(grep -E '/(wine64|wine64-stable)$' <<<"$WINE64_PATHS" || true)" || true)"
+          WINESERVER="$(find_wine_elf "$(grep -E '/wineserver(-stable)?$' <<<"$WINESERVER_PATHS" || true)" || true)"
           if [[ -z "$WINE64" || -z "$WINESERVER" ]]; then
-            echo "::error::Could not resolve Wine ELF launchers from signed Ubuntu packages."
-            dpkg-query -L wine64 libwine:amd64 | grep -E 'wine64|wineserver|/wine/' || true
+            echo "::error::Could not locate real Wine x86_64 ELF launchers in signed Ubuntu packages."
+            echo "wine64 package candidates:"
+            grep -E 'wine64|wineserver' <<<"$WINE64_PATHS" || true
+            echo "Wine package candidates:"
+            grep -E 'wine64|wineserver' <<<"$WINESERVER_PATHS" || true
             exit 1
           fi
+          WINE_LIB_DIR="/usr/lib/x86_64-linux-gnu/wine"
           [[ -d "$WINE_LIB_DIR" ]]
           mkdir -p "$RUNNER_TEMP/runtime-input/wine/bin" "$RUNNER_TEMP/runtime-input/wine/lib"
           install -m 0755 "$WINE64" "$RUNNER_TEMP/runtime-input/wine/bin/wine64"
           install -m 0755 "$WINESERVER" "$RUNNER_TEMP/runtime-input/wine/bin/wineserver"
           cp -aL "$WINE_LIB_DIR" "$RUNNER_TEMP/runtime-input/wine/lib/wine"
           find -L "$RUNNER_TEMP/runtime-input/wine/lib/wine" -type f -name '*.so*' -print -quit | grep -q .
+          echo "Resolved Wine ELF launchers:"
+          llvm-readelf -h "$WINE64" | grep -E 'Class:|Machine:'
+          llvm-readelf -h "$WINESERVER" | grep -E 'Class:|Machine:'
           echo "Wine source: Ubuntu signed apt packages wine64 + libwine:amd64"
           dpkg-query -W -f='${Package}=${Version}\n' wine64 libwine:amd64 | tee "$RUNNER_TEMP/wine-package-versions.txt"
 
