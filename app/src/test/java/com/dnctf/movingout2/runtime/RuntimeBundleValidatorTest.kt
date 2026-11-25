@@ -111,12 +111,19 @@ class RuntimeBundleValidatorTest {
             file.parentFile?.mkdirs()
             file.writeBytes(bytes)
             if (executable) file.setExecutable(true, false)
+            val abi = when (key) {
+                "box64" -> RuntimeBinaryInspector.ELF64_AARCH64
+                "wine64", "wineserver" -> RuntimeBinaryInspector.ELF64_X86_64
+                "d3d11", "dxgi" -> RuntimeBinaryInspector.PE32_PLUS_X86_64
+                else -> "JSON"
+            }
             components.put(
                 key,
                 JSONObject()
                     .put("included", true)
                     .put("path", relativePath)
                     .put("sha256", sha256(file))
+                    .put("abi", abi)
             )
         }
 
@@ -127,7 +134,7 @@ class RuntimeBundleValidatorTest {
         addFile("dxgi", "dxvk/x64/dxgi.dll", pe32PlusX64())
 
         val libraryDirectory = File(root, "wine/lib/wine").apply { mkdirs() }
-        File(libraryDirectory, "module.so").writeBytes(byteArrayOf(7, 8, 9))
+        File(libraryDirectory, "module.dat").writeBytes(byteArrayOf(7, 8, 9))
         components.put(
             "wineLib",
             JSONObject()
