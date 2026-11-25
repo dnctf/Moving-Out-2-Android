@@ -33,6 +33,10 @@ class PhysicalGamepadNormalizerTest {
         assertEquals(setOf(ControllerButton.LEFT, ControllerButton.UP), PhysicalGamepadNormalizer.hatButtons(-1f, -1f))
         assertTrue(PhysicalGamepadNormalizer.hatButtons(0f, 0f).isEmpty())
     }
+    @Test fun nonFiniteHatAxesAreNeutral() {
+        assertTrue(PhysicalGamepadNormalizer.hatButtons(Float.NaN, Float.POSITIVE_INFINITY).isEmpty())
+        assertTrue(PhysicalGamepadNormalizer.hatButtons(Float.NEGATIVE_INFINITY, Float.NaN).isEmpty())
+    }
     @Test fun advertisedAxisRangesNormalizeCenteredValuesAndAsymmetricEndpoints() {
         assertEquals(-1f, PhysicalGamepadNormalizer.normalizeAxisInRange(-32768f, -32768f, 32767f), 0f)
         assertEquals(0f, PhysicalGamepadNormalizer.normalizeAxisInRange(0f, -32768f, 32767f), 0f)
@@ -48,6 +52,19 @@ class PhysicalGamepadNormalizerTest {
         val fallback = PhysicalGamepadAxisLayout.resolve(setOf(MotionEvent.AXIS_Z, MotionEvent.AXIS_RZ, MotionEvent.AXIS_BRAKE, MotionEvent.AXIS_GAS))
         assertEquals(MotionEvent.AXIS_Z, fallback.rightX); assertEquals(MotionEvent.AXIS_RZ, fallback.rightY)
         assertEquals(MotionEvent.AXIS_BRAKE, fallback.leftTrigger); assertEquals(MotionEvent.AXIS_GAS, fallback.rightTrigger)
+    }
+    @Test fun hybridTriggerAxesAreResolvedIndependently() {
+        val leftStandardRightLegacy = PhysicalGamepadAxisLayout.resolve(
+            setOf(MotionEvent.AXIS_LTRIGGER, MotionEvent.AXIS_GAS)
+        )
+        assertEquals(MotionEvent.AXIS_LTRIGGER, leftStandardRightLegacy.leftTrigger)
+        assertEquals(MotionEvent.AXIS_GAS, leftStandardRightLegacy.rightTrigger)
+
+        val leftLegacyRightStandard = PhysicalGamepadAxisLayout.resolve(
+            setOf(MotionEvent.AXIS_BRAKE, MotionEvent.AXIS_RTRIGGER)
+        )
+        assertEquals(MotionEvent.AXIS_BRAKE, leftLegacyRightStandard.leftTrigger)
+        assertEquals(MotionEvent.AXIS_RTRIGGER, leftLegacyRightStandard.rightTrigger)
     }
     @Test fun incompleteRightStickAxesNeverMixStandardAndLegacyPairs() {
         val rxAndRz = PhysicalGamepadAxisLayout.resolve(setOf(MotionEvent.AXIS_RX, MotionEvent.AXIS_RZ))
