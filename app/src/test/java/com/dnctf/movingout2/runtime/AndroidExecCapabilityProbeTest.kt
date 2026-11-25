@@ -1,7 +1,5 @@
 package com.dnctf.movingout2.runtime
 
-import android.content.Context
-import android.content.pm.ApplicationInfo
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
@@ -24,7 +22,7 @@ class AndroidExecCapabilityProbeTest {
     @Test fun reportsSelinuxEaccesDeterministically() {
         val root = Files.createTempDirectory("exec-probe-eacces").toFile()
         val binary = File(root, "box64").apply { writeText("fixture"); setExecutable(true) }
-        val probe = AndroidExecCapabilityProbe(context(File(root, "native")), executor =
+        val probe = AndroidExecCapabilityProbe(File(root, "native"), executor =
             AndroidBinaryExecutor { _, _ -> throw IOException("error=13, Permission denied (EACCES)") })
         val result = probe.probe(binary)
         assertEquals(AndroidExecCapability.EXEC_BLOCKED_SELINUX_EACCES, result.capability)
