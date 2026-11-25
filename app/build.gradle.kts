@@ -20,6 +20,7 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            keepDebugSymbols += "**/libbox64.so"
         }
     }
 
