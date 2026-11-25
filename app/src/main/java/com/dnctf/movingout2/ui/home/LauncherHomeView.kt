@@ -13,7 +13,8 @@ object LauncherHomeView {
         context: Context,
         onSelectFolder: () -> Unit,
         onRevalidate: () -> Unit,
-        onImportRuntime: () -> Unit,\n        onDownloadRuntime: () -> Unit,
+        onImportRuntime: () -> Unit,
+        onDownloadRuntime: () -> Unit,
         onImportGameZip: () -> Unit,
         onOpenSettings: () -> Unit,
         onControllerTest: () -> Unit,
@@ -33,7 +34,8 @@ object LauncherHomeView {
         val graphicsStatus = TextView(context).apply { textSize = 14f; setPadding(0, 8, 0, 12); text = "Probe pending." }
         val runtimeTitle = TextView(context).apply { text = "Native Runtime Bundle"; textSize = 20f; setPadding(0, 32, 0, 12) }
         val runtimeStatus = TextView(context).apply { textSize = 14f; setPadding(0, 8, 0, 12) }
-        val importRuntime = Button(context).apply { text = "Import runtime bundle (SAF)"; setOnClickListener { onImportRuntime() } }\n        val downloadRuntime = Button(context).apply { text = "Download runtime from GitHub"; setOnClickListener { onDownloadRuntime() } }
+        val importRuntime = Button(context).apply { text = "Import runtime bundle (SAF)"; setOnClickListener { onImportRuntime() } }
+        val downloadRuntime = Button(context).apply { text = "Download runtime from GitHub"; setOnClickListener { onDownloadRuntime() } }
         val runtimeInfo = TextView(context).apply {
             text = "Runtime payload validation only. Wine/Box64 execution and graphics-driver integration are not yet verified."
             textSize = 13f; setPadding(0, 16, 0, 0)

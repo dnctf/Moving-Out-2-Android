@@ -12,7 +12,8 @@ Every compatible release must publish both files:
 - `moving-out-2-runtime-arm64-v8a.zip.sha256`
 
 The checksum file must contain the lowercase SHA-256 digest of the ZIP (the
-standard `sha256sum` output format is accepted). The ZIP must contain
+standard `sha256sum` output format is accepted). This detects archive corruption
+relative to the release checksum; it is not a signed publisher attestation. The ZIP must contain
 `runtime-manifest.json` at its root and follow
 [Runtime Manifest v2](RUNTIME_MANIFEST_V2.md).
 

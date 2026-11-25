@@ -8,7 +8,17 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import java.util.Locale
 import java.util.zip.ZipInputStream
+
+internal fun isSafeRuntimeArchiveEntry(name: String, isDirectory: Boolean): Boolean {
+    if (name.isBlank() || name.contains(':') || name.any { it.code < 32 || it.code == 127 }) return false
+    val normalized = name.replace(0x5c.toChar(), '/')
+    if (normalized.startsWith('/')) return false
+    val path = if (isDirectory) normalized.removeSuffix("/") else normalized
+    if (path.isEmpty()) return false
+    return path.split('/').none { it.isEmpty() || it == "." || it == ".." }
+}
 
 data class RuntimeRepositoryInstallResult(val version: String, val files: Int, val bytes: Long)
 
@@ -63,9 +73,17 @@ class RuntimeRepositoryInstaller(
         )
 
         onProgress("Downloading and verifying SHA-256…")
-        val expectedHash = readUrl(digestUrl, 4096).trim().split(Regex("\\s+")).first().lowercase()
-        require(expectedHash.matches(Regex("[a-f0-9]{64}"))) { "Release checksum file is malformed." }
-        download(bundleUrl, archive, onProgress)
+        val expectedHash = readUrl(digestUrl, 4096).trim().split(Regex("\\s+")).firstOrNull()?.lowercase()
+        if (expectedHash == null || !expectedHash.matches(Regex("[a-f0-9]{64}"))) {
+            throw IllegalStateException("Release checksum file is malformed.")
+        }
+        archive.delete()
+        try {
+            download(bundleUrl, archive, onProgress)
+        } catch (error: Exception) {
+            archive.delete()
+            throw error
+        }
         val actualHash = sha256(archive)
         if (actualHash != expectedHash) {
             archive.delete()
@@ -122,7 +140,9 @@ class RuntimeRepositoryInstaller(
     private fun readUrl(url: String, limit: Int): String {
         val connection = open(url)
         try {
-            if (connection.responseCode !in 200..299) throw IllegalStateException("Repository request failed: HTTP ${connection.responseCode}")
+            val responseCode = connection.responseCode
+            ensureAllowedGitHubResponse(connection)
+            if (responseCode !in 200..299) throw IllegalStateException("Repository request failed: HTTP $responseCode")
             val bytes = connection.inputStream.use { input ->
                 val output = java.io.ByteArrayOutputStream()
                 val buffer = ByteArray(8192)
@@ -141,7 +161,9 @@ class RuntimeRepositoryInstaller(
     private fun download(url: String, destination: File, onProgress: (String) -> Unit) {
         val connection = open(url)
         try {
-            if (connection.responseCode !in 200..299) throw IllegalStateException("Runtime download failed: HTTP ${connection.responseCode}")
+            val responseCode = connection.responseCode
+            ensureAllowedGitHubResponse(connection)
+            if (responseCode !in 200..299) throw IllegalStateException("Runtime download failed: HTTP $responseCode")
             val declared = connection.contentLengthLong
             if (declared > maxDownloadBytes) throw IllegalStateException("Runtime archive exceeds configured download limit.")
             var total = 0L
@@ -171,11 +193,13 @@ class RuntimeRepositoryInstaller(
                 entries++
                 if (entries > maxEntries) throw IllegalStateException("Runtime archive contains too many entries.")
                 val name = entry.name
-                if (name.isBlank() || name.startsWith("/") || name.startsWith("\\\\") ||
-                    name.split('/', '\\\\').any { it == ".." } || name.contains(':') || name.any { it.code < 32 }) {
+                if (!isSafeRuntimeArchiveEntry(name, entry.isDirectory)) {
                     throw IllegalStateException("Unsafe runtime archive path rejected.")
                 }
-                val output = File(destination, name).canonicalFile
+                val normalizedName = name.replace(0x5c.toChar(), '/').let {
+                    if (entry.isDirectory) it.removeSuffix("/") else it
+                }
+                val output = File(destination, normalizedName).canonicalFile
                 if (!output.toPath().startsWith(destination.canonicalFile.toPath())) {
                     throw IllegalStateException("Runtime archive path escapes staging directory.")
                 }
@@ -212,8 +236,21 @@ class RuntimeRepositoryInstaller(
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
+    private fun ensureAllowedGitHubResponse(connection: HttpURLConnection) {
+        val finalUrl = connection.url
+        require(finalUrl.protocol.equals("https", ignoreCase = true) &&
+            finalUrl.host.lowercase(Locale.ROOT) in ALLOWED_GITHUB_HOSTS) {
+            "GitHub redirected the runtime request to an unapproved host."
+        }
+    }
+
     private fun open(url: String): HttpURLConnection {
-        val connection = URL(url).openConnection() as HttpURLConnection
+        val parsed = URL(url)
+        require(parsed.protocol.equals("https", ignoreCase = true) &&
+            parsed.host.lowercase(Locale.ROOT) in ALLOWED_GITHUB_HOSTS) {
+            "Runtime downloads must use an approved HTTPS GitHub host."
+        }
+        val connection = parsed.openConnection() as HttpURLConnection
         connection.connectTimeout = 15_000
         connection.readTimeout = 60_000
         connection.instanceFollowRedirects = true
@@ -221,5 +258,14 @@ class RuntimeRepositoryInstaller(
         connection.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
         connection.setRequestProperty("User-Agent", "MovingOut2Android-RuntimeManager")
         return connection
+    }
+
+    companion object {
+        private val ALLOWED_GITHUB_HOSTS = setOf(
+            "api.github.com",
+            "github.com",
+            "objects.githubusercontent.com",
+            "release-assets.githubusercontent.com"
+        )
     }
 }
