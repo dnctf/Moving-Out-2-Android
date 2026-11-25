@@ -127,7 +127,7 @@ jobs:
                 [[ -n "$output" ]] && printf '%s\n' "$output"
                 return 0
               fi
-              if [[ "$output" == *"HTTP 404"* || "$output" == *"Not Found"* ]]; then
+              if [[ "$output" == *"HTTP 404"* || "$output" == *"Not Found"* || "$output" == *"Reference does not exist"* ]]; then
                 echo "Already deleted; treating as success: $*"
                 return 0
               fi
@@ -148,7 +148,7 @@ jobs:
 
           tag_rows="$(retry_gh_api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/" --paginate --jq '.[].ref')"
           while IFS= read -r ref; do
-            tag="\${ref#refs/tags/}"
+            tag="${ref#refs/tags/}"
             [[ -n "$tag" ]] || continue
             echo "Deleting obsolete Git tag: $tag"
             retry_gh_api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag"
