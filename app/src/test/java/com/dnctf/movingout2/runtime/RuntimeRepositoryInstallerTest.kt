@@ -26,6 +26,18 @@ class RuntimeRepositoryInstallerTest {
             .put("assets", assets)
     }
 
+    @Test fun createsHttpRangeHeaderOnlyForNonZeroPartialLength() {
+        assertEquals(null, runtimeRangeHeader(0L))
+        assertEquals("bytes=1048576-", runtimeRangeHeader(1_048_576L))
+    }
+
+    @Test fun parsesContentRangeStartForResumedDownload() {
+        assertEquals(1048576L, runtimeContentRangeStart("bytes 1048576-2097151/435419320"))
+        assertEquals(0L, runtimeContentRangeStart("bytes 0-65535/435419320"))
+        assertEquals(null, runtimeContentRangeStart("bytes */435419320"))
+        assertEquals(null, runtimeContentRangeStart("invalid"))
+    }
+
     @Test fun selectsNewestCompletePublishedRuntimePrerelease() {
         val releases = JSONArray()
             .put(JSONObject().put("tag_name", "v1.0.0").put("prerelease", false).put("draft", false).put("published_at", "2026-11-25T12:00:00Z"))
