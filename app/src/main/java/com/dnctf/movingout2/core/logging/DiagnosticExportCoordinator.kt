@@ -116,9 +116,18 @@ class DiagnosticExportCoordinator(
 
             diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "diagnostics",
                 "Diagnostic ZIP export requested; runtimeStatus=${runtime.status}; runtimeRoot=${runtimeRoot.absolutePath}"))
+            val exportLog = diagnosticLog.snapshot().toMutableList()
+            if (sessionLog.isFile) {
+                runCatching { sessionLog.readLines(Charsets.UTF_8).takeLast(1000) }
+                    .onSuccess { lines -> lines.forEach { line ->
+                        exportLog += RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "wine-session-log", line)
+                    } }
+                    .onFailure { error -> exportLog += RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR,
+                        "wine-session-log", "Failed reading ${sessionLog.absolutePath}: ${describeError(error)}") }
+            }
             val result = runCatching {
                 CrashDiagnosticExporter(File(appContext.cacheDir, "diagnostics")).export(
-                    deviceJson.toString(2), gameJson.toString(2), runtimeJson.toString(2), diagnosticLog.snapshot(),
+                    deviceJson.toString(2), gameJson.toString(2), runtimeJson.toString(2), exportLog,
                     exitCode = null,
                     crashInfo = if (sessionLog.isFile) "Wine session log included separately in runtime-bundle-report.json"
                         else "No Wine session log found; runtime process execution/output is not evidenced by this export.",
