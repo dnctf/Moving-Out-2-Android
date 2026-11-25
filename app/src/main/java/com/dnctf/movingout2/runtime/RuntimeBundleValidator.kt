@@ -14,7 +14,14 @@ class RuntimeBundleValidator {
    val map=parsed.componentFiles
    val box=map["box64"];val wine=map["wine64"];val server=map["wineserver"];val libs=map["wineLib"]
    val blockers=parsed.errors.toMutableList()
-   for((key,file) in listOf("box64" to box,"wine64" to wine,"wineserver" to server))if(file!=null&&!file.canExecute())blockers+="Executable $key is not executable."
+   for ((key, file) in listOf("box64" to box, "wine64" to wine, "wineserver" to server)) {
+    if (file != null) {
+     if (!file.canExecute()) blockers += "Executable $key is not executable."
+     // The JSON manifest checksum proves identity, not target architecture. All
+     // Linux runtime entry points must be ELF64 little-endian AArch64 for this app.
+     if (!isArm64Elf(file)) blockers += "Executable $key is not ELF AArch64."
+    }
+   }
    if(box==null||wine==null||server==null||libs==null)blockers+="Required runtime files/directories unresolved."
    val ready=blockers.isEmpty()
    return RuntimeBundleReport(if(ready)RuntimeBundleStatus.READY else RuntimeBundleStatus.INCOMPLETE,canonical,box,wine,server,libs,blockers.distinct(),1)
