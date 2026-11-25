@@ -35,6 +35,10 @@ import com.dnctf.movingout2.runtime.RuntimeBundleImporter
 import com.dnctf.movingout2.runtime.RuntimeLaunchConfig
 import com.dnctf.movingout2.graphics.VulkanCapabilities
 import com.dnctf.movingout2.runtime.RuntimeBundleValidator
+import com.dnctf.movingout2.runtime.RuntimeInstallationState
+import com.dnctf.movingout2.runtime.AndroidExecCapabilityProbe
+import com.dnctf.movingout2.runtime.WineSessionSupervisor
+import com.dnctf.movingout2.runtime.WineSessionState
 import com.dnctf.movingout2.runtime.RuntimeGraphicsComponents
 import com.dnctf.movingout2.settings.LauncherSettings
 import com.dnctf.movingout2.ui.home.LauncherHomeView
@@ -45,6 +49,8 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var runtimeStatus: TextView
     private lateinit var graphicsStatus: TextView
+    private lateinit var playButton: Button
+    @Volatile private var activeWineSession: WineSessionSupervisor? = null
     private lateinit var repository: InstallationRepository
     private lateinit var gameRegistry: com.dnctf.movingout2.installation.GameRegistry
     private lateinit var physicalGamepadManager: PhysicalGamepadManager
@@ -71,11 +77,12 @@ class MainActivity : Activity() {
             this, ::openFolderPicker, ::revalidateSavedFolder,
             ::openRuntimeZipPicker, ::openRuntimeFolderPicker,
             ::downloadRuntimeFromRepository, ::openGameZipPicker, ::showSettings,
-            ::showControllerTest, ::exportDiagnostics
+            ::showControllerTest, ::exportDiagnostics, ::startGameSession
         )
         status = views.status
         runtimeStatus = views.runtimeStatus
         graphicsStatus = views.graphicsStatus
+        playButton = views.playButton
         setContentView(views.root)
         status.text = "Starting launcher…"
         runtimeStatus.text = "Checking runtime installation…"
@@ -318,6 +325,7 @@ class MainActivity : Activity() {
                 append("\n\nReady to launch: ").append(if (active.isReadyToLaunch) "YES (runtime integration pending)" else "NO")
             }
         }
+        refreshRuntimeStatus()
     }
 
     private fun showSettings() {
@@ -424,11 +432,95 @@ class MainActivity : Activity() {
         val root = File(filesDir, "native_runtime/bundle")
         val report = RuntimeBundleValidator().validate(root)
         val graphics = RuntimeGraphicsComponents.assess(root)
-        runtimeStatus.text = if (report.isReady) {
-            "Runtime bundle: STRUCTURE_VALIDATED\nWine/Box64: payload present (execution not verified)\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${graphics.notes.joinToString("\n")}\nGame launch remains blocked pending native process/graphics integration and device tests."
-        } else {
-            "Runtime bundle: ${report.status}\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${report.blockers.joinToString("\n")}\n${graphics.notes.joinToString("\n")}"
+        if (!report.isReady || report.box64 == null) {
+            playButton.isEnabled = false
+            playButton.alpha = 0.55f
+            runtimeStatus.text = "Runtime bundle: ${report.status}\nLaunch readiness: BLOCKED (runtime not validated)\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${report.blockers.joinToString("\n")}\n${graphics.notes.joinToString("\n")}"
+            return
         }
+        playButton.isEnabled = false
+        playButton.alpha = 0.55f
+        runtimeStatus.text = "Runtime bundle: READY (checking nativeLibraryDir exec capability)…"
+        Thread({
+            val exec = runCatching { AndroidExecCapabilityProbe(this, diagnosticLog).probe(report.box64) }
+            val active = runCatching { gameRegistry.getActiveGame() }.getOrNull()
+            val gamePresent = active?.isReadyToLaunch == true &&
+                active.source == com.dnctf.movingout2.core.model.InstallationSource.INTERNAL_IMPORTED &&
+                active.executableFile?.isFile == true
+            val readiness = RuntimeInstallationState(report.isReady, exec.getOrNull()?.allowed == true, gamePresent)
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                playButton.isEnabled = readiness.canLaunch
+                playButton.alpha = if (readiness.canLaunch) 1f else 0.55f
+                val execText = exec.getOrNull()?.let { "${it.capability}: ${it.detail}" }
+                    ?: "EXEC_PROBE_FAILED: ${exec.exceptionOrNull()?.message}"
+                val gameText = when {
+                    active == null -> "Game: NOT_SELECTED"
+                    active.source != com.dnctf.movingout2.core.model.InstallationSource.INTERNAL_IMPORTED -> "Game: FILES_PRESENT (SAF source must be imported into app storage before launch)"
+                    gamePresent -> "Game: FILES_PRESENT"
+                    else -> "Game: ${active.validationStatus}"
+                }
+                runtimeStatus.text = "Runtime bundle: READY\nBox64 execution: ${if (readiness.execProbeAllowed) "ALLOWED" else "BLOCKED"}\n${execText}\n${gameText}\nLaunch readiness: ${readiness.launchReadiness}\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${graphics.notes.joinToString("\n")}"
+            }
+        }, "runtime-launch-readiness").apply { isDaemon = true; start() }
+    }
+
+    private fun startGameSession() {
+        val existing = activeWineSession
+        if (existing != null && existing.state == WineSessionState.RUNNING) {
+            Thread({
+                existing.shutdownAll()
+                activeWineSession = null
+                runOnUiThread {
+                    playButton.text = "Play Moving Out 2"
+                    refreshRuntimeStatus()
+                    Toast.makeText(this, "Game session stopped.", Toast.LENGTH_LONG).show()
+                }
+            }, "wine-session-stop").apply { isDaemon = true; start() }
+            return
+        }
+        val active = runCatching { gameRegistry.getActiveGame() }.getOrNull()
+        if (active == null || !active.isReadyToLaunch) {
+            Toast.makeText(this, "Import and validate Moving Out 2 game files first.", Toast.LENGTH_LONG).show()
+            refreshRuntimeStatus()
+            return
+        }
+        if (active.source != com.dnctf.movingout2.core.model.InstallationSource.INTERNAL_IMPORTED) {
+            Toast.makeText(this, "This SAF folder is validated but not launchable yet. Import the game ZIP into app storage.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val gameExe = active.executableFile
+        if (gameExe == null || !gameExe.isFile) {
+            Toast.makeText(this, "The validated game executable could not be resolved.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val root = File(filesDir, "native_runtime/bundle")
+        playButton.isEnabled = false
+        runtimeStatus.text = "Starting Box64 / Wine session…"
+        val supervisor = WineSessionSupervisor(this, root, active.id, diagnosticLog)
+        Thread({
+            val started = runCatching { supervisor.startSession(gameExe) }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) {
+                    supervisor.shutdownAll()
+                    return@runOnUiThread
+                }
+                if (started.getOrDefault(false)) {
+                    activeWineSession = supervisor
+                    playButton.text = "Stop Game Session"
+                    playButton.isEnabled = true
+                    playButton.alpha = 1f
+                    runtimeStatus.text = "Game session: RUNNING\nBox64 executable: ${File(applicationInfo.nativeLibraryDir, "libbox64.so").absolutePath}\nWine session logs: files/diagnostics/wine_session.log and runtime-process.log"
+                    Toast.makeText(this, "Box64 / Wine game session started.", Toast.LENGTH_LONG).show()
+                } else {
+                    activeWineSession = null
+                    playButton.text = "Play Moving Out 2"
+                    runtimeStatus.text = "Game session failed during preflight/startup. Export diagnostics and inspect wine_session.log."
+                    refreshRuntimeStatus()
+                    Toast.makeText(this, "Game session could not start. Export diagnostics.", Toast.LENGTH_LONG).show()
+                }
+            }
+        }, "wine-session-start").apply { isDaemon = true; start() }
     }
 
     @Deprecated("Use Activity Result API in a later refactor")
@@ -469,6 +561,7 @@ class MainActivity : Activity() {
                 val activeGame = gameRegistry.registerSafFolder(uri)
                 activateControllerProfileForGame(activeGame)
                 status.text = formatReport(GameInstallationManager(this).validate(uri))
+                refreshRuntimeStatus()
             } catch (e: Exception) { status.text = "Folder import failed safely: ${e.message ?: e.javaClass.simpleName}" }
             pickRuntimeZip -> {
                 runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
@@ -485,6 +578,7 @@ class MainActivity : Activity() {
                         result.onSuccess { imported ->
                             val graphics = RuntimeGraphicsComponents.assess(File(filesDir, "native_runtime/bundle"))
                             runtimeStatus.text = "Runtime ZIP imported and extracted successfully.\nFiles: ${imported.copiedFiles} | Expanded: ${imported.copiedBytes / (1024 * 1024)} MiB\nManifest: schema v2 | ABI: ARM64 | Integrity: VALIDATED\nDXVK: ${graphics.dxvk}\n${graphics.notes.joinToString("\n")}"
+                            refreshRuntimeStatus()
                             Toast.makeText(this, "Runtime ZIP installed and validated.", Toast.LENGTH_LONG).show()
                         }.onFailure { error ->
                             val trace = java.io.StringWriter().also { error.printStackTrace(java.io.PrintWriter(it)) }.toString()
