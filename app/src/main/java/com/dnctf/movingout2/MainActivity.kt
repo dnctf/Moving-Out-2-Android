@@ -751,6 +751,7 @@ class MainActivity : Activity() {
                                 append("\nRuntime readiness: shown in the Runtime panel")
                             }
                         }, { "ZIP import failed safely: ${it.message ?: it.javaClass.simpleName}" })
+                        probeGraphicsAsync()
                         refreshRuntimeStatus()
                     }
             }
