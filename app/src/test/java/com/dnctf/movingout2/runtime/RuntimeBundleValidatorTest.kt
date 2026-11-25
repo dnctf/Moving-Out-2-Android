@@ -56,13 +56,14 @@ class RuntimeBundleValidatorTest {
     }
 
     private fun pe32PlusX64(): ByteArray {
-        val bytes = ByteArray(128)
+        val bytes = ByteArray(368)
         bytes[0] = 'M'.code.toByte(); bytes[1] = 'Z'.code.toByte()
         val b = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
         b.putInt(0x3c, 64)
         bytes[64] = 'P'.code.toByte(); bytes[65] = 'E'.code.toByte()
         b.putShort(68, 0x8664.toShort())
-        b.putShort(84, 24.toShort())
+        b.putShort(70, 1.toShort())
+        b.putShort(84, 0xF0.toShort())
         b.putShort(88, 0x20b.toShort())
         return bytes
     }
