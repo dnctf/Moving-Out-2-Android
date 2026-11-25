@@ -78,6 +78,7 @@ internal object RuntimeBinaryInspector {
             b.get() == 'P'.code.toByte() && b.get() == 'E'.code.toByte() &&
                 b.get() == 0.toByte() && b.get() == 0.toByte() &&
                 (b.getShort().toInt() and 0xffff) == 0x8664 &&
+                (b.getShort(20).toInt() and 0xffff) >= 2 &&
                 (b.getShort(24).toInt() and 0xffff) == 0x20b
         }
     }.getOrDefault(false)
