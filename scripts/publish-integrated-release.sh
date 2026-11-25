@@ -128,14 +128,22 @@ upload_one_asset() {
   url="$UPLOAD_API/releases/$RELEASE_ID/assets?name=$encoded_name"
   for attempt in 1 2 3 4 5 6; do
     body="$(mktemp)"
+    set +e
     status="$(curl --silent --show-error --location \
+      --connect-timeout 30 --max-time 1800 \
       --output "$body" --write-out '%{http_code}' \
       --request POST \
       --header "Authorization: Bearer $GH_TOKEN" \
       --header "Accept: application/vnd.github+json" \
       --header "X-GitHub-Api-Version: $API_VERSION" \
       --header "Content-Type: application/octet-stream" \
-      --data-binary "@$file" "$url" || printf '000')"
+      --data-binary "@$file" "$url")"
+    curl_exit=$?
+    set -e
+    if (( curl_exit != 0 )); then
+      echo "curl transport failure for $name (exit=$curl_exit); scheduling transient retry." >&2
+      status="000"
+    fi
 
     if [[ "$status" =~ ^2[0-9][0-9]$ ]]; then
       rm -f "$body"
@@ -174,6 +182,16 @@ upload_one_asset() {
   done
   echo "Exhausted six upload attempts for $name." >&2
   return 1
+}
+
+cleanup_target_draft_duplicates() {
+  local releases duplicate_id
+  releases="$(list_releases)"
+  while IFS= read -r duplicate_id; do
+    [[ -n "$duplicate_id" ]] || continue
+    echo "Removing orphan target draft release ID $duplicate_id after publication."
+    api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/$duplicate_id" >/dev/null
+  done < <(jq -r --arg tag "$RELEASE_TAG" --argjson keep "$RELEASE_ID" '.[] | select(.tag_name == $tag and .draft == true and .id != $keep) | .id' <<<"$releases")
 }
 
 verify_and_publish() {
@@ -217,6 +235,7 @@ main() {
     upload_one_asset "$file"
   done
   verify_and_publish
+  cleanup_target_draft_duplicates
   echo "Release publication completed successfully: $RELEASE_TAG (ID $RELEASE_ID)"
 }
 
