@@ -116,7 +116,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          scripts/build_box64_android.sh "$RUNNER_TEMP/box64"
+          bash scripts/build_box64_android.sh "$RUNNER_TEMP/box64"
           mkdir -p app/src/main/jniLibs/arm64-v8a
           install -m 0755 "$RUNNER_TEMP/box64/libbox64.so" app/src/main/jniLibs/arm64-v8a/libbox64.so
           readelf -h app/src/main/jniLibs/arm64-v8a/libbox64.so | grep -Eq 'Machine:.*AArch64'
