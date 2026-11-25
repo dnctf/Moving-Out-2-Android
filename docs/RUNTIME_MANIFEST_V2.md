@@ -23,6 +23,6 @@ Schema version 2 requires a `provenance` object containing `packager` and `manif
 
 Before any Wine server is started, the app executes the validated ARM64 Box64 binary with `--version` from app-private storage. The result is classified as `EXEC_ALLOWED_APP_DATA`, `EXEC_ALLOWED_NATIVE_LIB_DIR`, `EXEC_BLOCKED_SELINUX_EACCES`, or `EXEC_FAILED`.
 
-The native-library-directory fallback is considered only when `libbox64.so` is present, executable, structurally valid ELF64 AArch64, and byte-for-byte identical (SHA-256) to the validated bundle Box64. The manifest sets `extractNativeLibs=true` and Gradle uses legacy JNI packaging so a future `jniLibs/arm64-v8a/libbox64.so` payload can be extracted. This repository does not currently bundle Box64 in `jniLibs`; the fallback is conditional.
+The native-library-directory fallback is considered only when `libbox64.so` is present, executable, structurally valid ELF64 AArch64, and byte-for-byte identical (SHA-256) to the validated bundle Box64. Gradle uses legacy JNI packaging (`useLegacyPackaging=true`), which generates the extracted native-library configuration so a future `jniLibs/arm64-v8a/libbox64.so` payload can be found under `nativeLibraryDir`. This repository does not currently bundle Box64 in `jniLibs`; the fallback is conditional.
 
 A successful probe confirms only that the tested binary can be executed with the current Android policy. It does not prove that Wine, Box64 dynamic dependencies, DXVK, Turnip, or a game can run correctly.
