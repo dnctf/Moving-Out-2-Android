@@ -171,7 +171,7 @@ jobs:
           PACKAGE_PATHS="$(dpkg-query -L wine64 libwine:amd64)"
           LIBRARY_PATHS="$(find -L /usr/lib /usr/libexec -type f \( -name 'wine64' -o -name 'wine64-preloader' -o -name 'wine64-stable' -o -name 'wineserver' -o -name 'wineserver-stable' -o -name 'wine' \) -print 2>/dev/null || true)"
           ALL_WINE_PATHS="$(printf '%s\n%s\n' "$PACKAGE_PATHS" "$LIBRARY_PATHS" | sort -u)"
-          WINE64_CANDIDATES="$(grep -E '/(wine|wine64|wine64-preloader|wine64-stable)
+          WINE64_CANDIDATES="$(grep -E '/(wine|wine64|wine64-preloader|wine64-stable)$' <<<"$ALL_WINE_PATHS" || true)"
           WINESERVER_CANDIDATES="$(grep -E '/(wineserver|wineserver-stable)$' <<<"$ALL_WINE_PATHS" || true)"
           WINE64="$(find_wine_elf "$WINE64_CANDIDATES" || true)"
           WINESERVER="$(find_wine_elf "$WINESERVER_CANDIDATES" || true)"
