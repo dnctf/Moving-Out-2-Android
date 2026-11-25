@@ -251,7 +251,7 @@ class RuntimeRepositoryInstaller(
                 runtimeRangeHeader(offset)?.let { connection.setRequestProperty("Range", it) }
                 val responseCode = connection.responseCode
                 ensureAllowedGitHubResponse(connection)
-                if (responseCode == HttpURLConnection.HTTP_REQUESTED_RANGE_NOT_SATISFIABLE) {
+                if (responseCode == 416) {
                     val total = Regex("^bytes \\*/(\\d+)$").matchEntire(connection.getHeaderField("Content-Range").orEmpty())
                         ?.groupValues?.getOrNull(1)?.toLongOrNull()
                     if (total != null && total == offset && offset > 0L) {
