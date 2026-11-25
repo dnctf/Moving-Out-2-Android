@@ -386,19 +386,16 @@ class WineSessionSupervisor(
                 "xinput1_3.dll", "xinput1_4.dll", "xinput9_1_0.dll" -> File(bundleRoot, "xinput/$dll").takeIf { it.isFile } ?: File(bundleRoot, "wine/lib/wine/x86_64-windows/$dll")
                 else -> File(bundleRoot, "wine/lib/wine/x86_64-windows/$dll")
             }
-            if (bundleDll.isFile) {
-                bundleDll.copyTo(dest, overwrite = true)
-            } else {
-                val assetDll = File(context.filesDir, "runtime/$dll")
-                if (assetDll.isFile) {
-                    assetDll.copyTo(dest, overwrite = true)
-                } else {
-                    runCatching {
-                        context.assets.open("runtime/$dll").use { input ->
-                            dest.outputStream().use { output -> input.copyTo(output) }
-                        }
-                    }
+            when {
+                bundleDll.isFile -> bundleDll.copyTo(dest, overwrite = true)
+                File(context.filesDir, "runtime/$dll").isFile ->
+                    File(context.filesDir, "runtime/$dll").copyTo(dest, overwrite = true)
+                else -> context.assets.open("runtime/$dll").use { input ->
+                    dest.outputStream().use { output -> input.copyTo(output) }
                 }
+            }
+            if (!dest.isFile || dest.length() <= 0L) {
+                throw IOException("Required Wine system32 DLL was not installed: $dll")
             }
         }
     }
