@@ -1,11 +1,6 @@
 name: Publish Android APK Pre-Release
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/publish-apk-prerelease.yml"
-      - "app/build.gradle.kts"
   workflow_dispatch:
     inputs:
       version:
@@ -42,6 +37,11 @@ jobs:
             echo "::error::Invalid version: $INPUT_VERSION"
             exit 1
           }
+          APP_VERSION="$(sed -nE 's/^[[:space:]]*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts | head -n1)"
+          if [[ "$APP_VERSION" != "$INPUT_VERSION" ]]; then
+            echo "::error::Release input $INPUT_VERSION does not match app/build.gradle.kts versionName $APP_VERSION"
+            exit 1
+          fi
           echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=app-v$INPUT_VERSION" >> "$GITHUB_OUTPUT"
 
@@ -95,7 +95,7 @@ jobs:
           APK="app/build/outputs/apk/release/app-release.apk"
           test -s "$APK"
           mkdir -p release-output
-          cp "$APK" "release-output/Moving-Out-2-Android-${{ steps.version.outputs.version }}-arm64-v8a-unsigned.apk"
+          cp "$APK" "release-output/Moving-Out-2-Android-${{ steps.version.outputs.version }}-arm64-v8a-debug-signed.apk"
           APK_OUT="$(find release-output -maxdepth 1 -name '*.apk' -print -quit)"
           sha256sum "$APK_OUT" > release-output/SHA256SUMS.txt
           unzip -t "$APK_OUT"
