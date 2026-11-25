@@ -114,92 +114,17 @@ jobs:
           (cd release-output && sha256sum "Moving-Out-2-Android-v${{ steps.version.outputs.version }}-arm64-v8a.apk" moving-out-2-runtime-arm64-v8a.zip > SHA256SUMS.txt)
           (cd release-output && sha256sum --check SHA256SUMS.txt)
           echo "APK_PATH=$APK" >> "$GITHUB_ENV"
-      - name: Remove obsolete releases and Git tags
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          retry_gh_api() {
-            local attempt=1 output
-            while (( attempt <= 5 )); do
-              if output="$(gh api "$@" 2>&1)"; then
-                [[ -n "$output" ]] && printf '%s\n' "$output"
-                return 0
-              fi
-              if [[ "$output" == *"HTTP 404"* || "$output" == *"Not Found"* || "$output" == *"Reference does not exist"* ]]; then
-                echo "Already deleted; treating as success: $*"
-                return 0
-              fi
-              echo "GitHub API attempt $attempt/5 failed: $output" >&2
-              if (( attempt < 5 )); then sleep $((attempt * 3)); fi
-              attempt=$((attempt + 1))
-            done
-            return 1
-          }
-
-          echo "Removing all prior releases and tags before publishing the new integrated release."
-          release_rows="$(retry_gh_api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq '.[] | "\(.id)|\(.tag_name)"')"
-          while IFS='|' read -r release_id tag; do
-            [[ -n "$release_id" ]] || continue
-            echo "Deleting obsolete release: $tag (ID $release_id)"
-            retry_gh_api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$release_id"
-          done <<< "$release_rows"
-
-          tag_rows="$(retry_gh_api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/" --paginate --jq '.[].ref')"
-          while IFS= read -r ref; do
-            tag="${ref#refs/tags/}"
-            [[ -n "$tag" ]] || continue
-            echo "Deleting obsolete Git tag: $tag"
-            retry_gh_api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$tag"
-          done <<< "$tag_rows"
-
-      - name: Publish single integrated pre-release
+      - name: Publish idempotent integrated pre-release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
           TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
         run: |
           set -euo pipefail
-          ASSETS=(
-            "$APK_PATH"
-            "release-output/moving-out-2-runtime-arm64-v8a.zip"
-            "release-output/moving-out-2-runtime-arm64-v8a.zip.sha256"
-            "release-output/SHA256SUMS.txt"
-          )
-          NOTES="Install the APK, connect to the internet, and launch. The app downloads and validates the matching runtime from this same release. Import your own legally obtained game files. Alpha APK uses an ephemeral CI debug signing key; uninstall an older build if Android rejects an update. No game files are included. Physical-device launch and graphics compatibility still require testing."
-
-          # GitHub may return a transient 5xx after accepting a release request.
-          # Check for an existing release on every retry and repair its assets.
-          published=false
-          for attempt in 1 2 3 4 5; do
-            if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              echo "Release $RELEASE_TAG already exists; ensuring all assets are present."
-              if gh release upload "$RELEASE_TAG" "${ASSETS[@]}" --repo "$GITHUB_REPOSITORY" --clobber; then
-                published=true
-                break
-              fi
-              echo "Asset upload attempt $attempt/5 failed." >&2
-            else
-              if gh release create "$RELEASE_TAG" "${ASSETS[@]}" \
-                --repo "$GITHUB_REPOSITORY" --target "$TARGET_SHA" --prerelease \
-                --title "Moving Out 2 Android $RELEASE_VERSION (Integrated Pre-release)" \
-                --notes "$NOTES"; then
-                published=true
-                break
-              fi
-              echo "Release creation attempt $attempt/5 failed; checking whether GitHub created it anyway." >&2
-            fi
-            if (( attempt < 5 )); then sleep $((attempt * 5)); fi
-          done
-
-          if [[ "$published" != true ]]; then
-            echo "Unable to publish $RELEASE_TAG after 5 attempts." >&2
-            exit 1
-          fi
-
-          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isPrerelease,assets
+          chmod +x scripts/publish-integrated-release.sh
+          scripts/publish-integrated-release.sh
       - uses: actions/upload-artifact@v6
         with:
           name: moving-out-2-android-integrated-release
