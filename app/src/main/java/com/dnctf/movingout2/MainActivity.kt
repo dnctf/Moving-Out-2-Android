@@ -381,6 +381,7 @@ class MainActivity : Activity() {
                         append(deviceText)
                         append("\\n\\nActive Vulkan driver: ").append(probe.nativeProbeStatus ?: "unavailable")
                         append("\\nVulkan API: ").append(probe.apiVersion ?: "unknown")
+                        append("\\nVulkan driver version (raw): ").append(probe.driverVersionRaw ?: "unavailable")
                         append("\\nGPU: ").append(probe.gpuVendor ?: "unknown").append(" / ").append(probe.gpuName ?: "unknown")
                         append("\\nDevice extensions: ").append(probe.extensions.size)
                         append("\\nDriver policy: use the Android system Vulkan driver; do not force-load Turnip unless device/driver compatibility is verified.")
