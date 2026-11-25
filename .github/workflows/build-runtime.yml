@@ -92,6 +92,7 @@ jobs:
           bash -n scripts/audit_runtime_bundle.sh
           bash -n native/wine-xinput/build_wine_xinput.sh
           shellcheck scripts/package_runtime_bundle.sh scripts/audit_runtime_bundle.sh native/wine-xinput/build_wine_xinput.sh
+          python3 -m unittest discover -s scripts/tests -v
 
       - name: Build Wine XInput bridge
         shell: bash
