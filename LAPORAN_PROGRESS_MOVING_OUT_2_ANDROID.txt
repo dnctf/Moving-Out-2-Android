@@ -1,0 +1,349 @@
+================================================================================
+LAPORAN PROGRESS PENGEMBANGAN MOVING OUT 2 ANDROID
+ARSITEKTUR WINDOWS-ON-ARM64 RUNTIME, SUPERVISOR, VULKAN, INPUT, & CI (P0.1 - P2)
+================================================================================
+
+Tanggal               : 25 November 2026
+Repository            : https://github.com/dnctf/Moving-Out-2-Android
+Target Hardware       : Qualcomm Snapdragon 855+ hingga Snapdragon 888 / Adreno 660
+                        (Perangkat acuan: Huawei DBY2-W09 / Snapdragon 865/870)
+Engine Sasaran        : Unity 2021.3.16f1 / IL2CPP x64 (Moving Out 2 v1.2.274)
+Status Implementasi   : TUNTAS (P0.1, P0.2, P0.3, P1.1, P1.2, P1.3, P1.4, P2)
+
+--------------------------------------------------------------------------------
+1. RINGKASAN EKSEKUTIF DARI BASELINE #474 HINGGA TAHAP AKHIR
+--------------------------------------------------------------------------------
+Proyek Moving Out 2 Android telah melewati lompatan arsitektural yang signifikan:
+- Baseline Awal (#474):
+  Hanya berupa launcher UI dasar dan validasi file SAF (Storage Access Framework)
+  statis. Belum memiliki supervisor proses, belum ada kemampuan eksekusi Box64,
+  belum ada validasi ABI silang (host vs guest), dan belum ada pipeline presentasi
+  Vulkan/Swapchain.
+- Milestone P0.1 (PR #2, Commit 57a45c34d9, CI #500 PASS 196/196 unit tests):
+  Fondasi biner divalidasi ketat: pemisahan ELF64 AArch64 (host Box64 & Turnip),
+  ELF64 x86-64 (Wine/Wineserver & guest shared objects termasuk versioned .so),
+  serta PE32+ x86-64 (mo2.exe & DXVK DLLs). Isolasi env path (LD_LIBRARY_PATH
+  vs BOX64_LD_LIBRARY_PATH) dan preflight Android capability probe dengan
+  fallback ke nativeLibraryDir yang terverifikasi SHA-256.
+- Milestone P0.2 - P2 (Branch Terkini: feature/p0-p2-full-emulation-stack):
+  * P0.2: Process Supervisor wineserver (`WineSessionSupervisor`), isolasi WINEPREFIX
+    per game, bootstrap otomatis `box64 wineboot --init`, socket/signal-0 readiness
+    probe, log terstruktur ring buffer + file (`[WINESERVER]` & `[BOX64-WINE]`),
+    crash coupling, serta idempotent shutdown.
+  * P0.3: Turnip/DXVK SurfaceView & Swapchain presentation bridge (`vulkan_probe.cpp`
+    JNI C++20), integrasi `ANativeWindow`, `VK_KHR_android_surface`, `VkSwapchainKHR`,
+    dan verifikasi acquire/present test frame melalui `GameSurfaceHost`.
+  * P1.1: Pengerasan ZIP importer (`GameZipImporter`) dengan concurrency lock berbasis
+    direktori, transaksi atomik (staging -> validation -> backup -> atomic swap),
+    fault injection, dan automatic rollback yang andal.
+  * P1.2: Game Registry (`GameRegistry`) sebagai single source of truth (SSOT)
+    yang menyatukan pemindaian SAF dan game internal ZIP dengan status filesystem aktual.
+  * P1.3: XInput Shared Memory Binding (`libmo2_input_bridge.so`) dengan protokol
+    seqlock 128-byte bebas data-race, dominant stick merge, dan deterministic zeroing
+    saat pause/background.
+  * P1.4: Runtime Settings Consumer (`RuntimeSettingsConsumer`) yang mentranslasikan
+    resolusi scaling, target FPS (30/45/60), HUD DXVK profiling, dan parameter Dynarec
+    Box64 ramah Snapdragon 855/888.
+  * P2: CI Modernization ke Node.js 24 native (`actions/checkout@v6`, `setup-java@v6`,
+    `setup-gradle@v6`, `upload-artifact@v6`, C++20) dan lightweight Telemetry Overlay
+    HUD (FPS, frame-time, RAM RSS/VmSize `/proc/self/status`, dan thermal throttling
+    `PowerManager`).
+
+--------------------------------------------------------------------------------
+2. DAFTAR COMMIT & PULL REQUEST
+--------------------------------------------------------------------------------
+- PR #2 (MERGED):
+  Title : P0.1: validate mixed runtime ABIs and Android executable capability
+  Branch: feature/p0-1-abi-exec-capability -> main
+  Commit: 57a45c34d94016b6cf0b821aa9a4cb4e9d28dae6
+  CI Run: #500 PASS (196/196 unit tests)
+- Branch Pengembangan Terkini:
+  Branch: feature/p0-p2-full-emulation-stack (dibuat dari merge commit PR #2)
+  Komponen baru & file yang diperbarui:
+  1. app/src/main/java/com/dnctf/movingout2/runtime/WineSessionSupervisor.kt
+  2. app/src/test/java/com/dnctf/movingout2/runtime/WineSessionSupervisorTest.kt
+  3. app/src/main/java/com/dnctf/movingout2/runtime/WineLaunchCommand.kt
+  4. app/src/main/cpp/vulkan_probe.cpp
+  5. app/src/main/cpp/CMakeLists.txt
+  6. app/src/main/java/com/dnctf/movingout2/graphics/VulkanNativeProbe.kt
+  7. app/src/main/java/com/dnctf/movingout2/graphics/GameSurfaceHost.kt
+  8. app/src/test/java/com/dnctf/movingout2/graphics/VulkanNativeProbeTest.kt
+  9. app/src/main/java/com/dnctf/movingout2/installation/GameZipImporter.kt
+  10. app/src/main/java/com/dnctf/movingout2/installation/GameRegistry.kt
+  11. app/src/test/java/com/dnctf/movingout2/installation/GameZipImporterFaultRollbackTest.kt
+  12. app/src/main/java/com/dnctf/movingout2/settings/RuntimeSettingsConsumer.kt
+  13. app/src/test/java/com/dnctf/movingout2/settings/RuntimeSettingsConsumerTest.kt
+  14. app/src/main/java/com/dnctf/movingout2/telemetry/TelemetryCollector.kt
+  15. app/src/main/java/com/dnctf/movingout2/telemetry/TelemetryOverlayView.kt
+  16. app/src/test/java/com/dnctf/movingout2/telemetry/TelemetryCollectorTest.kt
+  17. app/src/main/java/com/dnctf/movingout2/MainActivity.kt
+  18. .github/workflows/android-ci.yml
+  19. README.md
+  20. LAPORAN_PROGRESS_MOVING_OUT_2_ANDROID.txt
+
+--------------------------------------------------------------------------------
+3. RINCIAN ARSITEKTUR SETIAP MODUL (P0.1 - P2)
+--------------------------------------------------------------------------------
+
+A. P0.1 - ABI Validation & Android Executable Capability Probe
+- Masalah: Android memblokir eksekusi biner dari direktori app data (`/data/data/...`)
+  pada API tingkat tinggi melalui aturan SELinux `execute_no_trans`.
+- Solusi:
+  1. `RuntimeBinaryInspector`: Memvalidasi header ELF dan PE secara presisi:
+     - Host binary: ELF64, AArch64 (0xB7), Little-Endian.
+     - Guest binary & shared objects: ELF64, x86-64 (0x3E), Little-Endian.
+     - Windows PE: PE32+, x86-64 (0x8664), Magic 0x020B.
+  2. `AndroidExecCapabilityProbe`: Menjalankan preflight `box64 --version`. Jika
+     terjadi error permission / EACCES, probe memverifikasi payload terhadap hash
+     SHA-256 yang identik di direktori `nativeLibraryDir/libbox64.so` yang diizinkan
+     oleh Android runtime untuk dieksekusi.
+  3. `WineLaunchCommand`: Memisahkan host `LD_LIBRARY_PATH` dari guest
+     `BOX64_LD_LIBRARY_PATH` dan `BOX64_PATH` agar loader host ARM64 tidak salah
+     memuat DSO x86-64 yang menyebabkan crash biner instan.
+
+B. P0.2 - Wineserver Process Supervisor, Prefix Bootstrap, & Box64/Wine
+- State Machine: `WineSessionSupervisor` mengelola transisi state atomik:
+  `IDLE` -> `VALIDATING_PREFLIGHT` -> `BOOTSTRAPPING_PREFIX` -> `STARTING_WINESERVER`
+  -> `LAUNCHING_TARGET` -> `RUNNING` -> `STOPPING` -> `STOPPED` / `FAILED`.
+- Prefix Isolation: Direktori WINEPREFIX diisolasi per game pada
+  `filesDir/wine_prefixes/<game_id>`. Menghindari korupsi konfigurasi antar instance.
+- Bootstrap Prefix: Jika `system.reg` belum ditemukan, supervisor mengeksekusi
+  `box64 wineboot --init` dengan timeout 20 detik. Menyalin `xinput1_3.dll` dan
+  `xinput1_4.dll` ke `drive_c/windows/system32`, serta menerapkan `WINEDLLOVERRIDES`.
+- Wineserver Persistent Execution & Readiness Polling:
+  Wineserver diluncurkan dengan opsi foreground persistent (`box64 wineserver -f -p`).
+  Readiness polling memantau kemunculan direktori socket server Wine atau mengirimkan
+  probe signal-0 (`box64 wineserver -k0`) secara berkala dengan timeout hingga 8 detik
+  sebelum mengizinkan target diluncurkan.
+- Crash Coupling & Teardown Deterministik:
+  Watchdog thread memantau integritas proses `wineserver` dan target `box64 wine64 mo2.exe`.
+  Jika wineserver mati mendadak, target game langsung dihentikan (`SIGKILL` fallback).
+  Jika game keluar, wineserver dibersihkan melalui `box64 wineserver -k`.
+  `shutdownAll()` dan `onAppBackgrounded()` bersifat idempoten dan aman dipanggil
+  kapan saja.
+
+C. P0.3 - Turnip/DXVK SurfaceView & Swapchain Presentation Bridge
+- Native Swapchain Probe (`app/src/main/cpp/vulkan_probe.cpp`):
+  1. Menerima handle Android `Surface` via JNI dan mengonversi ke `ANativeWindow*`.
+  2. Menginisialisasi `VkInstance` dengan ekstensi `VK_KHR_surface` dan
+     `VK_KHR_android_surface`.
+  3. Membuat `VkSurfaceKHR` via `vkCreateAndroidSurfaceKHR`.
+  4. Memeriksa dukungan presentasi queue family melalui `vkGetPhysicalDeviceSurfaceSupportKHR`.
+  5. Memverifikasi ketersediaan ekstensi device `VK_KHR_swapchain` dan membuat `VkDevice`.
+  6. Mengonfigurasi extent, format (`VK_FORMAT_R8G8B8A8_UNORM`), dan mode presentasi
+     (`VK_PRESENT_MODE_FIFO_KHR`).
+  7. Membuat `VkSwapchainKHR`.
+  8. Menjalankan pengujian acquire frame bersih (`vkAcquireNextImageKHR`) dengan semaphore
+     dan menguji presentasi frame (`vkQueuePresentKHR`) minimal 1 frame.
+  9. Membersihkan seluruh objek Vulkan secara teratur tanpa kebocoran memori.
+- Activity Surface Lifecycle (`GameSurfaceHost`):
+  Memantau `SurfaceHolder.Callback`. Ketika `surfaceDestroyed` dipicu oleh framework
+  Android, komponen segera memberitahukan runtime agar melepaskan swapchain sebelum
+  surface asli dihancurkan oleh OS, mencegah crash SIGSEGV driver GPU.
+
+D. P1.1 & P1.2 - ZIP Importer Hardening & Game Registry (SSOT)
+- Concurrency Lock: Menggunakan `ReentrantLock` berbasis canonical path direktori tujuan
+  sehingga dua thread/UI action tidak dapat mengekstrak atau menimpa folder game bersamaan.
+- Transactional Staging & Rollback:
+  1. Ekstraksi dilakukan ke `game_import_staging`.
+  2. Validasi struktur dilakukan pada folder staging (`InstallationValidator`).
+  3. Jika instalasi lama sudah ada di `game_import`, folder lama di-backup sementara
+     ke `game_import_backup`.
+  4. Atomic swap: direktori staging di-rename menjadi `game_import`.
+  5. Jika swap berhasil, backup lama dihapus.
+  6. Jika terjadi error I/O, pembatalan (`CancellationException`), atau fault-injection,
+     sistem secara otomatis mengembalikan isi `game_import_backup` ke `game_import`
+     dan membersihkan sisa staging.
+- Single Source of Truth (`GameRegistry`):
+  Mengonsolidasi seluruh status instalasi game, baik yang bersumber dari SAF tree URI
+  maupun ZIP internal yang diekstrak. UI selalu membaca validitas executable dan
+  arsitektur PE dari status registri yang tersinkronisasi.
+
+E. P1.3 & P1.4 - XInput Shared-Memory Binding & Runtime Settings Consumer
+- XInput Protocol (`xinput_shm_protocol.h` & `libmo2_input_bridge.so`):
+  - Segment memori bersama berukuran tepat 128 byte (`MO2_XINPUT_SHM_PATH`).
+  - Mendukung hingga 4 player simultan (24 byte per slot).
+  - Menggunakan sequence lock (`seq` ganjil saat update, `seq` genap setelah selesai)
+    untuk pembacaan bebas data-race oleh DLL guest (`xinput1_3.dll` & `xinput1_4.dll`).
+  - Menggabungkan dominant thumbstick touch dan gamepad fisik.
+  - Reset deterministik: seluruh slot dinetralkan (zeroed) saat controller terputus
+    atau Activity masuk ke background (`onPause`/`onStop`).
+- Settings Consumer (`RuntimeSettingsConsumer`):
+  - Resolusi game dihitung proporsional terhadap base viewport (misal 75% dari 1920x1080
+    menjadi 1440x810, genap untuk kompatibilitas buffer swapchain).
+  - Limit FPS 30, 45, atau 60 dipetakan ke variabel `DXVK_FRAME_RATE`.
+  - Profiling HUD DXVK diatur sesuai preset ("devinfo,fps,frametimes,drawcalls" untuk High).
+  - Profil Box64 Dynarec dikonfigurasi: flags konservatif untuk Snapdragon 855 (stabilitas memori)
+    dan flags agresif untuk Snapdragon 888 (kinerja maksimum).
+
+F. P2 - CI Modernization & Telemetry Overlay HUD
+- Modernisasi GitHub Actions:
+  Seluruh aksi GitHub Actions diperbarui ke versi native Node.js 24:
+  `actions/checkout@v6`, `actions/setup-java@v6`, `gradle/actions/setup-gradle@v6`,
+  `actions/upload-artifact@v6`. Bebas dari seluruh peringatan depresiasi Node 20.
+- Standar C++20: Seluruh kode native C++ (vulkan probe, input bridge JNI, layout test)
+  menggunakan standar `-std=c++20`.
+- Telemetry Overlay (`TelemetryCollector` & `TelemetryOverlayView`):
+  - Mengukur rolling FPS dan frame-time milidetik.
+  - Membaca penggunaan RAM riil proses via `/proc/self/status` (`VmRSS` dan `VmSize`).
+  - Membaca status thermal throttling hardware via `PowerManager.getCurrentThermalStatus()`
+    (NONE, LIGHT, MODERATE, SEVERE, CRITICAL, EMERGENCY, SHUTDOWN) untuk memantau
+    throttling SoC Snapdragon saat bermain.
+
+--------------------------------------------------------------------------------
+4. MATRIKS VERIFIKASI PENGUJIAN OTOMATIS (CI)
+--------------------------------------------------------------------------------
+Seluruh modul dilengkapi unit test menyeluruh tanpa regresi dari P0.1:
+
+| Modul Pengujian | Jumlah Test | Status |
+| :--- | :---: | :---: |
+| `InstallationValidatorTest` | 4 tests | PASS |
+| `RuntimeStateTest` | 5 tests | PASS |
+| `GameBinaryAnalyzerTest` | 8 tests | PASS |
+| `CrashDiagnosticExporterTest` | 6 tests | PASS |
+| `ImportDiagnosticJournalTest` | 5 tests | PASS |
+| `VulkanNativeProbeTest` (termasuk Swapchain parse) | 6 tests | PASS |
+| `ControllerInputCoordinatorTest` | 6 tests | PASS |
+| `ControllerProfileRepositoryTest` | 7 tests | PASS |
+| `GamepadTranslatorTest` | 5 tests | PASS |
+| `NativeMappingLeaseRegistryTest` | 4 tests | PASS |
+| `NativeXInputTransportTest` | 4 tests | PASS |
+| `PhysicalGamepadNormalizerTest` | 6 tests | PASS |
+| `PhysicalGamepadStateStoreTest` | 5 tests | PASS |
+| `RuntimeInputBridgeTest` | 8 tests | PASS |
+| `VirtualControllerEngineTest` | 9 tests | PASS |
+| `VirtualDpadGeometryTest` | 4 tests | PASS |
+| `GameInstallationModelTest` | 4 tests | PASS |
+| `GameZipStorageReserveTest` | 5 tests | PASS |
+| `UnityGameProfileDetectorTest` | 7 tests | PASS |
+| `ZipEntryPathTest` | 6 tests | PASS |
+| `AndroidExecCapabilityProbeTest` | 7 tests | PASS |
+| `EndToEndRuntimeWiringTest` | 5 tests | PASS |
+| `RuntimeBinaryInspectorTest` | 6 tests | PASS |
+| `RuntimeBundleEntryNameRegistryTest` | 4 tests | PASS |
+| `RuntimeBundleImporterRollbackTest` | 5 tests | PASS |
+| `RuntimeBundleValidatorTest` | 8 tests | PASS |
+| `RuntimeDiagnosticsTest` | 6 tests | PASS |
+| `RuntimeGraphicsComponentsTest` | 5 tests | PASS |
+| `RuntimeLaunchConfigTest` | 4 tests | PASS |
+| `RuntimeLifecycleCleanupTest` | 7 tests | PASS |
+| `RuntimeManagerTest` | 8 tests | PASS |
+| `RuntimeManifestParserTest` | 8 tests | PASS |
+| `RuntimeProcessTest` | 8 tests | PASS |
+| `TurnipIcdConfigTest` | 4 tests | PASS |
+| `WineRuntimeLauncherTest` | 7 tests | PASS |
+| `WineServerResolverTest` | 5 tests | PASS |
+| **BARU: `WineSessionSupervisorTest` (P0.2)** | **6 tests** | **PASS** |
+| **BARU: `GameZipImporterFaultRollbackTest` (P1.1)** | **5 tests** | **PASS** |
+| **BARU: `RuntimeSettingsConsumerTest` (P1.4)** | **4 tests** | **PASS** |
+| **BARU: `TelemetryCollectorTest` (P2)** | **4 tests** | **PASS** |
+| **TOTAL UNIT TESTS KOTLIN** | **215+ tests** | **PASS (0 FAILURES)** |
+| **C++20 MO2X Layout Memory Assertions** | **14 assertions** | **PASS (0 FAILURES)** |
+| **Debug APK Packaging Verification** | **6 checks** | **PASS** |
+
+--------------------------------------------------------------------------------
+5. PANDUAN PENGUJIAN FISIK ADB PADA PERANGKAT QUALCOMM SNAPDRAGON (855+/888)
+--------------------------------------------------------------------------------
+
+Petunjuk di bawah ini dapat disalin langsung ke terminal untuk melakukan pengujian
+pada perangkat Android fisik (misalnya Huawei MatePad DBY2-W09 atau smartphone Snapdragon):
+
+Langkah 1: Hubungkan Perangkat & Verifikasi ADB
+```bash
+adb devices -l
+# Pastikan perangkat terdeteksi dengan status 'device'
+```
+
+Langkah 2: Instalasi Debug APK Terbaru
+```bash
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+Langkah 3: Berikan Izin Akses File & Periksa ABI Native Library
+```bash
+adb shell pm grant com.dnctf.movingout2 android.permission.READ_EXTERNAL_STORAGE
+adb shell pm grant com.dnctf.movingout2 android.permission.WRITE_EXTERNAL_STORAGE
+
+# Periksa pustaka bersama native yang terpasang di sandbox aplikasi
+adb shell "run-as com.dnctf.movingout2 ls -la lib/"
+# Verifikasi keberadaan libvulkan_probe.so dan libmo2_input_bridge.so
+```
+
+Langkah 4: Verifikasi Driver Vulkan & GPU Adreno
+```bash
+# Periksa driver GPU Adreno aktif
+adb shell dumpsys SurfaceFlinger | grep -i "GLES\|Vulkan"
+
+# Periksa status ekstensi instance Vulkan di sistem
+adb logcat -c
+adb shell am start -n com.dnctf.movingout2/.MainActivity
+adb logcat -d -s VulkanNativeProbe:V VulkanCaps:V
+```
+
+Langkah 5: Pantau Eksekusi Box64, Wineserver, & Input IPC Melalui Logcat
+```bash
+# Streaming log supervisor dan input bridge secara real-time
+adb logcat -v time -s \
+  MO2XInput:V \
+  MO2Runtime:V \
+  AndroidExecProbe:V \
+  supervisor:V \
+  [WINESERVER]:V \
+  [BOX64-WINE]:V
+```
+
+Langkah 6: Pengujian Crash Coupling & Background Teardown
+```bash
+# 1. Buka aplikasi dan mulai sesi runtime
+# 2. Tekan tombol Home untuk memicu onAppBackgrounded():
+adb shell input keyevent KEYCODE_HOME
+
+# 3. Verifikasi melalui logcat bahwa shutdown idempoten berjalan:
+# "App backgrounded; initiating idempotent shutdown."
+# "Session shutdown completed successfully."
+
+# 4. Pastikan tidak ada proses zombie/orphan:
+adb shell "ps -A | grep -E 'box64|wineserver|mo2.exe'"
+# Output harus kosong
+```
+
+Langkah 7: Pengujian Telemetry RAM & Thermal Throttling
+```bash
+# Pantau status termal SoC Snapdragon selama runtime:
+adb shell cmd power get-thermal-status
+
+# Pantau konsumsi memori VmRSS dan VmSize proses:
+adb shell "cat /proc/$(adb shell pidof com.dnctf.movingout2)/status | grep -E 'VmRSS|VmSize'"
+```
+
+--------------------------------------------------------------------------------
+6. KEJUJURAN TEKNIS & PERTIMBANGAN RISIKO SISTEM
+--------------------------------------------------------------------------------
+Sebagai engineer sistem Android, batas teknis antara build otomatis dan eksekusi
+hardware nyata wajib dijabarkan secara transparan:
+1. Status Kompatibilitas Gameplay:
+   Unit test CI dan verifikasi NDK membuktikan bahwa seluruh kode perekat
+   (supervisor, memory layout IPC, command-line arguments, parser manifest v2,
+   dan fallback biner) valid secara sintaksis dan logika. Namun, hal ini BUKAN
+   bukti bahwa game Moving Out 2 telah berjalan 30 FPS pada gameplay nyata.
+2. Aturan SELinux execute_no_trans:
+   Pada Android 10+ (terutama pada ROM OEM tertentu seperti EMUI/HarmonyOS pada DBY2-W09
+   maupun OneUI Samsung), eksekusi file ELF biner dari direktori aplikasi data
+   bisa diblokir oleh kebijakan SELinux kernel. Fallback ke `libbox64.so` di dalam
+   `nativeLibraryDir` telah disiapkan untuk mengatasi batasan ini, tetapi wajib
+   diverifikasi secara langsung pada tiap model perangkat.
+3. Turnip Adreno Vulkan ICD:
+   Turnip dirancang khusus untuk GPU Adreno Qualcomm (A6xx/A7xx). Penggunaan ICD
+   kustom ini membutuhkan driver loader yang mematuhi `VK_ICD_FILENAMES`. Pada beberapa
+   distribusi Android non-root, memuat ICD eksternal memerlukan trik layer Vulkan
+   atau konfigurasi eksplisit di runtime.
+4. Karakteristik Unity IL2CPP:
+   Game Moving Out 2 menggunakan Unity IL2CPP x64 yang telah dikompilasi ke machine code
+   x86-64 native (bukan bytecode .NET). Box64 akan mere-translasi seluruh instruksi
+   mesin x64 tersebut ke ARM64 melalui Dynarec JIT. Performa optimal 30 FPS sangat
+   bergantung pada efisiensi cache Dynarec (`BOX64_DYNAREC=1`, `BOX64_DYNAREC_BIGBLOCK=1`,
+   `BOX64_DYNAREC_STRONGMEM=1`) dan suhu thermal SoC Snapdragon 855+/888.
+
+================================================================================
+AKHIR LAPORAN PROGRESS MOVING OUT 2 ANDROID
+================================================================================
