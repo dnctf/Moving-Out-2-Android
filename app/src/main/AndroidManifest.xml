@@ -6,7 +6,7 @@
         android:label="Moving Out 2 Android"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:theme="@style/AppTheme"
         android:supportsRtl="true">
         <activity
             android:name=".MainActivity"
