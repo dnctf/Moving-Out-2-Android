@@ -51,7 +51,7 @@ resolve_needed() {
   local owner="$1" needed="$2"
   if [[ -e "$GLIBC_DIR/$needed" || -e "$UNIX_DIR/$needed" ]]; then return 0; fi
   case "$needed" in
-    libGL.so*|libGLX.so*|libEGL.so*|libGLESv1.so*|libGLESv2.so*|libGLESv3.so*|libvulkan.so*|libX11.so*|libXext.so*|libXrender.so*|libxcb.so*|libwayland-client.so*|libandroid.so*) return 0 ;;
+    libGL.so*|libGLX.so*|libEGL.so*|libGLESv1.so*|libGLESv2.so*|libGLESv3.so*|libvulkan.so*|libX11.so*|libXext.so*|libXrender.so*|libXcursor.so*|libXi.so*|libXrandr.so*|libXfixes.so*|libXinerama.so*|libXcomposite.so*|libXdamage.so*|libXss.so*|libXxf86vm.so*|libXau.so*|libXdmcp.so*|libxcb.so*|libwayland-client.so*|libpulse.so*|libpulsecommon*.so*|libasound.so*|libandroid.so*) return 0 ;;
   esac
   echo "Unresolved DT_NEEDED '$needed' referenced by $owner" >&2
   return 1
