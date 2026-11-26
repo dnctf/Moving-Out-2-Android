@@ -351,7 +351,7 @@ class MainActivity : Activity() {
             runtimeStatus.text = "Automatic setup stopped: this app requires an ARM64 (arm64-v8a) Android device."
             return
         }
-        runtimeStatus.text = "First-run setup: runtime missing. Preparing automatic download…"
+        runtimeStatus.text = "First-run setup: checking the APK-embedded runtime for offline installation…"
         startRuntimeRepositoryInstall(automatic = true)
     }
 
