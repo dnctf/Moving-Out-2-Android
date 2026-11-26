@@ -84,6 +84,49 @@ class RuntimeRepositoryInstaller(
     private val backup = File(parent, "bundle_backup")
     private val archive = File(appContext.cacheDir, "runtime-download.zip")
 
+    /** Installs the APK-embedded runtime without network access; null means asset absent. */
+    fun installFromBundledAsset(onProgress: (String) -> Unit = {}): RuntimeRepositoryInstallResult? {
+        val input = try { appContext.assets.open("runtime-bundle.zip") } catch (_: java.io.FileNotFoundException) { return null }
+        input.use { source ->
+            if (!parent.mkdirs() && !parent.isDirectory) throw IllegalStateException("Cannot create private runtime directory.")
+            archive.parentFile?.mkdirs()
+            FileOutputStream(archive).use { output ->
+                val buffer = ByteArray(64 * 1024); var total = 0L
+                while (true) { val count = source.read(buffer); if (count < 0) break; total += count
+                    if (total > maxDownloadBytes) throw IllegalStateException("Bundled runtime exceeds archive limit.")
+                    output.write(buffer, 0, count)
+                }; output.fd.sync()
+            }
+        }
+        val version = try { JSONObject(ZipFile(archive).use { zip ->
+            zip.getInputStream(zip.getEntry("runtime-manifest.json") ?: throw IllegalStateException("Bundled runtime manifest is missing."))
+                .bufferedReader().use { it.readText() }
+        }).optString("bundleVersion").ifBlank { "bundled" } } catch (error: Exception) { archive.delete(); throw error }
+        staging.deleteRecursively(); if (!staging.mkdirs()) throw IllegalStateException("Cannot create bundled runtime staging directory.")
+        var activated = false
+        try {
+            onProgress("Extracting embedded runtime for offline first launch…")
+            val counts = extract(archive, staging)
+            listOf("box64/bin/box64", "wine/bin/wine64", "wine/bin/wineserver").forEach { relative ->
+                val file = File(staging, relative)
+                if (!file.setExecutable(true, false) && !file.canExecute()) throw IllegalStateException("Unable to mark runtime executable: " + relative)
+            }
+            val report = validator.validate(staging)
+            if (!report.isReady) throw IllegalStateException("Bundled runtime failed manifest v2, SHA-256 or ABI validation: " + report.blockers.joinToString("; "))
+            if (target.exists() && !target.renameTo(backup)) throw IllegalStateException("Cannot preserve current runtime bundle.")
+            if (!staging.renameTo(target)) throw IllegalStateException("Cannot atomically activate bundled runtime.")
+            activated = true
+            if (!validator.validate(target).isReady) throw IllegalStateException("Activated bundled runtime failed revalidation.")
+            backup.deleteRecursively(); onProgress("Embedded runtime " + version + " installed and verified offline.")
+            return RuntimeRepositoryInstallResult(version, counts.first, counts.second)
+        } catch (error: Exception) {
+            staging.deleteRecursively()
+            if (backup.exists()) { if (activated) target.deleteRecursively(); if (!backup.renameTo(target)) throw IllegalStateException("Bundled runtime failed and previous runtime could not be restored.", error) }
+            else if (activated) target.deleteRecursively()
+            throw error
+        } finally { archive.delete(); staging.deleteRecursively() }
+    }
+
     fun installLatest(onProgress: (String) -> Unit = {}): RuntimeRepositoryInstallResult {
         record(RuntimeDiagnostic.Severity.INFO, "installLatest started; filesDir=${appContext.filesDir.absolutePath}; cacheDir=${appContext.cacheDir.absolutePath}")
         return try {
