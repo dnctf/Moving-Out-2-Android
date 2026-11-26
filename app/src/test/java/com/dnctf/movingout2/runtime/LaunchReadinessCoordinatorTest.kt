@@ -55,3 +55,42 @@ class LaunchReadinessCoordinatorTest {
         assertFalse(decision.shouldAutoLaunch)
     }
 }
+
+
+class RuntimeRenderReadinessSnapshotTest {
+    @org.junit.Test
+    fun vulkanEnumerationAloneNeverMeansRenderingReady() {
+        val snapshot = RuntimeRenderReadinessSnapshot(vulkanPhysicalDeviceEnumerated = true)
+        org.junit.Assert.assertFalse(snapshot.isRenderingReady)
+        org.junit.Assert.assertTrue(snapshot.blockers.contains("DXVK_D3D11_DEVICE_NOT_CREATED"))
+        org.junit.Assert.assertTrue(snapshot.blockers.contains("SURFACE_FRAME_NOT_PRESENTED"))
+    }
+
+    @org.junit.Test
+    fun renderingRequiresWineDxvkAndPresentedSurfaceFrame() {
+        val snapshot = RuntimeRenderReadinessSnapshot(
+            vulkanPhysicalDeviceEnumerated = false,
+            winebootExitCode = 0,
+            wineRegistryFilesReady = true,
+            wineserverSocketReady = true,
+            dxvkD3d11DeviceCreated = true,
+            surfaceFramePresented = true
+        )
+        org.junit.Assert.assertTrue(snapshot.isRenderingReady)
+        org.junit.Assert.assertTrue(snapshot.blockers.isEmpty())
+    }
+
+    @org.junit.Test
+    fun failedWinebootBlocksRenderingEvenIfGraphicsSignalsArePresent() {
+        val snapshot = RuntimeRenderReadinessSnapshot(
+            vulkanPhysicalDeviceEnumerated = true,
+            winebootExitCode = 1,
+            wineRegistryFilesReady = true,
+            wineserverSocketReady = true,
+            dxvkD3d11DeviceCreated = true,
+            surfaceFramePresented = true
+        )
+        org.junit.Assert.assertFalse(snapshot.isRenderingReady)
+        org.junit.Assert.assertTrue(snapshot.blockers.contains("WINEBOOT_NOT_CONFIRMED"))
+    }
+}
