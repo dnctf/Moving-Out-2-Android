@@ -39,6 +39,7 @@ while IFS= read -r -d '' lib; do
 done < <(find -L "$ROOT/wine/lib/wine" -type f -name '*.so*' -print0)
 (( count > 0 )) || { echo "No Wine x86_64 shared objects found." >&2; exit 1; }
 GLIBC_DIR="$ROOT/wine/lib/x86_64-linux-gnu"
+WINE_LIB="$ROOT/wine/lib/wine"
 [[ -s "$GLIBC_DIR/libc.so.6" ]] || { echo "Guest glibc libc.so.6 missing." >&2; exit 1; }
 glibc_count=0
 while IFS= read -r -d '' lib; do
@@ -51,9 +52,9 @@ UNIX_DIR="$ROOT/wine/lib/wine/x86_64-unix"
 for module in ntdll.so win32u.so winevulkan.so; do [[ -s "$UNIX_DIR/$module" ]] || { echo "Required Wine UNIX module missing: $module" >&2; exit 1; }; done
 resolve_needed() {
   local owner="$1" needed="$2"
-  if [[ -e "$GLIBC_DIR/$needed" || -e "$UNIX_DIR/$needed" ]]; then return 0; fi
+  if [[ -e "$GLIBC_DIR/$needed" || -e "$UNIX_DIR/$needed" || -e "$WINE_LIB/$needed" ]]; then return 0; fi
   case "$needed" in
-    libGL.so*|libGLX.so*|libEGL.so*|libGLESv1.so*|libGLESv2.so*|libGLESv3.so*|libvulkan.so*|libX11.so*|libXext.so*|libXrender.so*|libXcursor.so*|libXi.so*|libXrandr.so*|libXfixes.so*|libXinerama.so*|libXcomposite.so*|libXdamage.so*|libXss.so*|libXxf86vm.so*|libXau.so*|libXdmcp.so*|libxcb.so*|libwayland-client.so*|libpulse.so*|libpulsecommon*.so*|libasound.so*|libandroid.so*) return 0 ;;
+    libGL.so*|libGLX.so*|libEGL.so*|libGLESv1.so*|libGLESv2.so*|libGLESv3.so*|libvulkan.so*|libX11.so*|libXext.so*|libXrender.so*|libXcursor.so*|libXi.so*|libXrandr.so*|libXfixes.so*|libXinerama.so*|libXcomposite.so*|libXdamage.so*|libXss.so*|libXxf86vm.so*|libXau.so*|libXdmcp.so*|libxcb.so*|libwayland-client.so*|libandroid.so*) return 0 ;;
   esac
   echo "Unresolved DT_NEEDED '$needed' referenced by $owner" >&2
   return 1
@@ -64,7 +65,8 @@ check_needed() {
 }
 check_needed "$ROOT/wine/bin/wine64"
 check_needed "$ROOT/wine/bin/wineserver"
-while IFS= read -r -d '' module; do check_needed "$module"; done < <(find "$UNIX_DIR" -type f -name '*.so*' -print0)
+while IFS= read -r -d '' module; do check_needed "$module"; done < <(find "$WINE_LIB" -type f -name '*.so*' -print0)
+while IFS= read -r -d '' library; do check_needed "$library"; done < <(find "$GLIBC_DIR" -type f -name '*.so*' -print0)
 if find "$ROOT/wine/lib" -type l -print -quit | grep -q .; then
   echo "Symlink found in wine/lib." >&2
   exit 1
