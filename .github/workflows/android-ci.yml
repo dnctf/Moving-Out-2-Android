@@ -125,7 +125,7 @@ jobs:
             local dll="$1" ordinal="$2" expected_name="$3"
             "$LLVM_READOBJ" --coff-exports "$dll" | awk \
               -v expected_ordinal="$ordinal" -v expected_name="$expected_name" '
-                /^[[:space:]]*Export \\{/ { in_export=1; ordinal=""; name="" }
+                /^[[:space:]]*Export \{/ { in_export=1; ordinal=""; name="" }
                 in_export && /Ordinal:/ { ordinal=$2 }
                 in_export && /Name:/ { name=$2; gsub(/["]/, "", name) }
                 in_export && /^[[:space:]]*}/ {
