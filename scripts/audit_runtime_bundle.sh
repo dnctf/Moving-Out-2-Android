@@ -30,6 +30,8 @@ check_pe(){
   objdump -p "$file" | grep -Eqi 'Magic[[:space:]]+020b'
 }
 check_elf "$ROOT/box64/bin/box64" AArch64
+readelf -Wl "$ROOT/box64/bin/box64" | awk '/LOAD/{if ($NF != "0x4000") exit 1; found=1} END{if (!found) exit 1}'
+readelf -sW "$ROOT/box64/bin/box64" | awk '$4 == "FUNC" && $8 == "my___libc_start_main" { found=1 } END { exit !found }'
 check_elf "$ROOT/wine/bin/wine64" 'X86-64'
 check_elf "$ROOT/wine/bin/wineserver" 'X86-64'
 count=0
