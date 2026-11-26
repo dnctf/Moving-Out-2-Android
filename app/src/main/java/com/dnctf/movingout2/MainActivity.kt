@@ -330,7 +330,7 @@ class MainActivity : Activity() {
         assets.open("runtime-bundle.zip").use { stream ->
             java.util.zip.ZipInputStream(stream).use { zip ->
                 var entry = zip.nextEntry
-                while (entry != null && entry.name != "runtime-manifest.json") entry = zip.nextEntry
+                while (entry != null && com.dnctf.movingout2.runtime.normalizeRuntimeArchiveEntry(entry.name, entry.isDirectory) != "runtime-manifest.json") entry = zip.nextEntry
                 if (entry == null) null else {
                     val json = zip.bufferedReader().readText()
                     org.json.JSONObject(json).optString("bundleVersion").takeIf { it.isNotBlank() }
