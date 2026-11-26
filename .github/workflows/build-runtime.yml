@@ -296,6 +296,25 @@ jobs:
       - name: Run Kotlin unit tests
         run: gradle --no-daemon testDebugUnitTest
 
+      - name: Build self-contained debug APK and verify embedded runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/assets app/src/main/jniLibs/arm64-v8a
+          cp dist/moving-out-2-runtime-arm64-v8a.zip app/src/main/assets/runtime-bundle.zip
+          cp "$RUNNER_TEMP/runtime-input/box64/box64" app/src/main/jniLibs/arm64-v8a/libbox64.so
+          chmod 0755 app/src/main/jniLibs/arm64-v8a/libbox64.so
+          cmp app/src/main/jniLibs/arm64-v8a/libbox64.so <(unzip -p dist/moving-out-2-runtime-arm64-v8a.zip box64/bin/box64)
+          readelf -Wl app/src/main/jniLibs/arm64-v8a/libbox64.so | awk '/LOAD/{if ($NF != "0x4000") exit 1; found=1} END{if (!found) exit 1}'
+          gradle --no-daemon assembleDebug
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          unzip -p "$APK" assets/runtime-bundle.zip > "$RUNNER_TEMP/runtime-from-debug-apk.zip"
+          cmp "$RUNNER_TEMP/runtime-from-debug-apk.zip" dist/moving-out-2-runtime-arm64-v8a.zip
+          unzip -lv "$APK" | grep -F "assets/runtime-bundle.zip" | grep -Eq "Stored"
+          sha256sum "$RUNNER_TEMP/runtime-from-debug-apk.zip" dist/moving-out-2-runtime-arm64-v8a.zip
+          echo "Self-contained debug APK verified: $APK"
+
       - name: Upload runtime bundle and provenance
         uses: actions/upload-artifact@v6
         with:
