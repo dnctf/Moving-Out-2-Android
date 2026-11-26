@@ -85,4 +85,11 @@ class RuntimeRepositoryInstallerTest {
         assertTrue(isSafeRuntimeArchiveEntry("wine/lib/", true))
         assertTrue(isSafeRuntimeArchiveEntry("runtime${0x5c.toChar()}bin${0x5c.toChar()}wine64", false))
     }
+    @Test fun embeddedBundleReplacesMissingOrOlderVersionButNotCurrentRuntime() {
+        assertFalse(shouldInstallBundledRuntime("0.1.2", null))
+        assertFalse(shouldInstallBundledRuntime("0.1.2", "0.1.2"))
+        assertTrue(shouldInstallBundledRuntime("0.1.1", "0.1.2"))
+        assertTrue(shouldInstallBundledRuntime(null, "0.1.2"))
+    }
+
 }
