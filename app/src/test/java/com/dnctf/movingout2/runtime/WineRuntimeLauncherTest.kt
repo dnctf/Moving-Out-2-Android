@@ -18,7 +18,7 @@ class WineRuntimeLauncherTest {
     @Test fun includesRuntimeEnvironmentAndOptionalTurnip() {
         val env = WineLaunchCommand.environment(File("/prefix"), File("/xinput_shm.bin"), File("/bundle/lib"), 45, File("/turnip/icd.json"), File("/dxvk"))
         assertEquals("/prefix", env["WINEPREFIX"])
-        assertEquals("d3d11,dxgi=n,b;xinput1_3,xinput1_4,xinput9_1_0=n,b", env["WINEDLLOVERRIDES"])
+        assertEquals("d3d11=n,b;dxgi=n,b;steam_api64=n;xinput1_3,xinput1_4,xinput9_1_0=n,b", env["WINEDLLOVERRIDES"])
         assertEquals("Z:\\xinput_shm.bin", env["MO2_XINPUT_SHM_PATH"])
         assertEquals("1", env["BOX64_DYNAREC_STRONGMEM"])
         assertEquals("45", env["DXVK_FRAME_RATE"])
@@ -28,7 +28,7 @@ class WineRuntimeLauncherTest {
     @Test fun dxvkCanBeDisabledWithoutDisablingXinputOverrides() {
         val env = WineLaunchCommand.environment(File("/prefix"), File("/shm"), File("/lib"), 60,
             dxvkDirectory = File("/dxvk"), useDxvk = false)
-        assertEquals("d3d11,dxgi=b;xinput1_3,xinput1_4,xinput9_1_0=n,b", env["WINEDLLOVERRIDES"])
+        assertEquals("d3d11=b;dxgi=b;steam_api64=n;xinput1_3,xinput1_4,xinput9_1_0=n,b", env["WINEDLLOVERRIDES"])
         assertFalse(env.containsKey("DXVK_DLL_PATH"))
     }
 
