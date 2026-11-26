@@ -52,7 +52,7 @@ The diagram describes the intended execution path. Individual stages remain subj
 | Component | Implementation / current evidence | Status |
 |---|---|---|
 | Android app | Kotlin, Android SDK 35, arm64-v8a | CI build verified |
-| SAF importer | Transactional copy into app-private storage, structural validation | Implemented; unknown-size SAF provider edge case still requires hardening |
+| SAF importer | Transactional copy into app-private storage, structural validation | Implemented; unknown-size provider handling patched and awaiting CI confirmation |
 | Runtime bundle | Manifest/schema and SHA-256 validation, ZIP extraction | Automated validation exists; device install/launch not proven |
 | Box64 | ARM64 native executable packaged as `lib/arm64-v8a/libbox64.so`; legacy JNI packaging | Debug APK packaging and ELF inspection verified; on-device exec still required |
 | Wine | x86-64 Wine binaries and guest glibc search paths | Bootstrap code and unit tests present; `wineboot`/ntdll device execution unverified |
@@ -66,7 +66,7 @@ The diagram describes the intended execution path. Individual stages remain subj
 
 ## Build and CI
 
-The Android CI workflow runs the JVM unit-test task, builds a Debug APK, verifies packaged native libraries and XInput assets, and uploads a short-lived Actions artifact. The CI pipeline does **not** establish that the game runs on an Android device.
+The Android CI workflow runs the JVM unit-test task, builds a Debug APK, verifies the merged manifest (native extraction, large heap and target SDK), inspects extracted ARM64 ELF payloads and 16 KB LOAD alignment, and uploads a short-lived Actions artifact. The CI pipeline does **not** establish that the game runs on an Android device.
 
 Typical local commands:
 
