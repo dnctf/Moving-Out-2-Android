@@ -8,7 +8,7 @@ object WineLaunchCommand {
         listOfNotNull(
             guestGlibcDirectory?.takeIf { it.isDirectory && it.canRead() },
             guestWineLibraryDirectory?.takeIf { it.isDirectory && it.canRead() }
-        ).joinToString(":") { it.absolutePath }.ifBlank { null }
+        ).joinToString(":").takeIf { it.isNotBlank() }
 
     fun toWineZPath(path: String): String = "Z:" + path.replace('/', '\\')
 
