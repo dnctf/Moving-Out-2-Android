@@ -34,7 +34,12 @@ class WineLaunchCommandRuntimeEnvTest {
             assertTrue(env["WINEDLLOVERRIDES"].orEmpty().contains("d3d11=n,b"))
             assertTrue(env["WINEDLLOVERRIDES"].orEmpty().contains("dxgi=n,b"))
             assertTrue(env["WINEDLLOVERRIDES"].orEmpty().contains("steam_api64=b"))
+            assertTrue(env["WINEDLLOVERRIDES"].orEmpty().contains("xinput1_3,xinput1_4=n,b"))
             assertTrue(env["WINEDLLOVERRIDES"].orEmpty().contains("xinput9_1_0=n,b"))
+            assertTrue(env["WINEDLLOVERRIDES"].orEmpty().contains("UnityCrashHandler64.exe=d"))
+            assertTrue(env["WINEDLLOVERRIDES"].orEmpty().contains("steam_api64=b"))
+            assertEquals(File(prefix, "dxvk.conf").absolutePath, env["DXVK_CONFIG_FILE"])
+            assertTrue(env["DXVK_SHADER_CACHE_PATH"].orEmpty().contains("dxvk-cache"))
             assertEquals("1", env["BOX64_DYNAREC_STRONGMEM"])
             assertEquals("1", env["BOX64_DYNAREC_SAFEFLAGS"])
             assertEquals("1", env["BOX64_DYNAREC_BIGBLOCK"])
@@ -44,6 +49,25 @@ class WineLaunchCommandRuntimeEnvTest {
             assertEquals("1", env["DXVK_STATE_CACHE"])
             assertEquals(guestLib.absolutePath, env["WINEDLLPATH"])
             assertEquals("${glibc.absolutePath}:${guestLib.absolutePath}", env["BOX64_LD_LIBRARY_PATH"])
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun dxvkConfigIsCreatedWithD3D11FeatureLevelAndNewlineDelimitedOptions() {
+        val root = java.nio.file.Files.createTempDirectory("mo2-dxvk-config").toFile()
+        try {
+            val prefix = File(root, "prefix")
+            val cache = File(root, "cache")
+            val config = WineLaunchCommand.writeDxvkConfig(prefix, cache)
+            val contents = config.readText()
+            assertTrue(config.isFile)
+            assertTrue(cache.isDirectory)
+            assertTrue(contents.contains("d3d11.maxFeatureLevel = 11_1"))
+            assertTrue(contents.contains("dxvk.shaderCache = True"))
+            assertTrue(contents.contains("\\n"))
+            assertFalse(contents.contains("\\\\n"))
         } finally {
             root.deleteRecursively()
         }
