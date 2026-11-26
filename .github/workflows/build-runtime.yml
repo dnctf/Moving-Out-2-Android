@@ -192,10 +192,16 @@ jobs:
           done
           # Include every additional direct DT_NEEDED dependency reported by ldd.
           for binary in "$WINE64" "$WINESERVER"; do
+            LDD_OUTPUT="$(ldd "$binary")"
+            printf '%s\n' "$LDD_OUTPUT" | tee "$RUNNER_TEMP/ldd-$(basename "$binary").txt"
+            if grep -q "not found" <<<"$LDD_OUTPUT"; then
+              echo "::error::Unresolved DT_NEEDED dependency for $binary"
+              exit 1
+            fi
             while IFS= read -r dependency; do
               [[ -n "$dependency" && -f "$dependency" ]] || continue
               cp -aL "$dependency" "$GUEST_GLIBC_DIR/$(basename "$dependency")"
-            done < <(ldd "$binary" | awk '/=> \/[^ ]+/ {print $3} /^\// {print $1}' | sort -u)
+            done < <(printf '%s\n' "$LDD_OUTPUT" | awk '/=> \/[^ ]+/ {print $3} /^\// {print $1}' | sort -u)
           done
           for library in "$GUEST_GLIBC_DIR"/*.so*; do
             [[ -f "$library" && ! -L "$library" ]] || { echo "::error::Guest glibc object is not a regular file: $library"; exit 1; }
@@ -252,6 +258,16 @@ jobs:
             readelf -h "$f" | grep -Eq 'Class:.*ELF64'
             readelf -h "$f" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
           done
+          find "$WINE_DIR/lib/x86_64-linux-gnu" -type f -name '*.so*' -print0 | while IFS= read -r -d '' f; do
+            readelf -h "$f" | grep -Eq 'Class:.*ELF64'
+            readelf -h "$f" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
+            readelf -h "$f" | grep -Eq 'Type:.*DYN'
+          done
+          [[ -s "$WINE_DIR/lib/x86_64-linux-gnu/libc.so.6" ]]
+          if find "$WINE_DIR/lib" -type l -print -quit | grep -q .; then
+            echo "::error::Symlink found under staged wine/lib."
+            exit 1
+          fi
           find -L "$WINE_DIR/lib/wine" -type f -name '*.so*' -print0 | while IFS= read -r -d '' f; do
             echo "Checking Wine shared object: $f"
             readelf -h "$f" | grep -E 'Class:|Type:|Machine:'
