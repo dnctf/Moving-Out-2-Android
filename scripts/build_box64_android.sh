@@ -27,7 +27,7 @@ export PATH="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
   -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
   -DANDROID=ON -DTERMUX=OFF -DARM64=ON -DARM_DYNAREC=ON \
   -DNO_LIB_INSTALL=ON -DNO_CONF_INSTALL=ON \
-  -DBOX64_STANDALONE_ANDROID=ON \
+  -DBOX64_STANDALONE_ANDROID=ON -DWINLATOR_GLIBC=ON \
   -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-28 \
   -DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON -DPAGE16K=ON \
   -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384" \
@@ -44,6 +44,11 @@ fi
 readelf -h "$BOX64_BIN" | grep -Eq 'Class:.*ELF64'
 readelf -h "$BOX64_BIN" | grep -Eq 'Machine:.*AArch64'
 readelf -h "$BOX64_BIN" | grep -Eq 'Type:.*DYN'
+if ! readelf -sW "$BOX64_BIN" | awk '$4 == "FUNC" && $8 == "my___libc_start_main" { found=1 } END { exit !found }'; then
+  echo "::error::Box64 is missing FUNC my___libc_start_main (WINLATOR_GLIBC wrapper)."
+  readelf -sW "$BOX64_BIN" | grep -E "my___libc_start_main|Num:" || true
+  exit 1
+fi
 echo "Box64 LOAD segment alignment:"
 readelf -Wl "$BOX64_BIN" | awk '/LOAD/{print "  " $NF; if ($NF != "0x4000") {print "ERROR: expected 0x4000, got " $NF > "/dev/stderr"; exit 1} found=1} END{if (!found) {print "ERROR: no LOAD segments found" > "/dev/stderr"; exit 1}}'
 mkdir -p "$OUT_DIR"
