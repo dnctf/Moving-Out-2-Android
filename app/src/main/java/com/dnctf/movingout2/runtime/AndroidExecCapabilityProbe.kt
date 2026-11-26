@@ -114,7 +114,13 @@ class AndroidExecCapabilityProbe(
                 put("LD_LIBRARY_PATH", nativeLibraryDirectory.absolutePath)
                 if (bundleRoot != null) {
                     put("BOX64_PATH", File(bundleRoot, "wine/bin").absolutePath)
-                    put("BOX64_LD_LIBRARY_PATH", File(bundleRoot, "wine/lib/wine").absolutePath)
+                    put(
+                        "BOX64_LD_LIBRARY_PATH",
+                        listOf(
+                            File(bundleRoot, "wine/lib/x86_64-linux-gnu").absolutePath,
+                            File(bundleRoot, "wine/lib/wine").absolutePath
+                        ).joinToString(":")
+                    )
                 }
             }
             val execution = executor.execute(file, listOf("--version"), environment)
