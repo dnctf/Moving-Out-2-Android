@@ -11,7 +11,30 @@ while (($#)); do case "$1" in
 command -v zip >/dev/null || { echo "zip command is required." >&2; exit 1; }
 for f in "$BOX64" "$WINE_DIR/bin/wine64" "$WINE_DIR/bin/wineserver" "$DXVK_DIR/d3d11.dll" "$DXVK_DIR/dxgi.dll" "$XINPUT_DIR/xinput1_3.dll" "$XINPUT_DIR/xinput1_4.dll" "$XINPUT_DIR/xinput9_1_0.dll"; do [[ -s "$f" ]] || { echo "Required file missing/empty: $f" >&2;exit 1;}; done
 [[ -d "$WINE_DIR/lib/wine" && -n "$(find -L "$WINE_DIR/lib/wine" -type f -size +0c -print -quit)" ]] || { echo "wine/lib/wine is missing or empty" >&2;exit 1; }
-[[ -d "$WINE_DIR/lib/x86_64-linux-gnu" && -s "$WINE_DIR/lib/x86_64-linux-gnu/libc.so.6" ]] || { echo "wine/lib/x86_64-linux-gnu with libc.so.6 is required" >&2; exit 1; }
+[[ -d "$WINE_DIR/lib/x86_64-linux-gnu" ]] || { echo "wine/lib/x86_64-linux-gnu is required" >&2; exit 1; }
+
+# Reject an incomplete guest loader closure before writing a manifest. These
+# are the canonical locations used by this packager (Wine Unix modules live
+# under lib/wine, not bin/).
+for module in \
+  "$WINE_DIR/lib/wine/x86_64-unix/ntdll.so" \
+  "$WINE_DIR/lib/wine/x86_64-unix/win32u.so" \
+  "$WINE_DIR/lib/wine/x86_64-windows/kernel32.dll" \
+  "$WINE_DIR/lib/wine/x86_64-windows/user32.dll"; do
+  [[ -s "$module" ]] || { echo "Required Wine loader module missing/empty: $module" >&2; exit 1; }
+done
+
+# Require the named x86-64 glibc/loader closure and reject dangling symlinks.
+for library in ld-linux-x86-64.so.2 libc.so.6 libm.so.6 libpthread.so.0 libdl.so.2 librt.so.1; do
+  [[ -s "$WINE_DIR/lib/x86_64-linux-gnu/$library" ]] || {
+    echo "Required guest glibc object missing/empty: $WINE_DIR/lib/x86_64-linux-gnu/$library" >&2
+    exit 1
+  }
+done
+if find "$WINE_DIR/lib/x86_64-linux-gnu" -xtype l -print -quit | grep -q .; then
+  echo "Guest glibc contains a broken symlink; refusing to package an incomplete loader closure." >&2
+  exit 1
+fi
 check_elf(){ local f="$1" machine="$2"; command -v readelf >/dev/null || { echo "readelf is required for ABI provenance validation." >&2; exit 1; }; readelf -h "$f" | grep -Eq "Class:.*ELF64" || { echo "ELF is not ELF64: $f" >&2;exit 1; }; readelf -h "$f" | grep -Eq "Machine:.*$machine" || { echo "Unexpected ELF machine (expected $machine): $f" >&2;exit 1;}; }
 check_elf "$BOX64" "AArch64"
 check_elf "$WINE_DIR/bin/wine64" "Advanced Micro Devices X86-64"
@@ -25,6 +48,14 @@ check_guest_libs(){
   while IFS= read -r -d '' lib; do check_elf_shared "$lib" "Advanced Micro Devices X86-64"; done < <(find "$WINE_DIR/lib/wine" -type f \( -name '*.so' -o -name '*.so.*' \) -print0)
 }
 check_guest_libs
+for module in \
+  "$WINE_DIR/lib/wine/x86_64-unix/ntdll.so" \
+  "$WINE_DIR/lib/wine/x86_64-unix/win32u.so"; do
+  check_elf_shared "$module" "Advanced Micro Devices X86-64"
+done
+for library in ld-linux-x86-64.so.2 libc.so.6 libm.so.6 libpthread.so.0 libdl.so.2 librt.so.1; do
+  check_elf_shared "$WINE_DIR/lib/x86_64-linux-gnu/$library" "Advanced Micro Devices X86-64"
+done
 check_pe_x64(){
   command -v objdump >/dev/null || { echo "objdump is required for PE32+ ABI validation." >&2; exit 1; }
   objdump -f "$1" | grep -q "architecture: i386:x86-64" || { echo "Not x86-64 PE: $1" >&2; exit 1; }
@@ -35,6 +66,12 @@ check_pe_x64 "$DXVK_DIR/dxgi.dll"
 check_pe_x64 "$XINPUT_DIR/xinput1_3.dll"
 check_pe_x64 "$XINPUT_DIR/xinput1_4.dll"
 check_pe_x64 "$XINPUT_DIR/xinput9_1_0.dll"
+for redistributable in vcruntime140.dll vcruntime140_1.dll msvcp140.dll; do
+  check_pe_x64 "$WINE_DIR/lib/wine/x86_64-windows/$redistributable"
+done
+for module in kernel32.dll user32.dll; do
+  check_pe_x64 "$WINE_DIR/lib/wine/x86_64-windows/$module"
+done
 if [[ -n "$TURNIP_SO" ]];then [[ -s "$TURNIP_SO" ]] || { echo "Turnip SO missing/empty" >&2;exit 1;}; ICD="$(dirname "$TURNIP_SO")/freedreno_icd.aarch64.json"; [[ -s "$ICD" ]] || { echo "Expected ICD JSON beside Turnip SO: $ICD" >&2;exit 1;};fi
 OUT_DIR="$(dirname "$OUTPUT")";mkdir -p "$OUT_DIR";OUTPUT="$(cd "$OUT_DIR" && pwd)/$(basename "$OUTPUT")";TMP="$(mktemp -d)";trap 'rm -rf "$TMP"' EXIT
 ROOT="$TMP/root";mkdir -p "$ROOT/box64/bin" "$ROOT/wine/bin" "$ROOT/wine/lib" "$ROOT/dxvk/x64"
