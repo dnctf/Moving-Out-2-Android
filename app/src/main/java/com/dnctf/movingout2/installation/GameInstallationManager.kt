@@ -20,7 +20,7 @@ data class SafInstallationReport(
 }
 
 class GameInstallationManager(private val context: Context) {
-    private val peFiles = listOf("mo2.exe", "GameAssembly.dll", "UnityPlayer.dll", "baselib.dll")
+    private val requiredGameLibraries = listOf("GameAssembly.dll", "UnityPlayer.dll", "baselib.dll")
 
     fun validate(uri: Uri): SafInstallationReport {
         val errors = mutableListOf<String>()
@@ -30,15 +30,18 @@ class GameInstallationManager(private val context: Context) {
         val root = runCatching { DocumentFile.fromTreeUri(context, uri) }.getOrNull()
         if (root == null || !root.isDirectory || !root.canRead()) {
             errors += "Selected tree cannot be opened/read."
-            return SafInstallationReport(peFiles + UnityDataDirectoryLocator.metadataFilePath("mo2.exe"), errors, listOf(
+            return SafInstallationReport(listOf("Unity player executable + matching *_Data/", "GameAssembly.dll", "UnityPlayer.dll", "baselib.dll") + UnityDataDirectoryLocator.metadataFilePath("mo2.exe"), errors, listOf(
                 "Folder access: FAIL", "Core file detection: NOT RUN", "Structural validation: NOT RUN",
                 "Version/architecture: NOT RUN", "Compatibility: NOT_ASSESSED", "Launch readiness: BLOCKED"
             ))
         }
 
-        val executable = find(root, "mo2.exe")
-        val metadataRelative = UnityDataDirectoryLocator.metadataFilePath(executable?.name ?: "mo2.exe")
+        val executable = findUnityExecutable(root)
+        val executableName = executable?.name ?: "mo2.exe"
+        val metadataRelative = UnityDataDirectoryLocator.metadataFilePath(executableName)
+        val peFiles = listOf(executableName) + requiredGameLibraries
         val required = peFiles + metadataRelative
+        if (executable == null) missing += "Unity player executable with matching ${UnityDataDirectoryLocator.directoryName(executableName)}/"
         val resolved = mutableMapOf<String, DocumentFile>()
         required.forEach { path ->
             val file = find(root, path)
@@ -61,7 +64,7 @@ class GameInstallationManager(private val context: Context) {
         val peResults = peFiles.map { path ->
             path to resolved[path]?.let { file -> read(file, 64 * 1024)?.let(UnityGameProfileDetector::detectPeArchitecture) }
         }
-        val architecture = peResults.firstOrNull { it.first == "mo2.exe" }?.second
+        val architecture = peResults.firstOrNull { it.first.equals(executableName, ignoreCase = true) }?.second
         val allPeX64 = peResults.all { it.second == "x86_64" }
         val importAnalyses = peFiles.mapNotNull { path ->
             resolved[path]?.let { file ->
@@ -93,6 +96,19 @@ class GameInstallationManager(private val context: Context) {
         if (!allPeX64) errors += "One or more required PE files are invalid or not x86_64 PE32+."
         return SafInstallationReport(missing.distinct(), errors.distinct(), stageSummary, unityVersion, metadataVersion, architecture, staticImports, importErrors)
     }
+
+    private fun findUnityExecutable(root: DocumentFile): DocumentFile? = runCatching {
+        val unityPlayer = find(root, "UnityPlayer.dll")
+        val gameAssembly = find(root, "GameAssembly.dll")
+        if (unityPlayer?.isFile != true || gameAssembly?.isFile != true) return@runCatching null
+        root.listFiles().asSequence()
+            .filter { it.isFile && it.name?.endsWith(".exe", ignoreCase = true) == true }
+            .filterNot { it.name.equals("UnityCrashHandler64.exe", ignoreCase = true) }
+            .sortedBy { it.name }
+            .firstOrNull { candidate ->
+                candidate.name?.let { find(root, UnityDataDirectoryLocator.directoryName(it))?.isDirectory == true } == true
+            }
+    }.getOrNull()
 
     private fun read(file: DocumentFile, limit: Int): ByteArray? = runCatching {
         context.contentResolver.openInputStream(file.uri)?.use { UnityGameProfileDetector.readBounded(it, limit) }
