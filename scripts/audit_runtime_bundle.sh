@@ -46,6 +46,23 @@ while IFS= read -r -d '' lib; do
   glibc_count=$((glibc_count+1))
 done < <(find "$GLIBC_DIR" -type f -name '*.so*' -print0)
 (( glibc_count > 0 )) || { echo "No guest glibc shared objects found." >&2; exit 1; }
+UNIX_DIR="$ROOT/wine/lib/wine/x86_64-unix"
+resolve_needed() {
+  local owner="$1" needed="$2"
+  if [[ -e "$GLIBC_DIR/$needed" || -e "$UNIX_DIR/$needed" ]]; then return 0; fi
+  case "$needed" in
+    libGL.so*|libGLX.so*|libEGL.so*|libGLESv1.so*|libGLESv2.so*|libGLESv3.so*|libvulkan.so*|libX11.so*|libXext.so*|libXrender.so*|libxcb.so*|libwayland-client.so*|libandroid.so*) return 0 ;;
+  esac
+  echo "Unresolved DT_NEEDED '$needed' referenced by $owner" >&2
+  return 1
+}
+check_needed() {
+  local owner="$1" needed
+  while IFS= read -r needed; do [[ -z "$needed" ]] || resolve_needed "$owner" "$needed"; done < <(readelf -d "$owner" | sed -n 's/.*Shared library: \\[\\([^]]*\\)\\].*/\\1/p')
+}
+check_needed "$ROOT/wine/bin/wine64"
+check_needed "$ROOT/wine/bin/wineserver"
+while IFS= read -r -d '' module; do check_needed "$module"; done < <(find "$UNIX_DIR" -type f -name '*.so*' -print0)
 if find "$ROOT/wine/lib" -type l -print -quit | grep -q .; then
   echo "Symlink found in wine/lib." >&2
   exit 1
