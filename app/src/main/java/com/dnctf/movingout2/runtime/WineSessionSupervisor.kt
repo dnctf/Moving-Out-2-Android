@@ -340,19 +340,16 @@ class WineSessionSupervisor(
             }
         }
 
-        val wineUnixDir = guestLibraryDirectory?.let { File(it, "x86_64-unix") }
-        val wineWindowsDir = guestLibraryDirectory?.let { File(it, "x86_64-windows") }
-        val requiredWineFiles = listOf(
-            wineUnixDir?.let { File(it, "ntdll.so") },
-            wineUnixDir?.let { File(it, "win32u.so") },
-            wineWindowsDir?.let { File(it, "kernel32.dll") },
-            wineWindowsDir?.let { File(it, "user32.dll") }
-        )
-        val missingWineFiles = requiredWineFiles.filter { it == null || !it.isFile || it.length() <= 0L }
+        val missingGlibcFiles = WineRuntimeModuleValidator.missingGuestGlibcFiles(guestGlibcDirectory)
+        if (missingGlibcFiles.isNotEmpty()) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
+                "Wine guest glibc closure is incomplete: " + missingGlibcFiles.joinToString { it.absolutePath }))
+            return false
+        }
+        val missingWineFiles = WineRuntimeModuleValidator.missingWineModules(guestLibraryDirectory)
         if (missingWineFiles.isNotEmpty()) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
-                "Wine runtime is missing required Unix/Windows modules: " +
-                    missingWineFiles.joinToString { it?.absolutePath ?: "unresolved Wine library directory" }))
+                "Wine runtime is missing required Unix/Windows modules: " + missingWineFiles.joinToString { it.absolutePath }))
             return false
         }
 
@@ -590,4 +587,25 @@ class WineSessionSupervisor(
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "supervisor", "Ignoring invalid transition: $prev -> $next"))
         }
     }
+}
+
+
+/** Strictly validates the guest x86-64 glibc closure and Wine loader modules before wineboot. */
+object WineRuntimeModuleValidator {
+    private val glibcNames = listOf(
+        "ld-linux-x86-64.so.2", "libc.so.6", "libm.so.6",
+        "libpthread.so.0", "libdl.so.2", "librt.so.1"
+    )
+    private val wineModules = listOf(
+        "x86_64-unix/ntdll.so", "x86_64-unix/win32u.so",
+        "x86_64-windows/kernel32.dll", "x86_64-windows/user32.dll"
+    )
+
+    fun missingGuestGlibcFiles(directory: File?): List<File> =
+        glibcNames.map { name -> directory?.let { File(it, name) } ?: File(name) }
+            .filter { !it.isFile || it.length() <= 0L }
+
+    fun missingWineModules(directory: File?): List<File> =
+        wineModules.map { relative -> directory?.let { File(it, relative) } ?: File(relative) }
+            .filter { !it.isFile || it.length() <= 0L }
 }
