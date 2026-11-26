@@ -39,6 +39,9 @@ object WineLaunchCommand {
         }.joinToString(";")
         val result = linkedMapOf(
             "WINEPREFIX" to prefix.absolutePath,
+            "WINEDLLPATH" to File(guestBinaryDirectory?.parentFile, "lib/wine").absolutePath,
+            "WINELOADER" to File(guestBinaryDirectory, "wine64").absolutePath,
+            "WINESERVER" to File(guestBinaryDirectory, "wineserver").absolutePath,
             "WINEDLLOVERRIDES" to overrides,
             "MO2_XINPUT_SHM_PATH" to toWineZPath(sharedInput.absolutePath),
             "BOX64_DYNAREC" to "1",
