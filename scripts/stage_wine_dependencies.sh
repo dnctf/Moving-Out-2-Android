@@ -13,7 +13,7 @@ UNIX_DIR="${WINE_LIB}/x86_64-unix"
 # Android/Box64 supplies these through its native ARM64 wrapper layer.
 is_box64_wrapper() {
   case "$1" in
-    libGL.so.*|libGLX.so.*|libEGL.so.*|libGLESv1_CM.so.*|libGLESv2.so.*|libvulkan.so.*|    libX11.so.*|libXext.so.*|libXrender.so.*|libXcursor.so.*|libXi.so.*|libXrandr.so.*|    libXfixes.so.*|libXinerama.so.*|libXcomposite.so.*|libXdamage.so.*|libXss.so.*|    libXxf86vm.so.*|libXau.so.*|libXdmcp.so.*|libxcb.so.*|libwayland-client.so.*)
+    libGL.so.*|libGLX.so.*|libEGL.so.*|libGLESv1_CM.so.*|libGLESv2.so.*|libvulkan.so.*|    libX11.so.*|libXext.so.*|libXrender.so.*|libXcursor.so.*|libXi.so.*|libXrandr.so.*|    libXfixes.so.*|libXinerama.so.*|libXcomposite.so.*|libXdamage.so.*|libXss.so.*|    libXxf86vm.so.*|libXau.so.*|libXdmcp.so.*|libxcb.so.*)
       return 0 ;;
   esac
   return 1
@@ -34,7 +34,8 @@ resolve_system_library() {
 }
 
 declare -a queue=("$WINE_ROOT/bin/wine64" "$WINE_ROOT/bin/wineserver")
-while IFS= read -r -d '' module; do queue+=("$module"); done < <(find "$UNIX_DIR" -type f -name '*.so*' -print0)
+while IFS= read -r -d '' module; do queue+=("$module"); done < <(find "$WINE_LIB" -type f -name '*.so*' -print0)
+ while IFS= read -r -d '' library; do queue+=("$library"); done < <(find "$GLIBC_DIR" -type f -name '*.so*' -print0)
 declare -A visited=()
 declare -A queued=()
 for item in "${queue[@]}"; do queued["$item"]=1; done
