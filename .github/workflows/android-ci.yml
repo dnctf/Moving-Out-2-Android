@@ -107,23 +107,48 @@ jobs:
           chmod +x native/wine-xinput/build_wine_xinput.sh
           MINGW_CC=x86_64-w64-mingw32-gcc-posix native/wine-xinput/build_wine_xinput.sh native/wine-xinput/out
       - name: Package XInput DLLs as app assets
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p app/src/main/assets/runtime
           cp native/wine-xinput/out/xinput1_3.dll app/src/main/assets/runtime/
           cp native/wine-xinput/out/xinput1_4.dll app/src/main/assets/runtime/
           cp native/wine-xinput/out/xinput9_1_0.dll app/src/main/assets/runtime/
+
+          LLVM_READOBJ="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readobj"
+          test -x "$LLVM_READOBJ"
+
+          # XInputGetStateEx is intentionally NONAME at ordinal 100.
+          # Validate COFF export ordinal/name fields independently instead of
+          # assuming the symbol appears in objdump's ordinal/name-pointer table.
+          has_export() {
+            local dll="$1" ordinal="$2" expected_name="$3"
+            "$LLVM_READOBJ" --coff-exports "$dll" | awk \
+              -v expected_ordinal="$ordinal" -v expected_name="$expected_name" '
+                /^[[:space:]]*Export \\{/ { in_export=1; ordinal=""; name="" }
+                in_export && /Ordinal:/ { ordinal=$2 }
+                in_export && /Name:/ { name=$2; gsub(/["]/, "", name) }
+                in_export && /^[[:space:]]*}/ {
+                  if (ordinal == expected_ordinal &&
+                      (expected_name == "*" || name == expected_name)) found=1
+                  in_export=0
+                }
+                END { exit !found }
+              '
+          }
+
           for dll in xinput1_3.dll xinput1_4.dll xinput9_1_0.dll; do
-            test -s "app/src/main/assets/runtime/$dll"
-            x86_64-w64-mingw32-objdump -p "native/wine-xinput/out/$dll" | grep -q 'Ordinal/Name Pointer'
-          done
-          for dll in xinput1_3.dll xinput1_4.dll xinput9_1_0.dll; do
-            EXPORTS="$(x86_64-w64-mingw32-objdump -p "native/wine-xinput/out/$dll")"
-            grep -Eq 'XInput(GetState|SetState|GetCapabilities|Enable|GetBatteryInformation|GetKeystroke)' <<<"$EXPORTS"
-            grep -Eq '\[[[:space:]]*100\][[:space:]]+XInputGetStateEx' <<<"$EXPORTS"
-            grep -Eq '\[[[:space:]]*101\][[:space:]]+XInputWaitForGuideButton' <<<"$EXPORTS"
-            grep -Eq '\[[[:space:]]*102\][[:space:]]+XInputCancelGuideButton' <<<"$EXPORTS"
-            grep -Eq '\[[[:space:]]*103\][[:space:]]+XInputPowerOffController' <<<"$EXPORTS"
+            asset="app/src/main/assets/runtime/$dll"
+            test -s "$asset"
+            cmp "native/wine-xinput/out/$dll" "$asset"
+            EXPORTS="$("$LLVM_READOBJ" --coff-exports "native/wine-xinput/out/$dll")"
+            for symbol in XInputGetState XInputSetState XInputGetCapabilities XInputEnable XInputGetBatteryInformation XInputGetKeystroke; do
+              grep -Fq "Name: $symbol" <<<"$EXPORTS"
+            done
+            has_export "native/wine-xinput/out/$dll" 100 "*"
+            has_export "native/wine-xinput/out/$dll" 101 "XInputWaitForGuideButton"
+            has_export "native/wine-xinput/out/$dll" 102 "XInputCancelGuideButton"
+            has_export "native/wine-xinput/out/$dll" 103 "XInputPowerOffController"
           done
       - name: Build and package Box64 native executable
         shell: bash
