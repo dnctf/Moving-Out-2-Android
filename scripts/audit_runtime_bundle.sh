@@ -58,7 +58,7 @@ resolve_needed() {
 }
 check_needed() {
   local owner="$1" needed
-  while IFS= read -r needed; do [[ -z "$needed" ]] || resolve_needed "$owner" "$needed"; done < <(readelf -d "$owner" | sed -n 's/.*Shared library: \\[\\([^]]*\\)\\].*/\\1/p')
+  while IFS= read -r needed; do [[ -z "$needed" ]] || resolve_needed "$owner" "$needed"; done < <(readelf -d "$owner" | grep -oE 'Shared library: \[[^]]+\]' | cut -d '[' -f2 | tr -d ']')
 }
 check_needed "$ROOT/wine/bin/wine64"
 check_needed "$ROOT/wine/bin/wineserver"
