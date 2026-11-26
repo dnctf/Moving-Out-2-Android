@@ -52,7 +52,7 @@ while IFS= read -r -d '' elf; do strip --strip-unneeded "$elf"; done < <(find "$
 if command -v x86_64-w64-mingw32-strip >/dev/null 2>&1; then
   while IFS= read -r -d '' pe; do x86_64-w64-mingw32-strip --strip-unneeded "$pe"; done < <(find "$WIN64" -type f \( -iname '*.dll' -o -iname '*.exe' \) -print0)
 fi
-find "$ROOT/wine/lib/wine" -type f \\( -name '*.a' -o -name '*.def' -o -name '*.h' -o -name '*.idl' -o -name '*.man' \\) -delete
+find "$ROOT/wine/lib/wine" -type f \( -name '*.a' -o -name '*.def' -o -name '*.h' -o -name '*.idl' -o -name '*.man' \) -delete
 rm -rf "$ROOT/wine/lib/wine/locale" "$ROOT/wine/lib/wine/doc" "$ROOT/wine/lib/wine/documentation"
 for redistributable in vcruntime140.dll vcruntime140_1.dll msvcp140.dll; do
   source="$WINE_DIR/lib/wine/x86_64-windows/$redistributable"
