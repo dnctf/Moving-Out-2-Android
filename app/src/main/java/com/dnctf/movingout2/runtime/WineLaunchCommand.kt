@@ -65,6 +65,9 @@ object WineLaunchCommand {
         guestLibrarySearchPath(guestGlibcDirectory, guestLibraryDirectory)?.let {
             result["BOX64_LD_LIBRARY_PATH"] = it
         }
+        guestLibraryDirectory?.takeIf { it.isDirectory && it.canRead() }?.let {
+            result["WINEDLLPATH"] = it.absolutePath
+        }
         guestBinaryDirectory?.takeIf { it.isDirectory && it.canRead() }?.let {
             result["BOX64_PATH"] = it.absolutePath
         }
