@@ -34,7 +34,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: build-runtime-${{ github.ref }}
@@ -326,5 +326,5 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # Runtime remains an intermediate artifact. The integrated APK pipeline consumes
-      # this artifact, removes old release objects/tags while preserving its new tag, and publishes one APK release.
+      # Runtime remains a short-lived Actions artifact only. This workflow never creates
+      # GitHub Releases or Git tags; public publishing is disabled during runtime validation.
