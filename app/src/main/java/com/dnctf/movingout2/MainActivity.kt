@@ -81,7 +81,9 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState?.getBoolean("auto_launch_triggered") == true) launchReadinessCoordinator.markAutoLaunched()
-        // Render a usable launcher shell before touching native/JNI or persisted repositories.
+
+        // Inflate and display the launcher immediately. All repository reads, SAF metadata
+        // checks, JNI initialization and runtime hashing happen off the UI thread.
         val views = LauncherHomeView.create(
             this, ::openFolderPicker, ::revalidateSavedFolder,
             ::openRuntimeZipPicker, ::openRuntimeFolderPicker,
@@ -94,53 +96,69 @@ class MainActivity : Activity() {
         playButton = views.playButton
         setContentView(views.root)
         status.text = "Starting launcher…"
-        runtimeStatus.text = "Checking runtime installation…"
+        runtimeStatus.text = "Checking runtime installation in background…"
         graphicsStatus.text = "Device diagnostics are starting…"
-        try {
-            repository = InstallationRepository(this)
-            gameRegistry = com.dnctf.movingout2.installation.GameRegistry(this, repository)
-            val activeGame = gameRegistry.getActiveGame()
-            controllerProfileGameKey = controllerProfileStorageKey(activeGame?.id)
-            val storedProfile = ControllerProfileRepository.load(this, controllerProfileGameKey)
-            val legacyProfile = if (controllerProfileGameKey == "moving-out-2") null
-                else ControllerProfileRepository.load(this, "moving-out-2")
-            controllerProfile = storedProfile ?: legacyProfile ?: ControllerProfile.presets.first()
-            if (storedProfile == null && legacyProfile != null) ControllerProfileRepository.save(this, controllerProfileGameKey, legacyProfile)
-            runCatching { inputBridge.initialize(RuntimeLaunchConfig(filesDir).sharedMemoryFile.absolutePath) }
-                .onFailure { error -> diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "input-bridge-init", "${error.javaClass.name}: ${error.message ?: "no message"}")) }
-            inputCoordinator = ControllerInputCoordinator(inputBridge, controllerProfile)
-            physicalGamepadManager = PhysicalGamepadManager(
-                this,
-                onDeviceState = { deviceId, _, state, connected ->
-                    if (::inputCoordinator.isInitialized) inputCoordinator.updatePhysicalDevice(deviceId, state, connected)
-                },
-                onAggregateState = { /* Per-device routing owns XInput slots. */ }
-            )
-            val activeAtStartup = gameRegistry.getActiveGame()
-            status.text = if (activeAtStartup?.source == com.dnctf.movingout2.core.model.InstallationSource.SAF_DIRECTORY) {
-                "Saved SAF game folder found. Importing automatically into app storage…"
-            } else if (activeAtStartup != null) {
-                "Imported game installation found. Refreshing launch readiness…"
-            } else if (repository.savedUri() != null) {
-                "Saved game folder found. Checking access and importing automatically…"
-            } else "Import the game ZIP or select an existing game folder."
-            if (activeAtStartup?.source == com.dnctf.movingout2.core.model.InstallationSource.SAF_DIRECTORY) {
-                startSafGameImport(Uri.parse(activeAtStartup.location))
-            } else if (activeAtStartup == null) {
-                repository.savedUri()?.let(::startSafGameImport)
+
+        probeGraphicsAsync()
+        ensureRuntimeInstalledOnFirstLaunch()
+
+        Thread({
+            val initialized = runCatching {
+                repository = InstallationRepository(this)
+                gameRegistry = com.dnctf.movingout2.installation.GameRegistry(this, repository)
+                val activeAtStartup = gameRegistry.getActiveGame()
+                controllerProfileGameKey = controllerProfileStorageKey(activeAtStartup?.id)
+                val storedProfile = ControllerProfileRepository.load(this, controllerProfileGameKey)
+                val legacyProfile = if (controllerProfileGameKey == "moving-out-2") null
+                    else ControllerProfileRepository.load(this, "moving-out-2")
+                controllerProfile = storedProfile ?: legacyProfile ?: ControllerProfile.presets.first()
+                if (storedProfile == null && legacyProfile != null) {
+                    ControllerProfileRepository.save(this, controllerProfileGameKey, legacyProfile)
+                }
+                runCatching { inputBridge.initialize(RuntimeLaunchConfig(filesDir).sharedMemoryFile.absolutePath) }
+                    .onFailure { error ->
+                        diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "input-bridge-init",
+                            "${error.javaClass.name}: ${error.message ?: "no message"}"))
+                    }
+                inputCoordinator = ControllerInputCoordinator(inputBridge, controllerProfile)
+                physicalGamepadManager = PhysicalGamepadManager(
+                    this,
+                    onDeviceState = { deviceId, _, state, connected ->
+                        if (::inputCoordinator.isInitialized) inputCoordinator.updatePhysicalDevice(deviceId, state, connected)
+                    },
+                    onAggregateState = { /* Per-device routing owns XInput slots. */ }
+                )
+                activeAtStartup to repository.savedUri()
             }
-            refreshRuntimeStatus()
-            probeGraphicsAsync()
-            ensureRuntimeInstalledOnFirstLaunch()
-        } catch (error: Throwable) {
-            val trace = java.io.StringWriter().also { error.printStackTrace(java.io.PrintWriter(it)) }.toString()
-            diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "launcher-onCreate",
-                "${error.javaClass.name}: ${error.message ?: "no message"}\n$trace"))
-            status.text = "Launcher initialization failed safely. UI is available, but a subsystem could not start.\n${error.javaClass.simpleName}: ${error.message ?: "no message"}\nExport diagnostics and share the report."
-            runtimeStatus.text = "Runtime setup is paused until launcher initialization is repaired."
-            graphicsStatus.text = "Device probe was not started."
-            Toast.makeText(this, "Launcher initialization failed: ${error.message}", Toast.LENGTH_LONG).show()
-        }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                initialized.onSuccess { (activeAtStartup, savedUri) ->
+                    status.text = when {
+                        activeAtStartup?.source == com.dnctf.movingout2.core.model.InstallationSource.SAF_DIRECTORY ->
+                            "Saved SAF game folder found. Importing automatically into app storage…"
+                        activeAtStartup != null ->
+                            "Imported game installation found. Refreshing launch readiness…"
+                        savedUri != null ->
+                            "Saved game folder found. Checking access and importing automatically…"
+                        else -> "Import the game ZIP or select an existing game folder."
+                    }
+                    if (activeAtStartup?.source == com.dnctf.movingout2.core.model.InstallationSource.SAF_DIRECTORY) {
+                        startSafGameImport(Uri.parse(activeAtStartup.location))
+                    } else if (activeAtStartup == null) {
+                        savedUri?.let(::startSafGameImport)
+                    }
+                    if (::physicalGamepadManager.isInitialized) physicalGamepadManager.register()
+                    refreshRuntimeStatus()
+                }.onFailure { error ->
+                    val trace = java.io.StringWriter().also { error.printStackTrace(java.io.PrintWriter(it)) }.toString()
+                    diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "launcher-onCreate",
+                        "${error.javaClass.name}: ${error.message ?: "no message"}\n$trace"))
+                    status.text = "Launcher initialization failed safely. UI remains available.\n${error.javaClass.simpleName}: ${error.message ?: "no message"}\nExport diagnostics and share the report."
+                    runtimeStatus.text = "Runtime readiness is paused until launcher initialization is repaired."
+                    Toast.makeText(this, "Launcher initialization failed: ${error.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }, "launcher-state-init").apply { isDaemon = true; start() }
     }
 
     private fun activateControllerProfileForGame(game: com.dnctf.movingout2.installation.RegisteredGame?) {
