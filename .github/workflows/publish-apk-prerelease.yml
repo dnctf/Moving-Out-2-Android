@@ -80,6 +80,14 @@ jobs:
           cmp "$BOX64_LIB" <(unzip -p runtime-artifact/moving-out-2-runtime-arm64-v8a.zip box64/bin/box64)
           echo "APK Box64 payload: $BOX64_LIB"
           sha256sum "$BOX64_LIB"
+      - name: Embed verified runtime bundle in APK assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/assets
+          cp runtime-artifact/moving-out-2-runtime-arm64-v8a.zip app/src/main/assets/runtime-bundle.zip
+          cmp app/src/main/assets/runtime-bundle.zip runtime-artifact/moving-out-2-runtime-arm64-v8a.zip
+          sha256sum app/src/main/assets/runtime-bundle.zip
       - name: Build XInput assets
         run: |
           set -euo pipefail
@@ -107,6 +115,10 @@ jobs:
           "$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
           unzip -t "$APK" >/dev/null
           cmp <(unzip -p "$APK" lib/arm64-v8a/libbox64.so) app/src/main/jniLibs/arm64-v8a/libbox64.so
+          unzip -p "$APK" assets/runtime-bundle.zip > "$RUNNER_TEMP/runtime-from-apk.zip"
+          cmp "$RUNNER_TEMP/runtime-from-apk.zip" runtime-artifact/moving-out-2-runtime-arm64-v8a.zip
+          sha256sum "$RUNNER_TEMP/runtime-from-apk.zip" runtime-artifact/moving-out-2-runtime-arm64-v8a.zip
+          unzip -lv "$APK" | grep -F "assets/runtime-bundle.zip" | grep -Eq "Stored"
           MANIFEST_DUMP="$("$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump xmltree "$APK" AndroidManifest.xml)"
           printf '%s\n' "$MANIFEST_DUMP" | grep -i "extractNativeLibs" | grep -Eqi "(0xffffffff|true)"
           # AGP 8 synthesizes extractNativeLibs from useLegacyPackaging; verify the
