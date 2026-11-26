@@ -206,3 +206,37 @@ When asked to continue development:
 
 ---
 End of project skill notes.
+
+
+## 11. Runtime architecture brief implementation notes (2026-11-26)
+
+The latest user brief was implemented incrementally on PR #9 while preserving existing module boundaries.
+
+### Implemented in source (CI still required)
+- `scripts/package_runtime_bundle.sh` now fails closed unless the source Wine bundle contains:
+  - `lib/wine/x86_64-unix/ntdll.so` and `win32u.so`;
+  - `lib/wine/x86_64-windows/kernel32.dll` and `user32.dll`;
+  - guest glibc/loader objects `ld-linux-x86-64.so.2`, `libc.so.6`, `libm.so.6`, `libpthread.so.0`, `libdl.so.2`, and `librt.so.1`.
+- Packager checks guest ELF64 x86-64 shared-object headers, PE32+ x86-64 headers for Wine Windows modules and VC++ redistributables, and rejects dangling symlinks in the source guest glibc tree.
+- `RuntimeBundleValidator` independently checks the required Wine Unix/Windows modules and all named guest glibc objects after import, so a forged/incomplete runtime manifest cannot pass based only on directory hashes.
+- Turnip ICD JSON is parsed during bundle validation. At launch, the supervisor copies it to `filesDir/runtime-session/freedreno_icd.aarch64.json` and rewrites `ICD.library_path` to the absolute extracted `libvulkan_freedreno.so` path.
+- Host `LD_LIBRARY_PATH` may include nativeLibraryDir plus the optional Turnip directory; guest x86-64 paths remain isolated in `BOX64_LD_LIBRARY_PATH`.
+- Launch arguments can include Unity `-logFile`; DXVK log level/path are configured when DXVK is enabled.
+- Diagnostic ZIP exporter can include `mo2_player.log`, `mo2_d3d11.log`, and `dxvk.log`.
+- Wine prefix target is `filesDir/wine_prefixes/$gameId`, with migration from the previously used `filesDir/wineprefix`.
+- CI checks the custom XInput DLL export ordinals 100–103 in addition to named exports.
+
+### Deliberate compatibility and integrity deviations from the proposed profile
+- Do not force-load a modified Steam API emulator or native Steam crack. Current Wine override is builtin-only for `steam_api64`; the supplied game payload must be restored/verified from the official Steam installation before legitimate Steam integration is attempted.
+- Do not disable UnityCrashHandler/Crashpad pre-emptively without reproducible deadlock logs. First capture process and pipe diagnostics; disable only with an isolated, reversible test.
+- Do not force `d3d10core=n,b` unless a matching x64 DXVK `d3d10core.dll` is actually packaged and validated. The current runtime manifest only declares D3D11 and DXGI.
+- Keep `BOX64_AVX=0` until an on-device test establishes that enabling AVX emulation is needed and stable. A requested environment value is not evidence that it is optimal.
+- The repository's canonical Wine module location is `wine/lib/wine/x86_64-unix/`, not `wine/bin/x86_64-unix/`. The packager, manifest, and runtime validator use the canonical existing layout.
+- The existing guest library search order remains glibc first, then Wine libraries; changing order requires controlled loader tests.
+
+### Not yet verified
+- The strict runtime packager has not been run against a real, complete Wine/guest-glibc/DXVK/Turnip input bundle in this session.
+- No actual `readelf`/ `objdump` output from the user's runtime bundle has been captured here.
+- No dry-run `wineboot --init` was possible because a real Wine runtime bundle is not available in the repository context.
+- No physical DBY2-W09 proof exists yet for Box64 execution, Wine bootstrap, ntdll loading, DXVK D3D11 creation, Vulkan frame presentation, or game launch.
+- CI must pass on the final PR head after these changes; intermediate runs may be cancelled when newer commits supersede them.
