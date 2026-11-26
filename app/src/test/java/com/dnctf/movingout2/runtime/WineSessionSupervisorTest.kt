@@ -49,19 +49,31 @@ class WineSessionSupervisorTest {
     @Test
     fun winebootAndGameUseTheSameOrderedGuestGlibcSearchPath() {
         val root = java.nio.file.Files.createTempDirectory("wineboot-glibc-path").toFile()
-        val glibc = File(root, "wine/lib/x86_64-linux-gnu").apply { mkdirs() }
-        val wineLib = File(root, "wine/lib/wine").apply { mkdirs() }
+        val wineRoot = File(root, "wine").apply { mkdirs() }
+        val wineBin = File(wineRoot, "bin").apply { mkdirs() }
+        val glibc = File(wineRoot, "lib/x86_64-linux-gnu").apply { mkdirs() }
+        val wineLib = File(wineRoot, "lib/wine").apply { mkdirs() }
         val bootEnvironment = buildMap {
+            put("WINEDLLPATH", wineLib.absolutePath)
+            put("WINELOADER", File(wineBin, "wine64").absolutePath)
+            put("WINESERVER", File(wineBin, "wineserver").absolutePath)
             WineLaunchCommand.guestLibrarySearchPath(glibc, wineLib)?.let { put("BOX64_LD_LIBRARY_PATH", it) }
             put("LD_LIBRARY_PATH", File(root, "nativeLibraryDir").absolutePath)
         }
         val gameEnvironment = WineLaunchCommand.environment(
             File(root, "prefix"), File(root, "xinput_shm.bin"), File(root, "nativeLibraryDir"), 30,
-            guestLibraryDirectory = wineLib, guestGlibcDirectory = glibc
+            guestLibraryDirectory = wineLib, guestGlibcDirectory = glibc,
+            guestBinaryDirectory = wineBin
         )
         val expected = glibc.absolutePath + ":" + wineLib.absolutePath
         assertEquals(expected, bootEnvironment["BOX64_LD_LIBRARY_PATH"])
         assertEquals(expected, gameEnvironment["BOX64_LD_LIBRARY_PATH"])
+        assertEquals(wineLib.absolutePath, bootEnvironment["WINEDLLPATH"])
+        assertEquals(File(wineBin, "wine64").absolutePath, bootEnvironment["WINELOADER"])
+        assertEquals(File(wineBin, "wineserver").absolutePath, bootEnvironment["WINESERVER"])
+        assertEquals(wineLib.absolutePath, gameEnvironment["WINEDLLPATH"])
+        assertEquals(File(wineBin, "wine64").absolutePath, gameEnvironment["WINELOADER"])
+        assertEquals(File(wineBin, "wineserver").absolutePath, gameEnvironment["WINESERVER"])
         assertEquals(File(root, "nativeLibraryDir").absolutePath, bootEnvironment["LD_LIBRARY_PATH"])
         assertEquals(File(root, "nativeLibraryDir").absolutePath, gameEnvironment["LD_LIBRARY_PATH"])
         root.deleteRecursively()
