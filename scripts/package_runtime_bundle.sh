@@ -35,7 +35,7 @@ if find "$WINE_DIR/lib/x86_64-linux-gnu" -xtype l -print -quit | grep -q .; then
   echo "Guest glibc contains a broken symlink; refusing to package an incomplete loader closure." >&2
   exit 1
 fi
-check_elf(){ local f="$1" machine="$2"; command -v readelf >/dev/null || { echo "readelf is required for ABI provenance validation." >&2; exit 1; }; readelf -h "$f" | grep -Eq "Class:.*ELF64" || { echo "ELF is not ELF64: $f" >&2;exit 1; }; readelf -h "$f" | grep -Eq "Machine:.*$machine" || { echo "Unexpected ELF machine (expected $machine): $f" >&2;exit 1;}; }
+check_elf(){ local f="$1" machine="$2"; command -v readelf >/dev/null || { echo "readelf is required for ABI provenance validation." >&2; exit 1; }; readelf -h "$f" | grep -Eq "Class:.*ELF64" || { echo "ELF is not ELF64: $f" >&2;exit 1; }; readelf -h "$f" | grep -Eq "Machine:.*$machine" || { echo "Unexpected ELF machine (expected $machine): $f" >&2;exit 1; }; readelf -d "$f" >/dev/null 2>&1 || { echo "Unable to inspect dynamic dependencies: $f" >&2; exit 1; }; }
 check_elf "$BOX64" "AArch64"
 check_elf "$WINE_DIR/bin/wine64" "Advanced Micro Devices X86-64"
 check_elf "$WINE_DIR/bin/wineserver" "Advanced Micro Devices X86-64"
