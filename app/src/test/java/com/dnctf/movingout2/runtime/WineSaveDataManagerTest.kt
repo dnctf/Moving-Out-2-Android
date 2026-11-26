@@ -33,7 +33,7 @@ class WineSaveDataManagerTest {
             }
             try { WineSaveDataManager.import(archive, File(root, "LocalLow")); fail("Zip-slip path must be rejected") }
             catch (_: java.io.IOException) { }
-            assertTrue(!File(root.parentFile, "outside.txt").exists())
+            assertTrue(!File(root, "outside.txt").exists())
         } finally { root.deleteRecursively() }
     }
 }
