@@ -70,6 +70,13 @@ class RuntimeBundleValidator {
     }
    }
    if (libs != null) {
+    val unixModules = File(libs, "x86_64-unix")
+    listOf("ntdll.so", "win32u.so", "winevulkan.so").forEach { module ->
+     val file = File(unixModules, module)
+     if (!file.isFile || file.length() <= 0L || !RuntimeBinaryInspector.matches(file, RuntimeBinaryInspector.ELF64_X86_64_SHARED)) {
+      blockers += "Required Wine UNIX module is missing or invalid: x86_64-unix/$module."
+     }
+    }
     val guestLibraries = libs.walkTopDown().filter { it.isFile && (it.name.endsWith(".so", true) || it.name.contains(".so.", true)) }.toList()
     if (guestLibraries.isEmpty()) blockers += "Wine guest library directory contains no shared ELF objects."
     guestLibraries.forEach { library ->
