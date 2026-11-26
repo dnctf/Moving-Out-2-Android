@@ -51,6 +51,8 @@ class AndroidExecCapabilityProbeTest {
     @Test fun nativeLibraryProbeReceivesRuntimeSearchPaths() {
         val root = Files.createTempDirectory("exec-probe-env").toFile()
         val bundleRoot = File(root, "bundle")
+        val glibcDirectory = File(bundleRoot, "wine/lib/x86_64-linux-gnu").apply { mkdirs() }
+        val wineLibraryDirectory = File(bundleRoot, "wine/lib/wine").apply { mkdirs() }
         val appData = File(bundleRoot, "box64/bin/box64").apply {
             parentFile?.mkdirs()
             writeBytes(arm64Elf())
@@ -70,7 +72,10 @@ class AndroidExecCapabilityProbeTest {
         val result = probe.probe(appData)
         assertTrue(result.allowed)
         assertEquals(File(bundleRoot, "wine/bin").absolutePath, environment["BOX64_PATH"])
-        assertEquals(File(bundleRoot, "wine/lib/wine").absolutePath, environment["BOX64_LD_LIBRARY_PATH"])
+        assertEquals(
+            glibcDirectory.absolutePath + ":" + wineLibraryDirectory.absolutePath,
+            environment["BOX64_LD_LIBRARY_PATH"]
+        )
         assertEquals(nativeDir.absolutePath, environment["LD_LIBRARY_PATH"])
         root.deleteRecursively()
     }
