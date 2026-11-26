@@ -2,13 +2,26 @@ package com.dnctf.movingout2.installation
 
 import java.io.File
 
-/** Shared case-insensitive Unity data-folder resolution for registry discovery and metadata. */
+/** Case-insensitive Unity player discovery by executable + matching *_Data directory. */
 internal object GameRegistryLayout {
-    fun executable(root: File, expectedName: String = "mo2.exe"): File? =
-        findChild(root, expectedName)?.takeIf { it.isFile }
+    fun executable(root: File, expectedName: String? = null): File? {
+        if (!root.isDirectory) return null
+        if (expectedName != null) return findChild(root, expectedName)?.takeIf { it.isFile }
+        val unityPlayer = findChild(root, "UnityPlayer.dll")?.takeIf { it.isFile } ?: return null
+        val gameAssembly = findChild(root, "GameAssembly.dll")?.takeIf { it.isFile } ?: return null
+        return root.listFiles()?.asSequence()
+            ?.filter { it.isFile && it.extension.equals("exe", ignoreCase = true) }
+            ?.filterNot { it.name.equals("UnityCrashHandler64.exe", ignoreCase = true) }
+            ?.sortedBy { it.name }
+            ?.firstOrNull { candidate ->
+                val data = findChild(root, UnityDataDirectoryLocator.directoryName(candidate.name))
+                data?.isDirectory == true && unityPlayer.isFile && gameAssembly.isFile
+            }
+    }
 
-    fun dataDirectory(root: File, executableName: String = "mo2.exe"): File? {
-        val exe = executable(root, executableName) ?: return null
+    fun dataDirectory(root: File, executableName: String? = null): File? {
+        val exe = if (executableName == null) executable(root) else executable(root, executableName)
+            ?: return null
         return findChild(root, UnityDataDirectoryLocator.directoryName(exe.name))?.takeIf { it.isDirectory }
     }
 
