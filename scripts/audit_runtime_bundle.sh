@@ -38,6 +38,18 @@ while IFS= read -r -d '' lib; do
   count=$((count+1))
 done < <(find -L "$ROOT/wine/lib/wine" -type f -name '*.so*' -print0)
 (( count > 0 )) || { echo "No Wine x86_64 shared objects found." >&2; exit 1; }
+GLIBC_DIR="$ROOT/wine/lib/x86_64-linux-gnu"
+[[ -s "$GLIBC_DIR/libc.so.6" ]] || { echo "Guest glibc libc.so.6 missing." >&2; exit 1; }
+glibc_count=0
+while IFS= read -r -d '' lib; do
+  check_shared "$lib" 'X86-64'
+  glibc_count=$((glibc_count+1))
+done < <(find "$GLIBC_DIR" -type f -name '*.so*' -print0)
+(( glibc_count > 0 )) || { echo "No guest glibc shared objects found." >&2; exit 1; }
+if find "$ROOT/wine/lib" -type l -print -quit | grep -q .; then
+  echo "Symlink found in wine/lib." >&2
+  exit 1
+fi
 for dll in dxvk/x64/d3d11.dll dxvk/x64/dxgi.dll wine/lib/wine/x86_64-windows/xinput1_3.dll wine/lib/wine/x86_64-windows/xinput1_4.dll wine/lib/wine/x86_64-windows/xinput9_1_0.dll wine/lib/wine/x86_64-windows/vcruntime140.dll wine/lib/wine/x86_64-windows/vcruntime140_1.dll wine/lib/wine/x86_64-windows/msvcp140.dll; do
   check_pe "$ROOT/$dll"
 done
