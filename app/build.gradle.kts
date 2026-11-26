@@ -25,6 +25,13 @@ android {
         }
     }
 
+    // Preserve opaque Windows/runtime payload bytes if a developer stages optional
+    // user-supplied assets here. The game itself remains SAF-imported (not embedded
+    // in the APK) to avoid a 1.4 GiB APK and redistribution of proprietary game data.
+    androidResources {
+        noCompress += listOf("exe", "dll", "bundle", "bank", "tar", "xz", "zst")
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
