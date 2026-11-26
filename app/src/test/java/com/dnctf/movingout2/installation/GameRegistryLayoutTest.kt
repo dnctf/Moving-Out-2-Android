@@ -10,6 +10,8 @@ class GameRegistryLayoutTest {
         val root = Files.createTempDirectory("mo2-registry-layout").toFile()
         try {
             File(root, "mo2.exe").writeBytes(byteArrayOf(1))
+            File(root, "UnityPlayer.dll").writeBytes(byteArrayOf(1))
+            File(root, "GameAssembly.dll").writeBytes(byteArrayOf(1))
             val metadata = File(root, "mo2_Data/il2cpp_data/Metadata/global-metadata.dat")
             requireNotNull(metadata.parentFile).mkdirs()
             metadata.writeBytes(byteArrayOf(0xaf.toByte(), 0x1b, 0xb1.toByte(), 0xfa.toByte()))
@@ -28,6 +30,8 @@ class GameRegistryLayoutTest {
         val root = Files.createTempDirectory("mo2-registry-case").toFile()
         try {
             File(root, "MO2.EXE").writeBytes(byteArrayOf(1))
+            File(root, "UnityPlayer.dll").writeBytes(byteArrayOf(1))
+            File(root, "GameAssembly.dll").writeBytes(byteArrayOf(1))
             val metadata = File(root, "MO2_DATA/IL2CPP_DATA/METADATA/GLOBAL-METADATA.DAT")
             requireNotNull(metadata.parentFile).mkdirs()
             metadata.writeBytes(byteArrayOf(1))
@@ -35,6 +39,20 @@ class GameRegistryLayoutTest {
             assertEquals("MO2.EXE", exe?.name)
             assertEquals("MO2_DATA", GameRegistryLayout.dataDirectory(root)?.name)
             assertEquals(metadata.canonicalFile, GameRegistryLayout.metadataFile(root, exe!!.name).canonicalFile)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun discoversArbitraryUnityExecutableAndMatchingDataDirectory() {
+        val root = Files.createTempDirectory("unity-registry-flexible").toFile()
+        try {
+            File(root, "MovingOut2-Win64.exe").writeBytes(byteArrayOf(1))
+            File(root, "UnityPlayer.dll").writeBytes(byteArrayOf(1))
+            File(root, "GameAssembly.dll").writeBytes(byteArrayOf(1))
+            File(root, "MovingOut2-Win64_Data").mkdirs()
+            assertEquals("MovingOut2-Win64.exe", GameRegistryLayout.executable(root)?.name)
+            assertEquals("MovingOut2-Win64_Data", GameRegistryLayout.dataDirectory(root)?.name)
         } finally {
             root.deleteRecursively()
         }
