@@ -2,6 +2,7 @@ package com.dnctf.movingout2.runtime
 
 import android.content.Context
 import com.dnctf.movingout2.input.RuntimeInputBridge
+import org.json.JSONObject
 import java.io.File
 import java.io.FileWriter
 import java.io.IOException
@@ -176,7 +177,7 @@ class WineSessionSupervisor(
     ),
     private val onSessionFinished: (() -> Unit)? = null
 ) {
-    val prefix: File = File(context.filesDir, "wineprefix")
+    val prefix: File = File(context.filesDir, "wine_prefixes/$gameId")
     private val sharedInput: File = File(context.filesDir, "xinput_shm.bin")
     private val stateRef = AtomicReference(WineSessionState.IDLE)
     private val validator = RuntimeBundleValidator()
@@ -272,16 +273,22 @@ class WineSessionSupervisor(
 
         // Build environment
         val hostLibDir = File(context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
+        val diagnosticsDirectory = File(context.filesDir, "diagnostics").apply { mkdirs() }
+        val turnipIcd = prepareTurnipIcd()
+        val turnipDirectory = turnipIcd?.let { File(bundleRoot, "turnip") }
         val env = WineLaunchCommand.environment(
             prefix = prefix,
             sharedInput = sharedInput,
             hostLibraryDirectory = hostLibDir,
             fpsCap = options.fpsCap,
+            turnipIcd = turnipIcd,
+            dxvkDirectory = File(bundleRoot, "dxvk/x64").takeIf { options.useDxvk && it.isDirectory },
             guestLibraryDirectory = report.libraryDirectory,
             guestGlibcDirectory = report.guestGlibcDirectory,
             guestBinaryDirectory = wineCandidate.parentFile,
-            dxvkDirectory = File(bundleRoot, "dxvk/x64").takeIf { options.useDxvk && it.isDirectory },
-            useDxvk = options.useDxvk
+            useDxvk = options.useDxvk,
+            additionalHostLibraryDirectory = turnipDirectory,
+            diagnosticsDirectory = diagnosticsDirectory
         ).toMutableMap()
         env.putAll(options.environmentOverrides)
         activeSessionEnvironment = env.toMap()
@@ -310,7 +317,10 @@ class WineSessionSupervisor(
         // 4. LAUNCHING_TARGET
         transitionTo(WineSessionState.LAUNCHING_TARGET)
         val zPath = WineLaunchCommand.toWineZPath(gameExe.absolutePath)
-        val targetArgs = WineLaunchCommand.arguments(wineCandidate.absolutePath, zPath, options.width, options.height)
+        val playerLog = File(context.filesDir, "diagnostics/mo2_player.log")
+        val targetArgs = WineLaunchCommand.arguments(
+            wineCandidate.absolutePath, zPath, options.width, options.height, playerLog
+        )
         val targetProc = try {
             runner.start(activeBox64, targetArgs, env, gameExe.parentFile ?: prefix, "BOX64-WINE")
         } catch (e: Exception) {
@@ -329,7 +339,7 @@ class WineSessionSupervisor(
 
     private fun bootstrapPrefix(box64: File, wine: File, guestLibraryDirectory: File?, guestGlibcDirectory: File?): Boolean {
         // Migrate the previous per-game prefix without discarding user registry state.
-        val legacyPrefix = File(context.filesDir, "wine_prefixes/$gameId")
+        val legacyPrefix = File(context.filesDir, "wineprefix")
         if (!prefix.exists() && legacyPrefix.isDirectory) {
             val prefixParent = prefix.parentFile
             if (prefixParent != null && !prefixParent.isDirectory && !prefixParent.mkdirs()) return false
@@ -415,6 +425,42 @@ class WineSessionSupervisor(
                 "wineboot invocation threw: ${e.message}"))
             false
         }
+    }
+
+    /**
+     * Rewrites the optional Turnip ICD into app-private session storage so its
+     * library_path is absolute and independent of the source archive's layout.
+     */
+    private fun prepareTurnipIcd(): File? {
+        val turnipDirectory = File(bundleRoot, "turnip")
+        val turnipLibrary = File(turnipDirectory, "libvulkan_freedreno.so")
+        val sourceIcd = File(turnipDirectory, "freedreno_icd.aarch64.json")
+        if (!turnipLibrary.exists() && !sourceIcd.exists()) return null
+        if (!turnipLibrary.isFile || turnipLibrary.length() <= 0L || !sourceIcd.isFile || sourceIcd.length() <= 0L) {
+            throw IOException("Turnip bundle is incomplete: both libvulkan_freedreno.so and freedreno_icd.aarch64.json are required.")
+        }
+        val manifest = try {
+            JSONObject(sourceIcd.readText(Charsets.UTF_8))
+        } catch (error: Exception) {
+            throw IOException("Turnip ICD JSON is invalid: ${error.message}", error)
+        }
+        val icd = manifest.optJSONObject("ICD")
+            ?: throw IOException("Turnip ICD JSON is missing the ICD object.")
+        icd.put("library_path", turnipLibrary.absolutePath)
+        val sessionDirectory = File(context.filesDir, "runtime-session")
+        if (!sessionDirectory.mkdirs() && !sessionDirectory.isDirectory) {
+            throw IOException("Unable to create runtime-session directory for Turnip ICD.")
+        }
+        val sessionIcd = File(sessionDirectory, "freedreno_icd.aarch64.json")
+        sessionIcd.writeText(manifest.toString(2), Charsets.UTF_8)
+        val verified = JSONObject(sessionIcd.readText(Charsets.UTF_8))
+            .optJSONObject("ICD")?.optString("library_path").orEmpty()
+        if (verified != turnipLibrary.absolutePath) {
+            throw IOException("Turnip ICD library_path did not persist as an absolute extracted path.")
+        }
+        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor",
+            "Turnip ICD configured with absolute library path: ${turnipLibrary.absolutePath}"))
+        return sessionIcd
     }
 
     private fun configureWinePrefixRegistry() {
