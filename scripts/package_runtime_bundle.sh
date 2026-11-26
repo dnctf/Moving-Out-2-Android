@@ -12,7 +12,7 @@ command -v zip >/dev/null || { echo "zip command is required." >&2; exit 1; }
 for f in "$BOX64" "$WINE_DIR/bin/wine64" "$WINE_DIR/bin/wineserver" "$DXVK_DIR/d3d11.dll" "$DXVK_DIR/dxgi.dll" "$XINPUT_DIR/xinput1_3.dll" "$XINPUT_DIR/xinput1_4.dll" "$XINPUT_DIR/xinput9_1_0.dll"; do [[ -s "$f" ]] || { echo "Required file missing/empty: $f" >&2;exit 1;}; done
 [[ -d "$WINE_DIR/lib/wine" && -n "$(find -L "$WINE_DIR/lib/wine" -type f -size +0c -print -quit)" ]] || { echo "wine/lib/wine is missing or empty" >&2;exit 1; }
 [[ -d "$WINE_DIR/lib/x86_64-linux-gnu" && -s "$WINE_DIR/lib/x86_64-linux-gnu/libc.so.6" ]] || { echo "wine/lib/x86_64-linux-gnu with libc.so.6 is required" >&2; exit 1; }
-check_elf(){ local f="$1" machine="$2"; command -v readelf >/dev/null || { echo "readelf is required for ABI provenance validation." >&2; exit 1; }; readelf -h "$f" | grep -Eq "Machine:.*$machine" || { echo "Unexpected ELF machine (expected $machine): $f" >&2;exit 1;}; }
+check_elf(){ local f="$1" machine="$2"; command -v readelf >/dev/null || { echo "readelf is required for ABI provenance validation." >&2; exit 1; }; readelf -h "$f" | grep -Eq "Class:.*ELF64" || { echo "ELF is not ELF64: $f" >&2;exit 1; }; readelf -h "$f" | grep -Eq "Machine:.*$machine" || { echo "Unexpected ELF machine (expected $machine): $f" >&2;exit 1;}; }
 check_elf "$BOX64" "AArch64"
 check_elf "$WINE_DIR/bin/wine64" "Advanced Micro Devices X86-64"
 check_elf "$WINE_DIR/bin/wineserver" "Advanced Micro Devices X86-64"
