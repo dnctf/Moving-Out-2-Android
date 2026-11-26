@@ -53,13 +53,13 @@ class WineSessionSupervisorTest {
         val wineBin = File(wineRoot, "bin").apply { mkdirs() }
         val glibc = File(wineRoot, "lib/x86_64-linux-gnu").apply { mkdirs() }
         val wineLib = File(wineRoot, "lib/wine").apply { mkdirs() }
-        val bootEnvironment = buildMap {
-            put("WINEDLLPATH", wineLib.absolutePath)
-            put("WINELOADER", File(wineBin, "wine64").absolutePath)
-            put("WINESERVER", File(wineBin, "wineserver").absolutePath)
-            WineLaunchCommand.guestLibrarySearchPath(glibc, wineLib)?.let { put("BOX64_LD_LIBRARY_PATH", it) }
-            put("LD_LIBRARY_PATH", File(root, "nativeLibraryDir").absolutePath)
-        }
+        val bootEnvironment = WineLaunchCommand.bootstrapEnvironment(
+            prefix = File(root, "prefix"),
+            wineBinary = File(wineBin, "wine64"),
+            hostLibraryDirectory = File(root, "nativeLibraryDir"),
+            guestLibraryDirectory = wineLib,
+            guestGlibcDirectory = glibc
+        )
         val gameEnvironment = WineLaunchCommand.environment(
             File(root, "prefix"), File(root, "xinput_shm.bin"), File(root, "nativeLibraryDir"), 30,
             guestLibraryDirectory = wineLib, guestGlibcDirectory = glibc,
