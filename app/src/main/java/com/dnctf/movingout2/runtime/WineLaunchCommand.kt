@@ -59,7 +59,9 @@ object WineLaunchCommand {
                 add("dxgi=b")
             }
             add("steam_api64=b")
-            add("xinput1_3,xinput1_4,xinput9_1_0=n,b")
+            add("xinput1_3,xinput1_4=n,b")
+            add("xinput9_1_0=n,b")
+            add("UnityCrashHandler64.exe=d")
         }.joinToString(";")
         val result = linkedMapOf(
             "WINEARCH" to "win64",
@@ -75,6 +77,8 @@ object WineLaunchCommand {
             "PULSE_LATENCY_MSEC" to "60",
             "DXVK_STATE_CACHE" to "1",
             "DXVK_FRAME_RATE" to fpsCap.coerceIn(15, 240).toString(),
+            "DXVK_CONFIG_FILE" to File(prefix, "dxvk.conf").absolutePath,
+            "DXVK_SHADER_CACHE_PATH" to File(prefix.parentFile ?: prefix, "dxvk-cache").absolutePath,
             "LD_LIBRARY_PATH" to listOfNotNull(
                 hostLibraryDirectory.takeIf { it.isDirectory },
                 additionalHostLibraryDirectory?.takeIf { it.isDirectory }
@@ -97,6 +101,26 @@ object WineLaunchCommand {
         }
         if (diagnosticHud && useDxvk) result["DXVK_HUD"] = "fps,devinfo"
         return result
+    }
+
+    /** Creates the DXVK configuration atomically; shader cache remains app-private. */
+    fun writeDxvkConfig(prefix: File, cacheDirectory: File): File {
+        if (!prefix.exists() && !prefix.mkdirs()) throw java.io.IOException("Unable to create Wine prefix.")
+        if (!cacheDirectory.exists() && !cacheDirectory.mkdirs()) throw java.io.IOException("Unable to create DXVK cache directory.")
+        val config = File(prefix, "dxvk.conf")
+        val content = "d3d11.maxFeatureLevel = 11_1\\n" +
+            "dxvk.enableAsync = False\\n" +
+            "dxvk.useStateCache = True\\n" +
+            "dxvk.logLevel = info\\n" +
+            "dxvk.shaderCache = True\\n"
+        val temporary = File(prefix, "dxvk.conf.tmp")
+        temporary.writeText(content, Charsets.UTF_8)
+        if (config.exists() && !config.delete()) throw java.io.IOException("Unable to replace dxvk.conf.")
+        if (!temporary.renameTo(config)) {
+            temporary.delete()
+            throw java.io.IOException("Unable to activate dxvk.conf.")
+        }
+        return config
     }
 
     fun winebootArguments(winePath: String): List<String> =
