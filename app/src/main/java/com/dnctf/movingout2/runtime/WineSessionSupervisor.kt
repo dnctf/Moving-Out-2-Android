@@ -245,7 +245,7 @@ class WineSessionSupervisor(
 
         // 2. BOOTSTRAPPING_PREFIX
         transitionTo(WineSessionState.BOOTSTRAPPING_PREFIX)
-        val bootstrapOk = bootstrapPrefix(activeBox64, wineCandidate, report.libraryDirectory)
+        val bootstrapOk = bootstrapPrefix(activeBox64, wineCandidate, report.libraryDirectory, report.guestGlibcDirectory)
         if (!bootstrapOk) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Prefix bootstrap failed"))
             transitionTo(WineSessionState.FAILED)
@@ -278,6 +278,7 @@ class WineSessionSupervisor(
             hostLibraryDirectory = hostLibDir,
             fpsCap = options.fpsCap,
             guestLibraryDirectory = report.libraryDirectory,
+            guestGlibcDirectory = report.guestGlibcDirectory,
             guestBinaryDirectory = wineCandidate.parentFile,
             dxvkDirectory = File(bundleRoot, "dxvk/x64").takeIf { options.useDxvk && it.isDirectory },
             useDxvk = options.useDxvk
@@ -326,7 +327,7 @@ class WineSessionSupervisor(
         return true
     }
 
-    private fun bootstrapPrefix(box64: File, wine: File, guestLibraryDirectory: File?): Boolean {
+    private fun bootstrapPrefix(box64: File, wine: File, guestLibraryDirectory: File?, guestGlibcDirectory: File?): Boolean {
         val systemReg = File(prefix, "system.reg")
         val system32 = File(prefix, "drive_c/windows/system32")
         system32.mkdirs()
@@ -344,8 +345,12 @@ class WineSessionSupervisor(
             put("LD_LIBRARY_PATH", context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
             put("BOX64_PATH", wine.parentFile?.absolutePath.orEmpty())
             put("BOX64_DYNAREC", "1")
-            guestLibraryDirectory?.takeIf { it.isDirectory && it.canRead() }?.let {
-                put("BOX64_LD_LIBRARY_PATH", it.absolutePath)
+            val guestLibraryPaths = listOfNotNull(
+                guestGlibcDirectory?.takeIf { it.isDirectory && it.canRead() },
+                guestLibraryDirectory?.takeIf { it.isDirectory && it.canRead() }
+            ).map { it.absolutePath }
+            if (guestLibraryPaths.isNotEmpty()) {
+                put("BOX64_LD_LIBRARY_PATH", guestLibraryPaths.joinToString(":"))
             }
         }
 
