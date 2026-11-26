@@ -120,10 +120,10 @@ jobs:
           for dll in xinput1_3.dll xinput1_4.dll xinput9_1_0.dll; do
             EXPORTS="$(x86_64-w64-mingw32-objdump -p "native/wine-xinput/out/$dll")"
             grep -Eq 'XInput(GetState|SetState|GetCapabilities|Enable|GetBatteryInformation|GetKeystroke)' <<<"$EXPORTS"
-            grep -Eq '\\[[[:space:]]*100\\][[:space:]]+XInputGetStateEx' <<<"$EXPORTS"
-            grep -Eq '\\[[[:space:]]*101\\][[:space:]]+XInputWaitForGuideButton' <<<"$EXPORTS"
-            grep -Eq '\\[[[:space:]]*102\\][[:space:]]+XInputCancelGuideButton' <<<"$EXPORTS"
-            grep -Eq '\\[[[:space:]]*103\\][[:space:]]+XInputPowerOffController' <<<"$EXPORTS"
+            grep -Eq '\[[[:space:]]*100\][[:space:]]+XInputGetStateEx' <<<"$EXPORTS"
+            grep -Eq '\[[[:space:]]*101\][[:space:]]+XInputWaitForGuideButton' <<<"$EXPORTS"
+            grep -Eq '\[[[:space:]]*102\][[:space:]]+XInputCancelGuideButton' <<<"$EXPORTS"
+            grep -Eq '\[[[:space:]]*103\][[:space:]]+XInputPowerOffController' <<<"$EXPORTS"
           done
       - name: Build and package Box64 native executable
         shell: bash
