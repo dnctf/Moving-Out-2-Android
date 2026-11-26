@@ -180,7 +180,7 @@ jobs:
           install -m 0755 "$WINE64" "$RUNNER_TEMP/runtime-input/wine/bin/wine64"
           install -m 0755 "$WINESERVER" "$RUNNER_TEMP/runtime-input/wine/bin/wineserver"
           cp -aL "$WINE_LIB_DIR" "$RUNNER_TEMP/runtime-input/wine/lib/wine"
-          # Stage the guest glibc loader closure required by Ubuntu x86_64 Wine.
+          # Resolve every DT_NEEDED recursively from Wine ELF roots. Native graphics/X11/Vulkan wrappers remain host-side.
           GUEST_GLIBC_DIR="$RUNNER_TEMP/runtime-input/wine/lib/x86_64-linux-gnu"
           mkdir -p "$GUEST_GLIBC_DIR"
           REQUIRED_GLIBC=(libc.so.6 libm.so.6 libdl.so.2 libpthread.so.0 librt.so.1 libresolv.so.2 libgcc_s.so.1 ld-linux-x86-64.so.2)
@@ -190,30 +190,9 @@ jobs:
             [[ -e "$source" ]] || { echo "::error::Required guest glibc object missing: $name"; exit 1; }
             cp -aL "$source" "$GUEST_GLIBC_DIR/$name"
           done
-          # Include every additional direct DT_NEEDED dependency reported by ldd.
-          for binary in "$WINE64" "$WINESERVER" $(find "$RUNNER_TEMP/runtime-input/wine/lib/wine/x86_64-unix" -type f -name "*.so*" -print); do
-            LDD_OUTPUT="$(ldd "$binary")"
-            printf '%s\n' "$LDD_OUTPUT" | tee "$RUNNER_TEMP/ldd-$(basename "$binary").txt"
-            if grep -q "not found" <<<"$LDD_OUTPUT"; then
-              echo "::error::Unresolved DT_NEEDED dependency for $binary"
-              exit 1
-            fi
-            while IFS= read -r dependency; do
-              [[ -n "$dependency" && -f "$dependency" ]] || continue
-              case "$(basename "$dependency")" in
-                libGL*|libGLX*|libEGL*|libGLES*|libvulkan*|libX11*|libXext*|libXrender*|libxcb*|libwayland*|libandroid*) continue ;;
-              esac
-              cp -aL "$dependency" "$GUEST_GLIBC_DIR/$(basename "$dependency")"
-            done < <(printf '%s\n' "$LDD_OUTPUT" | awk '/=> \/[^ ]+/ {print $3} /^\// {print $1}' | sort -u)
-          done
-          for library in "$GUEST_GLIBC_DIR"/*.so*; do
-            [[ -f "$library" && ! -L "$library" ]] || { echo "::error::Guest glibc object is not a regular file: $library"; exit 1; }
-            readelf -h "$library" | grep -Eq 'Class:.*ELF64'
-            readelf -h "$library" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
-            readelf -h "$library" | grep -Eq 'Type:.*DYN'
-          done
+          chmod +x scripts/stage_wine_dependencies.sh
+          scripts/stage_wine_dependencies.sh "$RUNNER_TEMP/runtime-input/wine"
           if find "$RUNNER_TEMP/runtime-input/wine/lib" -type l -print -quit | grep -q .; then echo "::error::Symlink found in staged Wine libraries."; exit 1; fi
-          find -L "$RUNNER_TEMP/runtime-input/wine/lib/wine" -type f -name '*.so*' -print -quit | grep -q .
           echo "Resolved Wine ELF launchers:"
           readelf -h "$WINE64" | grep -E 'Class:|Machine:'
           readelf -h "$WINESERVER" | grep -E 'Class:|Machine:'
