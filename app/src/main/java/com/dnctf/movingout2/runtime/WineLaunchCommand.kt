@@ -108,11 +108,13 @@ object WineLaunchCommand {
         if (!prefix.exists() && !prefix.mkdirs()) throw java.io.IOException("Unable to create Wine prefix.")
         if (!cacheDirectory.exists() && !cacheDirectory.mkdirs()) throw java.io.IOException("Unable to create DXVK cache directory.")
         val config = File(prefix, "dxvk.conf")
-        val content = "d3d11.maxFeatureLevel = 11_1\\n" +
-            "dxvk.enableAsync = False\\n" +
-            "dxvk.useStateCache = True\\n" +
-            "dxvk.logLevel = info\\n" +
-            "dxvk.shaderCache = True\\n"
+        val content = listOf(
+            "d3d11.maxFeatureLevel = 11_1",
+            "dxvk.enableAsync = False",
+            "dxvk.useStateCache = True",
+            "dxvk.logLevel = info",
+            "dxvk.shaderCache = True"
+        ).joinToString("\\n", postfix = "\\n")
         val temporary = File(prefix, "dxvk.conf.tmp")
         temporary.writeText(content, Charsets.UTF_8)
         if (config.exists() && !config.delete()) throw java.io.IOException("Unable to replace dxvk.conf.")
