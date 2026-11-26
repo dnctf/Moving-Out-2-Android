@@ -345,7 +345,7 @@ class MainActivity : Activity() {
     }
 
     private fun wineLocalLowDirectory() =
-        File(filesDir, "runtime/wineprefix/drive_c/users/steamuser/AppData/LocalLow")
+        File(filesDir, "wine_prefixes/moving-out-2/drive_c/users/steamuser/AppData/LocalLow")
 
     private fun openSaveDataExport() {
         Thread({
@@ -841,7 +841,7 @@ class MainActivity : Activity() {
                         val archive = File(cacheDir, "wine-save-import.zip")
                         contentResolver.openInputStream(uri)?.use { input -> archive.outputStream().use { input.copyTo(it) } }
                             ?: error("Save archive cannot be opened.")
-                        val localLow = File(filesDir, "runtime/wineprefix/drive_c/users/steamuser/AppData/LocalLow")
+                        val localLow = File(filesDir, "wine_prefixes/moving-out-2/drive_c/users/steamuser/AppData/LocalLow")
                         val bytes = com.dnctf.movingout2.runtime.WineSaveDataManager.import(archive, localLow)
                         archive.delete()
                         bytes
