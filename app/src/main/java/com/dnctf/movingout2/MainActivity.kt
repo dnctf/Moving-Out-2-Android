@@ -19,6 +19,9 @@ import android.widget.Toast
 import android.widget.CheckBox
 import android.widget.Button
 import android.widget.ScrollView
+import android.view.ViewGroup
+import android.os.Handler
+import android.os.Looper
 import com.dnctf.movingout2.runtime.RuntimeDiagnostic
 import com.dnctf.movingout2.runtime.RuntimeDiagnostics
 import com.dnctf.movingout2.compatibility.DeviceDiagnosticsProvider
@@ -69,6 +72,7 @@ class MainActivity : Activity() {
     private var pendingDiagnosticZip: File? = null
     private val pickDiagnosticDestination = 1004
     private lateinit var inputCoordinator: ControllerInputCoordinator
+    private var activeVirtualController: VirtualControllerView? = null
     private var controllerProfile = ControllerProfile.presets.first()
     private var controllerProfileGameKey = "moving-out-2"
     private var pendingProfileExport: String? = null
@@ -96,6 +100,7 @@ class MainActivity : Activity() {
         graphicsStatus = views.graphicsStatus
         playButton = views.playButton
         setContentView(views.root)
+        runtimeStatus.setOnLongClickListener { showLiveRuntimeLogs(); true }
         status.text = "Starting launcher…"
         runtimeStatus.text = "Checking runtime installation in background…"
         graphicsStatus.text = "Device diagnostics are starting…"
@@ -173,6 +178,76 @@ class MainActivity : Activity() {
         controllerProfileGameKey = nextKey
         controllerProfile = nextProfile
         inputCoordinator.setProfile(nextProfile)
+    }
+
+    /** Long-press the Runtime status panel to inspect the live combined process/player log tail. */
+    private fun showLiveRuntimeLogs() {
+        val text = TextView(this).apply {
+            textSize = 11f
+            setTextIsSelectable(true)
+            setPadding(18, 12, 18, 12)
+        }
+        val scroll = ScrollView(this).apply { addView(text) }
+        val dialog = AlertDialog.Builder(this).setTitle("Live Runtime Logs")
+            .setView(scroll).setPositiveButton("Close", null).create()
+        val handler = Handler(Looper.getMainLooper())
+        val refresh = object : Runnable {
+            override fun run() {
+                val candidates = listOf(
+                    File(filesDir, "diagnostics/runtime-process.log"),
+                    File(filesDir, "diagnostics/wine_session.log"),
+                    File(filesDir, "diagnostics/mo2_player.log")
+                )
+                val playerLogs = File(filesDir, "game_data").walkTopDown().maxDepth(12)
+                    .filter { it.isFile && it.name.equals("Player.log", true) }.toList()
+                val content = buildString {
+                    (candidates + playerLogs).distinct().forEach { file ->
+                        append("===== ").append(file.absolutePath).append(" =====\n")
+                        append(if (file.isFile) runCatching {
+                            java.io.RandomAccessFile(file, "r").use { raf ->
+                                val length = raf.length()
+                                val start = (length - 48L * 1024L).coerceAtLeast(0L)
+                                raf.seek(start)
+                                ByteArray((length - start).toInt()).also { raf.readFully(it) }.toString(Charsets.UTF_8)
+                            }
+                        }.getOrElse { "Read error: ${it.message}" } else "(not created yet)")
+                        append("\n\n")
+                    }
+                }
+                text.text = content.ifBlank { "No process or Player.log output has been captured yet." }
+                if (dialog.isShowing) handler.postDelayed(this, 1000L)
+            }
+        }
+        dialog.setOnDismissListener { handler.removeCallbacks(refresh) }
+        dialog.show()
+        handler.post(refresh)
+    }
+
+    private fun attachVirtualGamepad() {
+        if (!::inputCoordinator.isInitialized || activeVirtualController != null) return
+        val settings = LauncherSettings.load(this)
+        if (!settings.controllerEnabled) return
+        val pad = VirtualControllerView(this, controllerProfile.deadzone) { state ->
+            inputCoordinator.updateTouchState(state)
+        }.apply {
+            configure(settings.controllerScale / 100f, settings.controllerOpacity / 100f,
+                (settings.controllerOffsetX - 50) / 100f, (settings.controllerOffsetY - 50) / 100f)
+            setHapticsEnabled(settings.controllerHaptics)
+            setOverlayVisible(true)
+            elevation = 1000f
+        }
+        activeVirtualController = pad
+        addContentView(pad, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+    }
+
+    private fun removeVirtualGamepad() {
+        activeVirtualController?.let { pad ->
+            (pad.parent as? ViewGroup)?.removeView(pad)
+        }
+        activeVirtualController = null
+        if (::inputCoordinator.isInitialized) inputCoordinator.clearTouch()
     }
 
     private fun exportDiagnostics() {
@@ -661,6 +736,7 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed) {
                         activeWineSession = null
+                        removeVirtualGamepad()
                         playButton.text = "Play Moving Out 2"
                         playButton.isEnabled = lastLaunchReady
                         playButton.alpha = if (lastLaunchReady) 1f else 0.55f
@@ -686,6 +762,7 @@ class MainActivity : Activity() {
                 }
                 if (started.getOrDefault(false) && supervisor.state == WineSessionState.RUNNING) {
                     activeWineSession = supervisor
+                    attachVirtualGamepad()
                     playButton.text = "Stop Game Session"
                     playButton.isEnabled = true
                     playButton.alpha = 1f
