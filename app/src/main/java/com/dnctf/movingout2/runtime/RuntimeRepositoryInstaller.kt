@@ -15,6 +15,9 @@ import java.security.MessageDigest
 import java.util.Locale
 import java.util.zip.ZipFile
 
+internal fun shouldInstallBundledRuntime(installedVersion: String?, bundledVersion: String?): Boolean =
+    !bundledVersion.isNullOrBlank() && installedVersion != bundledVersion
+
 internal fun runtimeRangeHeader(offset: Long): String? =
     if (offset > 0L) "bytes=$offset-" else null
 
