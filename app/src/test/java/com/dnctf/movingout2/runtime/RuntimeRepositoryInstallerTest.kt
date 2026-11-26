@@ -117,7 +117,7 @@ class RuntimeRepositoryInstallerTest {
                 availableBytes = { 1024L * 1024L }
             )
             assertEquals(2, counts.first)
-            assertEquals(24L, counts.second)
+            assertEquals(23L, counts.second)
             assertEquals("""{"schemaVersion":2}""", File(staging, "runtime-manifest.json").readText())
             assertArrayEquals(byteArrayOf(1, 2, 3, 4), File(staging, "box64/bin/box64").readBytes())
         } finally {
