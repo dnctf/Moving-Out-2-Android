@@ -25,14 +25,21 @@ class WineRuntimeLauncherTest {
     }
 
     @Test fun configuresDxvkDiagnosticLogPathAndAdditionalHostLibraryPath() {
-        val env = WineLaunchCommand.environment(
-            File("/prefix"), File("/xinput_shm.bin"), File("/native/lib"), 60,
-            dxvkDirectory = File("/dxvk"), diagnosticsDirectory = File("/diagnostics"),
-            additionalHostLibraryDirectory = File("/turnip")
-        )
-        assertEquals("/native/lib:/turnip", env["LD_LIBRARY_PATH"])
-        assertEquals("info", env["DXVK_LOG_LEVEL"])
-        assertEquals("/diagnostics", env["DXVK_LOG_PATH"])
+        val root = java.nio.file.Files.createTempDirectory("dxvk-log-path").toFile()
+        val nativeLib = File(root, "native/lib").apply { mkdirs() }
+        val turnip = File(root, "turnip").apply { mkdirs() }
+        try {
+            val env = WineLaunchCommand.environment(
+                File(root, "prefix"), File(root, "xinput_shm.bin"), nativeLib, 60,
+                dxvkDirectory = File(root, "dxvk"), diagnosticsDirectory = File(root, "diagnostics"),
+                additionalHostLibraryDirectory = turnip
+            )
+            assertEquals(nativeLib.absolutePath + ":" + turnip.absolutePath, env["LD_LIBRARY_PATH"])
+            assertEquals("info", env["DXVK_LOG_LEVEL"])
+            assertEquals(File(root, "diagnostics").absolutePath, env["DXVK_LOG_PATH"])
+        } finally {
+            root.deleteRecursively()
+        }
     }
 
     @Test fun includesRuntimeEnvironmentAndOptionalTurnip() {
