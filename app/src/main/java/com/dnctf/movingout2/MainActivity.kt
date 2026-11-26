@@ -644,6 +644,8 @@ class MainActivity : Activity() {
             File(root, "dxvk/x64").takeIf { it.isDirectory }
         )
         Thread({
+            // Consume the one-shot auto-launch token before any Wine process is started.
+            launchReadinessCoordinator.markAutoLaunched()
             val started = runCatching { supervisor.startSession(gameExe, runtimeSettings.launchOptions) }
             runOnUiThread {
                 if (isFinishing || isDestroyed) {
