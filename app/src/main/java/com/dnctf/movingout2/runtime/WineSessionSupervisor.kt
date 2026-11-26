@@ -331,7 +331,8 @@ class WineSessionSupervisor(
         // Migrate the previous per-game prefix without discarding user registry state.
         val legacyPrefix = File(context.filesDir, "wine_prefixes/$gameId")
         if (!prefix.exists() && legacyPrefix.isDirectory) {
-            if (!prefix.parentFile?.isDirectory.orFalse() && !prefix.mkdirs()) return false
+            val prefixParent = prefix.parentFile
+            if (prefixParent != null && !prefixParent.isDirectory && !prefixParent.mkdirs()) return false
             if (!legacyPrefix.renameTo(prefix)) {
                 diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
                     "Unable to migrate legacy Wine prefix from ${legacyPrefix.absolutePath}."))
@@ -418,8 +419,6 @@ class WineSessionSupervisor(
             false
         }
     }
-
-    private fun Boolean?.orFalse(): Boolean = this == true
 
     private fun configureWinePrefixRegistry() {
         val userReg = File(prefix, "user.reg")
