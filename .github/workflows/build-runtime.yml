@@ -2,7 +2,7 @@ name: Build Runtime Bundle
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'runtime/**']
     paths:
       - ".github/workflows/build-runtime.yml"
       - ".github/workflows/publish-apk-prerelease.yml"
@@ -30,7 +30,7 @@ on:
       bundle_version:
         description: "Runtime bundle version"
         required: false
-        default: "0.1.1"
+        default: "0.1.2"
         type: string
 
 permissions:
@@ -293,7 +293,7 @@ jobs:
             --wine-dir "$RUNNER_TEMP/runtime-input/wine" \
             --dxvk-dir "$RUNNER_TEMP/runtime-input/dxvk/x64" \
             --xinput-dir "$RUNNER_TEMP/runtime-input/xinput" \
-            --bundle-version "${{ inputs.bundle_version || '0.1.1' }}" \
+            --bundle-version "${{ inputs.bundle_version || '0.1.2' }}" \
             --output "dist/moving-out-2-runtime-arm64-v8a.zip"
           test -s dist/SHA256SUMS.txt
           sha256sum dist/moving-out-2-runtime-arm64-v8a.zip > dist/moving-out-2-runtime-arm64-v8a.zip.sha256
