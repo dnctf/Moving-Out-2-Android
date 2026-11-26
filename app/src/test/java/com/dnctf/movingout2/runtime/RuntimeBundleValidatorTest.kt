@@ -150,6 +150,17 @@ class RuntimeBundleValidatorTest {
                 .put("sha256", directorySha256(libraryDirectory))
                 .put("abi", "DIRECTORY_SHA256_X86_64")
         )
+
+        val glibcDirectory = File(root, "wine/lib/x86_64-linux-gnu").apply { mkdirs() }
+        File(glibcDirectory, "libc.so.6").writeBytes(arm64Elf(machine = 62))
+        components.put(
+            "guestGlibc",
+            JSONObject()
+                .put("included", true)
+                .put("path", "wine/lib/x86_64-linux-gnu")
+                .put("sha256", directorySha256(glibcDirectory))
+                .put("abi", "DIRECTORY_SHA256_X86_64")
+        )
         components.put("turnip", JSONObject().put("included", false))
 
         File(root, "runtime-manifest.json").writeText(
