@@ -84,7 +84,7 @@ class SafGameImporter(
         try {
             copyDirectory(source, staging, 0, counters, totalBytes, onProgress, cancelled, visitedDirectories)
             if (cancelled()) throw IOException("Game import cancelled.")
-            if (!hasUnknownSourceLengths && counters[0] != totalBytes) {
+            if (!safGameImportByteCountMatches(totalBytes, counters[0], hasUnknownSourceLengths)) {
                 throw IOException("SAF source changed or reported inconsistent file sizes during copy: expected $totalBytes bytes, copied ${counters[0]} bytes.")
             }
             if (counters[0] <= 0L) throw IOException("SAF import copied no game data.")
@@ -285,3 +285,9 @@ internal fun safGameImportRequiredSpace(expandedBytes: Long, reserveBytes: Long)
 
 internal fun safGameImportStorageSatisfied(availableBytes: Long, requiredBytes: Long): Boolean =
     requiredBytes >= 0L && availableBytes >= requiredBytes
+
+/** Known-size providers must match the preflight byte count; unknown-size providers are
+ * validated using streamed expansion limits, free-space checks, and game structure checks.
+ */
+internal fun safGameImportByteCountMatches(expectedBytes: Long, copiedBytes: Long, hasUnknownSizes: Boolean): Boolean =
+    hasUnknownSizes || expectedBytes == copiedBytes
