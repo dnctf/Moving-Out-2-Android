@@ -40,6 +40,7 @@ def main():
         "wine64": component(root, "wine64", "wine/bin/wine64", "ELF64_X86_64", True),
         "wineserver": component(root, "wineserver", "wine/bin/wineserver", "ELF64_X86_64", True),
         "wineLib": component(root, "wineLib", "wine/lib/wine", "DIRECTORY_SHA256_X86_64", True, True),
+        "guestGlibc": component(root, "guestGlibc", "wine/lib/x86_64-linux-gnu", "DIRECTORY_SHA256_X86_64", True, True),
         "d3d11": component(root, "d3d11", "dxvk/x64/d3d11.dll", "PE32_PLUS_X86_64", True),
         "dxgi": component(root, "dxgi", "dxvk/x64/dxgi.dll", "PE32_PLUS_X86_64", True),
         "xinput1_3": component(root, "xinput1_3", "wine/lib/wine/x86_64-windows/xinput1_3.dll", "PE32_PLUS_X86_64", True),
