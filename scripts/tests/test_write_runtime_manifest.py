@@ -18,6 +18,9 @@ class RuntimeManifestWriterTest(unittest.TestCase):
             "wine/lib/wine/x86_64-windows/msvcp140.dll",
             "dxvk/x64/d3d11.dll", "dxvk/x64/dxgi.dll",
             "wine/lib/wine/libwine.so",
+            "wine/lib/wine/x86_64-unix/ntdll.so",
+            "wine/lib/wine/x86_64-unix/win32u.so",
+            "wine/lib/wine/x86_64-unix/winevulkan.so",
             "wine/lib/x86_64-linux-gnu/libc.so.6",
             "wine/lib/x86_64-linux-gnu/libm.so.6",
         ]
