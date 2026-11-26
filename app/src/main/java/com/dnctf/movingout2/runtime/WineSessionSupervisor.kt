@@ -277,6 +277,8 @@ class WineSessionSupervisor(
         val diagnosticsDirectory = File(context.filesDir, "diagnostics").apply { mkdirs() }
         val turnipIcd = prepareTurnipIcd()
         val turnipDirectory = turnipIcd?.let { File(bundleRoot, "turnip") }
+        val dxvkCacheDirectory = File(context.cacheDir, "dxvk-shader-cache").apply { mkdirs() }
+        val dxvkConfig = WineLaunchCommand.writeDxvkConfig(prefix, dxvkCacheDirectory)
         val env = WineLaunchCommand.environment(
             prefix = prefix,
             sharedInput = sharedInput,
@@ -291,6 +293,9 @@ class WineSessionSupervisor(
             additionalHostLibraryDirectory = turnipDirectory,
             diagnosticsDirectory = diagnosticsDirectory
         ).toMutableMap()
+        env["DXVK_CONFIG_FILE"] = dxvkConfig.absolutePath
+        env["DXVK_SHADER_CACHE_PATH"] = dxvkCacheDirectory.absolutePath
+        env["USERPROFILE"] = "C:\\users\\steamuser"
         env.putAll(options.environmentOverrides)
         activeSessionEnvironment = env.toMap()
 
@@ -370,6 +375,11 @@ class WineSessionSupervisor(
         val userReg = File(prefix, "user.reg")
         val system32 = File(prefix, "drive_c/windows/system32")
         if (!system32.mkdirs() && !system32.isDirectory) return false
+        val localLow = File(prefix, "drive_c/users/steamuser/AppData/LocalLow")
+        val documents = File(prefix, "drive_c/users/steamuser/Documents")
+        if (!localLow.mkdirs() && !localLow.isDirectory) return false
+        if (!documents.mkdirs() && !documents.isDirectory) return false
+        if (!localLow.canWrite() || !documents.canWrite()) return false
 
         if (systemReg.isFile && systemReg.length() > 0L && userReg.isFile && userReg.length() > 0L) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor",
@@ -385,7 +395,8 @@ class WineSessionSupervisor(
             put("WINEARCH", "win64")
             put("WINEPREFIX", prefix.absolutePath)
             put("WINEDLLPATH", guestLibraryDirectory?.absolutePath.orEmpty())
-            put("WINEDLLOVERRIDES", "xinput1_3,xinput1_4,xinput9_1_0=n,b")
+            put("WINEDLLOVERRIDES", "steam_api64=b;xinput1_3,xinput1_4=n,b;xinput9_1_0=n,b;UnityCrashHandler64.exe=d")
+            put("USERPROFILE", "C:\\users\\steamuser")
             put("LD_LIBRARY_PATH", hostLibraryDir)
             put("BOX64_PATH", wine.parentFile?.absolutePath.orEmpty())
             put("BOX64_DYNAREC", "1")
