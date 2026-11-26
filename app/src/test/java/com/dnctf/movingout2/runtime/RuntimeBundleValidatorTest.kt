@@ -140,8 +140,20 @@ class RuntimeBundleValidatorTest {
         addFile("vcruntime140_1", "wine/lib/wine/x86_64-windows/vcruntime140_1.dll", pe32PlusX64())
         addFile("msvcp140", "wine/lib/wine/x86_64-windows/msvcp140.dll", pe32PlusX64())
 
-        val libraryDirectory = File(root, "wine/lib/wine").apply { mkdirs() }
-        File(libraryDirectory, "module.so").writeBytes(arm64Elf(machine = 62).also { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).putLong(24, 0L) })
+        val libraryDirectory = File(root, "wine/lib/wine").apply {
+            File(this, "x86_64-unix").mkdirs()
+            File(this, "x86_64-windows").mkdirs()
+        }
+        val guestSharedObject = arm64Elf(machine = 62).also {
+            ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).putLong(24, 0L)
+        }
+        File(libraryDirectory, "module.so").writeBytes(guestSharedObject)
+        listOf("ntdll.so", "win32u.so").forEach {
+            File(libraryDirectory, "x86_64-unix/$it").writeBytes(guestSharedObject)
+        }
+        listOf("kernel32.dll", "user32.dll").forEach {
+            File(libraryDirectory, "x86_64-windows/$it").writeBytes(pe32PlusX64())
+        }
         components.put(
             "wineLib",
             JSONObject()
@@ -152,7 +164,8 @@ class RuntimeBundleValidatorTest {
         )
 
         val glibcDirectory = File(root, "wine/lib/x86_64-linux-gnu").apply { mkdirs() }
-        File(glibcDirectory, "libc.so.6").writeBytes(arm64Elf(machine = 62))
+        listOf("ld-linux-x86-64.so.2", "libc.so.6", "libm.so.6", "libpthread.so.0", "libdl.so.2", "librt.so.1")
+            .forEach { File(glibcDirectory, it).writeBytes(guestSharedObject) }
         components.put(
             "guestGlibc",
             JSONObject()
@@ -187,6 +200,38 @@ class RuntimeBundleValidatorTest {
         val report = RuntimeBundleValidator().validate(root)
         assertEquals(RuntimeBundleStatus.READY, report.status)
         assertTrue(report.blockers.toString(), report.isReady)
+        root.deleteRecursively()
+    }
+
+    @Test fun rejectsMissingWineNtdllModuleEvenWhenDirectoryHashMatches() {
+        val root = jsonManifestBundle()
+        val ntdll = File(root, "wine/lib/wine/x86_64-unix/ntdll.so")
+        ntdll.delete()
+        val wineLib = File(root, "wine/lib/wine")
+        val manifest = JSONObject(File(root, "runtime-manifest.json").readText())
+        manifest.getJSONObject("components").getJSONObject("wineLib")
+            .put("sha256", directorySha256(wineLib))
+        File(root, "runtime-manifest.json").writeText(manifest.toString())
+
+        val report = RuntimeBundleValidator().validate(root)
+        assertEquals(RuntimeBundleStatus.INCOMPLETE, report.status)
+        assertTrue(report.blockers.any { it.contains("ntdll.so") })
+        root.deleteRecursively()
+    }
+
+    @Test fun rejectsMissingGuestDynamicLoaderEvenWhenDirectoryHashMatches() {
+        val root = jsonManifestBundle()
+        val loader = File(root, "wine/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2")
+        loader.delete()
+        val glibc = File(root, "wine/lib/x86_64-linux-gnu")
+        val manifest = JSONObject(File(root, "runtime-manifest.json").readText())
+        manifest.getJSONObject("components").getJSONObject("guestGlibc")
+            .put("sha256", directorySha256(glibc))
+        File(root, "runtime-manifest.json").writeText(manifest.toString())
+
+        val report = RuntimeBundleValidator().validate(root)
+        assertEquals(RuntimeBundleStatus.INCOMPLETE, report.status)
+        assertTrue(report.blockers.any { it.contains("ld-linux-x86-64.so.2") })
         root.deleteRecursively()
     }
 
