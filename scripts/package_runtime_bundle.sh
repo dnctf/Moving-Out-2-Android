@@ -41,6 +41,17 @@ ROOT="$TMP/root";mkdir -p "$ROOT/box64/bin" "$ROOT/wine/bin" "$ROOT/wine/lib" "$
 cp "$BOX64" "$ROOT/box64/bin/box64";cp "$WINE_DIR/bin/wine64" "$ROOT/wine/bin/wine64";cp "$WINE_DIR/bin/wineserver" "$ROOT/wine/bin/wineserver"
 cp -aL "$WINE_DIR/lib/wine" "$ROOT/wine/lib/wine";mkdir -p "$ROOT/wine/lib/wine/x86_64-windows";cp -aL "$WINE_DIR/lib/x86_64-linux-gnu" "$ROOT/wine/lib/x86_64-linux-gnu";cp "$DXVK_DIR/d3d11.dll" "$ROOT/dxvk/x64/";cp "$DXVK_DIR/dxgi.dll" "$ROOT/dxvk/x64/"
 cp "$XINPUT_DIR/xinput1_3.dll" "$ROOT/wine/lib/wine/x86_64-windows/";cp "$XINPUT_DIR/xinput1_4.dll" "$ROOT/wine/lib/wine/x86_64-windows/";cp "$XINPUT_DIR/xinput9_1_0.dll" "$ROOT/wine/lib/wine/x86_64-windows/"
+WIN64="$ROOT/wine/lib/wine/x86_64-windows"
+UNIX64="$ROOT/wine/lib/wine/x86_64-unix"
+# Prune desktop-only Windows applications and unused graphics/printing/audio backends.
+rm -f "$WIN64"/{mshtml*,jscript*,vbscript*,ieframe*,iexplore.exe,winebrowser.exe,hh.exe,hhctrl.ocx,winedbg.exe,oleview.exe,wordpad.exe,notepad.exe,write.exe,progman.exe,winhlp32.exe,clock.exe,eject.exe,uninstaller.exe,msiexec.exe,wined3d*,d3d8*,d3d9*,d3d10*,d3d12*,ddraw*,opengl32*,wineps*,winspool*,sane*,gphoto2*,twain_32*,wineoss*,winealsa*}
+rm -f "$UNIX64"/{wined3d*,d3d8*,d3d9*,d3d10*,d3d12*,ddraw*,opengl32*,wineps*,winspool*,sane*,gphoto2*,twain_32*,wineoss*,winealsa*}
+# Keep runtime dynamic symbols but remove debug/unneeded symbols.
+strip --strip-unneeded "$ROOT/wine/bin/wine64" "$ROOT/wine/bin/wineserver" "$ROOT/box64/bin/box64"
+while IFS= read -r -d '' elf; do strip --strip-unneeded "$elf"; done < <(find "$UNIX64" "$ROOT/wine/lib/x86_64-linux-gnu" -type f \( -name '*.so' -o -name '*.so.*' \) -print0)
+if command -v x86_64-w64-mingw32-strip >/dev/null 2>&1; then
+  while IFS= read -r -d '' pe; do x86_64-w64-mingw32-strip --strip-unneeded "$pe"; done < <(find "$WIN64" -type f \( -iname '*.dll' -o -iname '*.exe' \) -print0)
+fi
 for redistributable in vcruntime140.dll vcruntime140_1.dll msvcp140.dll; do
   source="$WINE_DIR/lib/wine/x86_64-windows/$redistributable"
   [[ -s "$source" ]] || { echo "Required VC++ runtime DLL missing from Wine runtime: $source" >&2; exit 1; }
@@ -60,7 +71,10 @@ python3 scripts/write_runtime_manifest.py --root "$ROOT" --version "$VERSION"
 python3 -m json.tool "$MANIFEST_FILE" > /dev/null
 mkdir -p "$OUT_DIR"
 rm -f "$OUTPUT"
-(cd "$ROOT" && zip -qr "$OUTPUT" .)
+(cd "$ROOT" && zip -9 -qr "$OUTPUT" .)
+ZIP_MIB=$(( $(stat -c%s "$OUTPUT") / 1024 / 1024 ))
+echo "Compressed runtime bundle size: $ZIP_MIB MiB (target <110 MiB)"
+if (( ZIP_MIB >= 110 )); then echo "Runtime bundle exceeds the 110 MiB release budget." >&2; exit 1; fi
 unzip -p "$OUTPUT" runtime-manifest.json | python3 -m json.tool > /dev/null
 (cd "$OUT_DIR" && sha256sum "$(basename "$OUTPUT")" > SHA256SUMS.txt)
 test -s "$OUT_DIR/SHA256SUMS.txt"
