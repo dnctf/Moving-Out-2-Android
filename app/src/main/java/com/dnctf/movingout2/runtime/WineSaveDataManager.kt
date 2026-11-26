@@ -75,7 +75,7 @@ object WineSaveDataManager {
 
     private fun validateRelativePath(path: String) {
         if (path.isBlank() || path.startsWith('/') || path.startsWith('\\') ||
-            path.split('/', '\\\\').any { it.isBlank() || it == "." || it == ".." } ||
+            path.split('/', '\\').any { it.isBlank() || it == "." || it == ".." } ||
             path.contains(':')) throw IOException("Unsafe save archive path: $path")
     }
 }
