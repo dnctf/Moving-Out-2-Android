@@ -24,8 +24,8 @@ replace_once(
 )
 replace_once(
     "src/emu/entrypoint.c",
-    "#ifdef ANDROID\\nvoid EXPORT my___libc_init",
-    "#if defined(ANDROID) && !defined(WINLATOR_GLIBC)\\nvoid EXPORT my___libc_init"
+    "#ifdef ANDROID\nvoid EXPORT my___libc_init",
+    "#if defined(ANDROID) && !defined(WINLATOR_GLIBC)\nvoid EXPORT my___libc_init"
 )
 replace_once(
     "src/tools/fileutils.c",
