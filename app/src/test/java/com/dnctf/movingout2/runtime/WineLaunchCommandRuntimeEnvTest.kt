@@ -66,8 +66,8 @@ class WineLaunchCommandRuntimeEnvTest {
             assertTrue(cache.isDirectory)
             assertTrue(contents.contains("d3d11.maxFeatureLevel = 11_1"))
             assertTrue(contents.contains("dxvk.shaderCache = True"))
-            assertTrue(contents.contains("\\n"))
-            assertFalse(contents.contains("\\\\n"))
+            assertTrue(contents.contains("\n"))
+            assertFalse(contents.contains("\\n"))
         } finally {
             root.deleteRecursively()
         }
