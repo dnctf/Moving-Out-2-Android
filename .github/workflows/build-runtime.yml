@@ -20,12 +20,12 @@ on:
       dxvk_url:
         description: "Verified DXVK release archive URL (x64 package)"
         required: false
-        default: "https://github.com/doitsujin/dxvk/releases/download/v3.1.1/dxvk-3.1.1.tar.gz"
+        default: "https://github.com/doitsujin/dxvk/releases/download/v1.10.3/dxvk-1.10.3.tar.gz"
         type: string
       dxvk_sha256:
         description: "Expected SHA-256 of the DXVK archive"
         required: false
-        default: "40565b4a724aadc4433fa4e010b4b23916d9b1f1baeee64e17186db94f54e608"
+        default: "8d1a3c912761b450c879f98478ae64f6f6639e40ce6848170a0f6b8596fd53c6"
         type: string
       bundle_version:
         description: "Runtime bundle version"
@@ -220,8 +220,8 @@ jobs:
       - name: Download and verify DXVK release
         shell: bash
         env:
-          DXVK_URL: ${{ inputs.dxvk_url || 'https://github.com/doitsujin/dxvk/releases/download/v3.1.1/dxvk-3.1.1.tar.gz' }}
-          DXVK_SHA256: ${{ inputs.dxvk_sha256 || '40565b4a724aadc4433fa4e010b4b23916d9b1f1baeee64e17186db94f54e608' }}
+          DXVK_URL: ${{ inputs.dxvk_url || 'https://github.com/doitsujin/dxvk/releases/download/v1.10.3/dxvk-1.10.3.tar.gz' }}
+          DXVK_SHA256: ${{ inputs.dxvk_sha256 || '8d1a3c912761b450c879f98478ae64f6f6639e40ce6848170a0f6b8596fd53c6' }}
         run: |
           set -euo pipefail
           if [[ -z "$DXVK_URL" || ! "$DXVK_SHA256" =~ ^[a-fA-F0-9]{64}$ ]]; then
