@@ -210,12 +210,11 @@ class RuntimeRepositoryInstaller(
             }
             val report = validator.validate(staging)
             if (!report.isReady) throw IllegalStateException("Bundled runtime failed manifest v2, SHA-256 or ABI validation: " + report.blockers.joinToString("; "))
-            backup.deleteRecursively()
-            if (target.exists() && !target.renameTo(backup)) throw IllegalStateException("Cannot preserve current runtime bundle.")
-            if (!staging.renameTo(target)) throw IllegalStateException("Cannot atomically activate bundled runtime.")
+            activateRuntimeBundleAtomically(staging, target, backup) { candidate ->
+                validator.validate(candidate).isReady
+            }
             activated = true
-            if (!validator.validate(target).isReady) throw IllegalStateException("Activated bundled runtime failed revalidation.")
-            backup.deleteRecursively(); onProgress("Embedded runtime " + version + " installed and verified offline.")
+            onProgress("Embedded runtime " + version + " installed and verified offline.")
             return RuntimeRepositoryInstallResult(version, counts.first, counts.second)
         } catch (error: Exception) {
             staging.deleteRecursively()
@@ -333,14 +332,13 @@ class RuntimeRepositoryInstaller(
             )
             val finalCheck = validator.validate(staging)
             if (!finalCheck.isReady) throw IllegalStateException("Runtime failed post-extraction validation.")
-            if (target.exists() && !target.renameTo(backup)) throw IllegalStateException("Cannot preserve current runtime bundle.")
-            if (!staging.renameTo(target)) throw IllegalStateException("Cannot activate downloaded runtime bundle.")
+            activateRuntimeBundleAtomically(staging, target, backup) { candidate ->
+                val active = validator.validate(candidate)
+                record(if (active.isReady) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.ERROR,
+                    "Activated runtime validation: status=${active.status}; root=${candidate.absolutePath}; blockers=${active.blockers.joinToString("; ")}")
+                active.isReady
+            }
             activated = true
-            val active = validator.validate(target)
-            record(if (active.isReady) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.ERROR,
-                "Activated runtime validation: status=${active.status}; root=${target.absolutePath}; blockers=${active.blockers.joinToString("; ")}")
-            if (!active.isReady) throw IllegalStateException("Activated runtime failed revalidation.")
-            backup.deleteRecursively()
             archive.delete()
             onProgress("Runtime $version installed and verified.")
             return RuntimeRepositoryInstallResult(version, counts.first, counts.second)
