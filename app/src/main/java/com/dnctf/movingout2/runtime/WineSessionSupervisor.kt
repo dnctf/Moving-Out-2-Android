@@ -334,6 +334,8 @@ class WineSessionSupervisor(
 
         // 5. RUNNING & Crash Coupling Watchdog
         transitionTo(WineSessionState.RUNNING)
+        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor",
+            "Game process entered RUNNING state. This confirms process launch only; DXVK D3D11 device creation and an actual SurfaceView frame are not yet verified."))
         startCrashCouplingWatchdog(activeBox64, wineserverCandidate, env)
         return true
     }
