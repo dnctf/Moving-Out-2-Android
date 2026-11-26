@@ -52,11 +52,16 @@ while IFS= read -r -d '' elf; do strip --strip-unneeded "$elf"; done < <(find "$
 if command -v x86_64-w64-mingw32-strip >/dev/null 2>&1; then
   while IFS= read -r -d '' pe; do x86_64-w64-mingw32-strip --strip-unneeded "$pe"; done < <(find "$WIN64" -type f \( -iname '*.dll' -o -iname '*.exe' \) -print0)
 fi
+find "$ROOT/wine/lib/wine" -type f \\( -name '*.a' -o -name '*.def' -o -name '*.h' -o -name '*.idl' -o -name '*.man' \\) -delete
+rm -rf "$ROOT/wine/lib/wine/locale" "$ROOT/wine/lib/wine/doc" "$ROOT/wine/lib/wine/documentation"
 for redistributable in vcruntime140.dll vcruntime140_1.dll msvcp140.dll; do
   source="$WINE_DIR/lib/wine/x86_64-windows/$redistributable"
   [[ -s "$source" ]] || { echo "Required VC++ runtime DLL missing from Wine runtime: $source" >&2; exit 1; }
   cp "$source" "$ROOT/wine/lib/wine/x86_64-windows/$redistributable"
 done
+if command -v x86_64-w64-mingw32-strip >/dev/null 2>&1; then
+  x86_64-w64-mingw32-strip --strip-unneeded "$ROOT/wine/lib/wine/x86_64-windows/"{vcruntime140.dll,vcruntime140_1.dll,msvcp140.dll}
+fi
 check_guest_glibc(){
   local count=0
   [[ -s "$ROOT/wine/lib/x86_64-linux-gnu/libc.so.6" ]] || { echo "Guest glibc libc.so.6 missing" >&2; exit 1; }
