@@ -142,6 +142,10 @@ class RuntimeBundleValidatorTest {
 
         val libraryDirectory = File(root, "wine/lib/wine").apply { mkdirs() }
         File(libraryDirectory, "module.so").writeBytes(arm64Elf(machine = 62).also { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).putLong(24, 0L) })
+        val unixDirectory = File(libraryDirectory, "x86_64-unix").apply { mkdirs() }
+        listOf("ntdll.so", "win32u.so", "winevulkan.so").forEach { module ->
+            File(unixDirectory, module).writeBytes(arm64Elf(machine = 62))
+        }
         components.put(
             "wineLib",
             JSONObject()
@@ -173,6 +177,20 @@ class RuntimeBundleValidatorTest {
                 .toString()
         )
         return root
+    }
+
+    @Test fun rejectsMissingWineNtdllModuleEvenWhenWineLibraryHashMatches() {
+        val root = jsonManifestBundle()
+        File(root, "wine/lib/wine/x86_64-unix/ntdll.so").delete()
+        val manifestFile = File(root, "runtime-manifest.json")
+        val manifest = JSONObject(manifestFile.readText())
+        manifest.getJSONObject("components").getJSONObject("wineLib")
+            .put("sha256", directorySha256(File(root, "wine/lib/wine")))
+        manifestFile.writeText(manifest.toString())
+        val report = RuntimeBundleValidator().validate(root)
+        assertEquals(RuntimeBundleStatus.INCOMPLETE, report.status)
+        assertTrue(report.blockers.any { it.contains("ntdll.so") })
+        root.deleteRecursively()
     }
 
     @Test fun validatesCompleteArm64Bundle() {
