@@ -200,6 +200,9 @@ jobs:
             fi
             while IFS= read -r dependency; do
               [[ -n "$dependency" && -f "$dependency" ]] || continue
+              case "$(basename "$dependency")" in
+                libGL*|libGLX*|libEGL*|libGLES*|libvulkan*|libX11*|libXext*|libXrender*|libxcb*|libwayland*|libandroid*) continue ;;
+              esac
               cp -aL "$dependency" "$GUEST_GLIBC_DIR/$(basename "$dependency")"
             done < <(printf '%s\n' "$LDD_OUTPUT" | awk '/=> \/[^ ]+/ {print $3} /^\// {print $1}' | sort -u)
           done
