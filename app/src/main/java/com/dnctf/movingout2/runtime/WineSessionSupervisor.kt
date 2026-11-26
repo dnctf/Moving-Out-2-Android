@@ -256,6 +256,7 @@ class WineSessionSupervisor(
         // Setup input IPC & DLLs
         try {
             deployXInputDlls()
+            deployDxvkDlls(options.useDxvk)
             configureWinePrefixRegistry()
         } catch (error: Exception) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Wine prefix DLL deployment failed: ${error.message}"))
@@ -506,6 +507,34 @@ class WineSessionSupervisor(
                 throw IOException("Required Wine system32 DLL was not installed: $dll")
             }
         }
+    }
+
+    private fun deployDxvkDlls(enabled: Boolean) {
+        if (!enabled) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor",
+                "DXVK deployment skipped because the D3D11 backend is disabled."))
+            return
+        }
+        val sourceDirectory = File(bundleRoot, "dxvk/x64")
+        val system32 = File(prefix, "drive_c/windows/system32")
+        if (!system32.mkdirs() && !system32.isDirectory) {
+            throw IOException("Unable to create Wine system32 directory for DXVK.")
+        }
+        for (dll in listOf("d3d11.dll", "dxgi.dll")) {
+            val source = File(sourceDirectory, dll)
+            if (!source.isFile || source.length() <= 0L ||
+                !RuntimeBinaryInspector.matches(source, RuntimeBinaryInspector.PE32_PLUS_X86_64)) {
+                throw IOException("DXVK DLL is missing or not PE32+ x86-64: ${source.absolutePath}")
+            }
+            val destination = File(system32, dll)
+            source.copyTo(destination, overwrite = true)
+            if (!destination.isFile || destination.length() != source.length() ||
+                !RuntimeBinaryInspector.matches(destination, RuntimeBinaryInspector.PE32_PLUS_X86_64)) {
+                throw IOException("DXVK system32 deployment verification failed: ${destination.absolutePath}")
+            }
+        }
+        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor",
+            "DXVK d3d11.dll and dxgi.dll deployed to ${system32.absolutePath}."))
     }
 
     private fun startCrashCouplingWatchdog(
