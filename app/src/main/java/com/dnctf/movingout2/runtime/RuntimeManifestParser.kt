@@ -67,6 +67,7 @@ class RuntimeManifestParser {
         verify("wine64", "wine/bin/wine64", true, RuntimeBinaryInspector.ELF64_X86_64)
         verify("wineserver", "wine/bin/wineserver", true, RuntimeBinaryInspector.ELF64_X86_64)
         verify("wineLib", "wine/lib/wine", true, "DIRECTORY_SHA256_X86_64", directory = true)
+        verify("guestGlibc", "wine/lib/x86_64-linux-gnu", true, "DIRECTORY_SHA256_X86_64", directory = true)
         verify("d3d11", "dxvk/x64/d3d11.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
         verify("dxgi", "dxvk/x64/dxgi.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
         verify("xinput1_3", "wine/lib/wine/x86_64-windows/xinput1_3.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
@@ -75,6 +76,21 @@ class RuntimeManifestParser {
         verify("vcruntime140", "wine/lib/wine/x86_64-windows/vcruntime140.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
         verify("vcruntime140_1", "wine/lib/wine/x86_64-windows/vcruntime140_1.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
         verify("msvcp140", "wine/lib/wine/x86_64-windows/msvcp140.dll", true, RuntimeBinaryInspector.PE32_PLUS_X86_64)
+        files["guestGlibc"]?.let { glibcDirectory ->
+            val requiredLibc = File(glibcDirectory, "libc.so.6")
+            if (!requiredLibc.isFile || requiredLibc.length() <= 0L) {
+                errors += "Required guest glibc libc.so.6 missing or empty."
+            }
+            val sharedObjects = glibcDirectory.walkTopDown().filter {
+                it.isFile && (it.name.endsWith(".so", true) || it.name.contains(".so.", true))
+            }.toList()
+            if (sharedObjects.isEmpty()) errors += "Guest glibc directory contains no shared objects."
+            sharedObjects.forEach { library ->
+                if (!RuntimeBinaryInspector.matches(library, RuntimeBinaryInspector.ELF64_X86_64_SHARED)) {
+                    errors += "Guest glibc object is not ELF64 x86-64 shared: ${library.relativeTo(glibcDirectory).invariantSeparatorsPath}"
+                }
+            }
+        }
         if (components.optJSONObject("turnip")?.optBoolean("included", false) == true) {
             verify("turnipSo", "turnip/libvulkan_freedreno.so", true, RuntimeBinaryInspector.ELF64_AARCH64_SHARED)
             verify("turnipIcd", "turnip/freedreno_icd.aarch64.json", true, "JSON")
