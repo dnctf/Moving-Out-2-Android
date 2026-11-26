@@ -326,9 +326,27 @@ class MainActivity : Activity() {
         }, pickRuntimeBundle)
     }
 
+    private fun bundledRuntimeVersion(): String? = runCatching {
+        assets.open("runtime-bundle.zip").use { stream ->
+            java.util.zip.ZipInputStream(stream).use { zip ->
+                var entry = zip.nextEntry
+                while (entry != null && entry.name != "runtime-manifest.json") entry = zip.nextEntry
+                if (entry == null) null else {
+                    val json = zip.bufferedReader().readText()
+                    org.json.JSONObject(json).optString("bundleVersion").takeIf { it.isNotBlank() }
+                }
+            }
+        }
+    }.getOrNull()
+
     private fun ensureRuntimeInstalledOnFirstLaunch() {
-        val report = RuntimeBundleValidator().validate(File(filesDir, "native_runtime/bundle"))
-        if (report.isReady) return
+        val installedRoot = File(filesDir, "native_runtime/bundle")
+        val report = RuntimeBundleValidator().validate(installedRoot)
+        val embeddedVersion = bundledRuntimeVersion()
+        val installedVersion = runCatching {
+            org.json.JSONObject(File(installedRoot, "runtime-manifest.json").readText()).optString("bundleVersion")
+        }.getOrNull()
+        if (report.isReady && (embeddedVersion == null || embeddedVersion == installedVersion)) return
         if (android.os.Build.SUPPORTED_ABIS.none { it == "arm64-v8a" }) {
             runtimeStatus.text = "Automatic setup stopped: this app requires an ARM64 (arm64-v8a) Android device."
             return
