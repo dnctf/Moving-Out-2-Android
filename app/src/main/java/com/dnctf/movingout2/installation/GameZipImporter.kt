@@ -277,14 +277,18 @@ class GameZipImporter(
 internal object GameZipRootLocator {
     fun findRootPrefix(names: List<String>): String? {
         val files = names.filterNot { it.endsWith('/') }.map { it.lowercase(Locale.ROOT) }.toSet()
-        val exe = names.filter { it.equals("mo2.exe", true) || it.lowercase(Locale.ROOT).endsWith("/mo2.exe") }
+        val exe = names.filter { it.substringAfterLast('/').endsWith(".exe", ignoreCase = true) }
+            .filterNot { it.substringAfterLast('/').equals("UnityCrashHandler64.exe", true) }
         val required = listOf("gameassembly.dll", "unityplayer.dll", "baselib.dll")
         for (exePath in exe) {
             val prefix = exePath.substringBeforeLast('/', "").let { if (it.isEmpty()) "" else "$it/" }
             val exeName = exePath.substringAfterLast('/')
             val dataDir = UnityDataDirectoryLocator.directoryName(exeName).lowercase(Locale.ROOT)
             val metadata = "$dataDir/il2cpp_data/metadata/global-metadata.dat"
-            if (required.all { req -> files.contains((prefix + req).lowercase(Locale.ROOT)) } &&
+            val hasMatchingDataDirectory = files.contains((prefix + dataDir + "/").lowercase(Locale.ROOT)) ||
+                names.any { it.lowercase(Locale.ROOT).startsWith((prefix + dataDir + "/").lowercase(Locale.ROOT)) }
+            if (hasMatchingDataDirectory &&
+                required.all { req -> files.contains((prefix + req).lowercase(Locale.ROOT)) } &&
                 files.contains((prefix + metadata).lowercase(Locale.ROOT))) return prefix
         }
         return null
