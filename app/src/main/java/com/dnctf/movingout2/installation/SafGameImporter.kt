@@ -290,4 +290,4 @@ internal fun safGameImportStorageSatisfied(availableBytes: Long, requiredBytes: 
  * validated using streamed expansion limits, free-space checks, and game structure checks.
  */
 internal fun safGameImportByteCountMatches(expectedBytes: Long, copiedBytes: Long, hasUnknownSizes: Boolean): Boolean =
-    hasUnknownSizes || expectedBytes == copiedBytes
+    if (hasUnknownSizes) copiedBytes > 0L else expectedBytes == copiedBytes
