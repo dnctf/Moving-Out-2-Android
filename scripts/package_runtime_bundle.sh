@@ -80,6 +80,8 @@ if [[ -n "$TURNIP_SO" ]];then mkdir -p "$ROOT/turnip";cp "$TURNIP_SO" "$ROOT/tur
 MANIFEST_FILE="$ROOT/runtime-manifest.json"
 python3 scripts/write_runtime_manifest.py --root "$ROOT" --version "$VERSION"
 python3 -m json.tool "$MANIFEST_FILE" > /dev/null
+# Validate the post-strip bundle before ZIP creation and before the size-budget gate.
+scripts/audit_runtime_bundle.sh "$ROOT"
 mkdir -p "$OUT_DIR"
 rm -f "$OUTPUT"
 (cd "$ROOT" && zip -9 -qr "$OUTPUT" .)
