@@ -101,15 +101,12 @@ class RuntimeRepositoryInstaller(
                 }; output.fd.sync()
             }
         }
-        val version = try { JSONObject(ZipFile(archive).use { zip ->
-            zip.getInputStream(zip.getEntry("runtime-manifest.json") ?: throw IllegalStateException("Bundled runtime manifest is missing."))
-                .bufferedReader().use { it.readText() }
-        }).optString("bundleVersion").ifBlank { "bundled" } } catch (error: Exception) { archive.delete(); throw error }
         staging.deleteRecursively(); if (!staging.mkdirs()) throw IllegalStateException("Cannot create bundled runtime staging directory.")
         var activated = false
         try {
             onProgress("Extracting embedded runtime for offline first launch…")
             val counts = extract(archive, staging)
+            val version = JSONObject(File(staging, "runtime-manifest.json").readText()).optString("bundleVersion").ifBlank { "bundled" }
             listOf("box64/bin/box64", "wine/bin/wine64", "wine/bin/wineserver").forEach { relative ->
                 val file = File(staging, relative)
                 if (!file.setExecutable(true, false) && !file.canExecute()) throw IllegalStateException("Unable to mark runtime executable: " + relative)
