@@ -48,7 +48,7 @@ rm -f "$WIN64"/{mshtml*,jscript*,vbscript*,ieframe*,iexplore.exe,winebrowser.exe
 rm -f "$UNIX64"/{mshtml*,jscript*,vbscript*,ieframe*,iexplore*,winebrowser*,hhctrl*,wined3d*,d3d8*,d3d9*,d3d10*,d3d12*,ddraw*,opengl32*,wineps*,winspool*,sane*,gphoto2*,twain_32*,wineoss*,winealsa*}
 # Keep runtime dynamic symbols but remove debug/unneeded symbols.
 strip --strip-unneeded "$ROOT/wine/bin/wine64" "$ROOT/wine/bin/wineserver" "$ROOT/box64/bin/box64"
-while IFS= read -r -d '' elf; do strip --strip-unneeded "$elf"; done < <(find "$UNIX64" "$ROOT/wine/lib/x86_64-linux-gnu" -type f \( -name '*.so' -o -name '*.so.*' \) -print0)
+while IFS= read -r -d '' elf; do strip --strip-unneeded "$elf"; done < <(find "$ROOT/wine/lib/wine" "$ROOT/wine/lib/x86_64-linux-gnu" -type f \( -name '*.so' -o -name '*.so.*' \) -print0)
 if command -v x86_64-w64-mingw32-strip >/dev/null 2>&1; then
   while IFS= read -r -d '' pe; do x86_64-w64-mingw32-strip --strip-unneeded "$pe"; done < <(find "$WIN64" -type f \( -iname '*.dll' -o -iname '*.exe' \) -print0)
 fi
