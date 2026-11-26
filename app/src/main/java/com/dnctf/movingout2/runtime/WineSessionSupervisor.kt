@@ -409,7 +409,7 @@ class WineSessionSupervisor(
                     false
                 } else {
                     diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor",
-                        "wineboot --init completed; system.reg and user.reg are present."))
+                        "wineboot --init completed with exitCode=0; system.reg and user.reg are present."))
                     true
                 }
             }
