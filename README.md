@@ -85,7 +85,7 @@ Debug APK artifacts are temporary CI outputs, not public releases. Public GitHub
 2. Obtain the runtime bundle from a trusted project build artifact or the project's documented runtime-bundle source. Verify its SHA-256 before importing it.
 3. Open the app and import the runtime ZIP when prompted. Wait for extraction and manifest/hash validation to finish.
 4. Select the root directory of the user's own Moving Out 2 Windows installation through Android's Storage Access Framework (SAF), or use the supported game ZIP import flow.
-5. Ensure the selected root contains `mo2.exe`, `GameAssembly.dll`, `UnityPlayer.dll`, `mo2_Data/`, and the required x86-64 plugin files. The original RUNE files, when present in the user's installation, must remain together in the game directory.
+5. Ensure the selected root contains a Unity player executable such as `mo2.exe`, its matching `<executable>_Data/` directory (for example `mo2_Data/`), `UnityPlayer.dll`, `GameAssembly.dll`, and `baselib.dll`. The validator pairs the executable with its matching data directory rather than requiring a fixed `MovingOut2.exe` name. Preserve `mo2_Data/Plugins/x86_64/` and original binary/resource files (`*.assets`, `*.resS`, `il2cpp_data/`, `StreamingAssets/`) byte-for-byte. The original RUNE files, when present in the user's installation, must remain together in the game directory.
 6. Connect a compatible Bluetooth or USB controller if testing physical input. XInput translation is experimental until validated inside the game.
 7. Do not assume the Play action will reach the game: inspect the session diagnostics if bootstrap or launch fails.
 
@@ -103,6 +103,24 @@ When reporting a failure, export the app's **Diagnostic ZIP** and include it wit
 - XInput bridge/controller diagnostics.
 
 Remove personal file paths or other private information before sharing diagnostics publicly.
+
+### Device smoke test (Snapdragon 855+ / 888, Adreno 640+ / 660)
+
+Use an ARM64 Android device with the system Vulkan driver first. Install the APK and capture logs:
+
+```bash
+adb install -r app-debug.apk
+adb logcat -c
+adb logcat -v threadtime > mo2-device.log
+```
+
+After importing the runtime bundle and the user's game directory, launch once and export the in-app Diagnostic ZIP. Check that the report records a successful Box64 exec probe, Wine prefix bootstrap (`system.reg` and `user.reg`), `x86_64-unix/ntdll.so` and `win32u.so`, DXVK D3D11 device creation, Vulkan Surface presentation, and MO2X XInput packets. A process state of RUNNING alone does not establish that the main menu rendered. Long-press the Runtime status panel for the live process/player log tail. Filter a saved log with:
+
+```bash
+grep -Ei 'box64|wine|ntdll|win32u|steam_api64|Team17|Unity|IL2CPP|DXVK|Vulkan|Surface|XInput|MO2X|SIGSEGV|SIGABRT|EACCES' mo2-device.log
+```
+
+The on-screen controller is attached while a session is active and sends touch state through XInput player slot 0. Physical controller devices use the existing per-device routing. Neither touch input nor physical input should be considered game-verified until movement and actions are observed in the game.
 
 ## Game data and legal notice
 
