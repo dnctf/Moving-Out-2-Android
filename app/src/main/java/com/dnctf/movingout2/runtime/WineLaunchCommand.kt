@@ -21,6 +21,7 @@ object WineLaunchCommand {
         turnipIcd: File? = null,
         dxvkDirectory: File? = null,
         guestLibraryDirectory: File? = null,
+        guestGlibcDirectory: File? = null,
         guestBinaryDirectory: File? = null,
         useDxvk: Boolean = true,
         diagnosticHud: Boolean = false
@@ -41,8 +42,12 @@ object WineLaunchCommand {
             "DXVK_FRAME_RATE" to fpsCap.coerceIn(15, 240).toString(),
             "LD_LIBRARY_PATH" to hostLibraryDirectory.absolutePath
         )
-        guestLibraryDirectory?.takeIf { it.isDirectory && it.canRead() }?.let {
-            result["BOX64_LD_LIBRARY_PATH"] = it.absolutePath
+        val guestLibraryPaths = listOfNotNull(
+            guestGlibcDirectory?.takeIf { it.isDirectory && it.canRead() },
+            guestLibraryDirectory?.takeIf { it.isDirectory && it.canRead() }
+        ).map { it.absolutePath }
+        if (guestLibraryPaths.isNotEmpty()) {
+            result["BOX64_LD_LIBRARY_PATH"] = guestLibraryPaths.joinToString(":")
         }
         guestBinaryDirectory?.takeIf { it.isDirectory && it.canRead() }?.let {
             result["BOX64_PATH"] = it.absolutePath
