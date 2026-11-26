@@ -43,6 +43,103 @@ internal fun isSafeRuntimeArchiveEntry(name: String, isDirectory: Boolean): Bool
 
 data class RuntimeRepositoryInstallResult(val version: String, val files: Int, val bytes: Long)
 
+internal fun extractRuntimeArchiveSafely(
+    zip: File,
+    destination: File,
+    maxEntries: Int,
+    maxExpandedBytes: Long,
+    storageReserveBytes: Long = 0L,
+    availableBytes: () -> Long
+): Pair<Int, Long> {
+    var entries = 0
+    var expandedBytes = 0L
+    val seen = HashSet<String>()
+    val canonicalRoot = destination.canonicalFile.toPath()
+    ZipFile(zip).use { archive ->
+        val allEntries = archive.entries()
+        val files = mutableListOf<java.util.zip.ZipEntry>()
+        var declaredExpandedBytes = 0L
+        while (allEntries.hasMoreElements()) {
+            val entry = allEntries.nextElement()
+            entries++
+            if (entries > maxEntries) throw IllegalStateException("Runtime archive contains too many entries.")
+            if (!isSafeRuntimeArchiveEntry(entry.name, entry.isDirectory)) {
+                throw IllegalStateException("Unsafe runtime archive path rejected: ${entry.name.take(120)}")
+            }
+            val normalized = normalizeRuntimeArchiveEntry(entry.name, entry.isDirectory)
+                ?: throw IllegalStateException("Unsafe runtime archive path rejected: ${entry.name.take(120)}")
+            if (normalized.isEmpty()) continue
+            if (!seen.add(normalized)) throw IllegalStateException("Runtime archive contains duplicate path: $normalized")
+            if (!entry.isDirectory) {
+                if (entry.size < 0L) throw IllegalStateException("Runtime archive entry has unknown expanded size: $normalized")
+                declaredExpandedBytes += entry.size
+                if (declaredExpandedBytes > maxExpandedBytes) throw IllegalStateException("Expanded runtime exceeds configured size limit.")
+                files += entry
+            }
+        }
+        if (entries == 0 || files.none { normalizeRuntimeArchiveEntry(it.name, false) == "runtime-manifest.json" }) {
+            throw IllegalStateException("Runtime ZIP must contain runtime-manifest.json at its root.")
+        }
+        val required = declaredExpandedBytes + storageReserveBytes
+        val available = availableBytes()
+        if (available < required) throw IllegalStateException(
+            "Not enough free storage to extract runtime. Need ${required / (1024 * 1024)} MiB including safety reserve; available ${available / (1024 * 1024)} MiB."
+        )
+        val allForExtraction = archive.entries()
+        while (allForExtraction.hasMoreElements()) {
+            val entry = allForExtraction.nextElement()
+            val normalized = normalizeRuntimeArchiveEntry(entry.name, entry.isDirectory)
+                ?: throw IllegalStateException("Unsafe runtime archive path rejected during extraction: ${entry.name.take(120)}")
+            if (normalized.isEmpty()) continue
+            val output = File(destination, normalized).canonicalFile
+            if (!output.toPath().startsWith(canonicalRoot)) throw IllegalStateException("Runtime archive path escapes staging directory.")
+            if (entry.isDirectory) {
+                if (!output.mkdirs() && !output.isDirectory) throw IllegalStateException("Cannot create runtime directory: $normalized")
+            } else {
+                if (!output.parentFile.mkdirs() && !output.parentFile.isDirectory) throw IllegalStateException("Cannot create runtime parent directory: $normalized")
+                archive.getInputStream(entry).use { input ->
+                    FileOutputStream(output).use { stream ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            expandedBytes += count
+                            if (expandedBytes > maxExpandedBytes) throw IllegalStateException("Expanded runtime exceeded configured size limit.")
+                            stream.write(buffer, 0, count)
+                        }
+                        stream.fd.sync()
+                    }
+                }
+                if (output.length() != entry.size) throw IllegalStateException("Runtime archive entry size mismatch: $normalized")
+            }
+        }
+    }
+    return entries to expandedBytes
+}
+
+internal fun activateRuntimeBundleAtomically(
+    staging: File,
+    target: File,
+    backup: File,
+    validate: (File) -> Boolean
+) {
+    backup.deleteRecursively()
+    if (target.exists() && !target.renameTo(backup)) throw IllegalStateException("Cannot preserve current runtime bundle.")
+    var activated = false
+    try {
+        if (!staging.renameTo(target)) throw IllegalStateException("Cannot atomically activate runtime bundle.")
+        activated = true
+        if (!validate(target)) throw IllegalStateException("Activated runtime failed revalidation.")
+        backup.deleteRecursively()
+    } catch (error: Exception) {
+        if (activated) target.deleteRecursively()
+        if (backup.exists() && !backup.renameTo(target)) {
+            throw IllegalStateException("Runtime activation failed and previous bundle could not be restored.", error)
+        }
+        throw error
+    }
+}
+
 internal fun latestRuntimePrerelease(releases: JSONArray): JSONObject? {
     val candidates = (0 until releases.length()).mapNotNull { index ->
         releases.optJSONObject(index)?.takeIf { release ->
@@ -380,82 +477,15 @@ class RuntimeRepositoryInstaller(
         }
     }
 
-    private fun extract(zip: File, destination: File): Pair<Int, Long> {
-        var entries = 0
-        var expandedBytes = 0L
-        val seen = HashSet<String>()
-        val canonicalRoot = destination.canonicalFile.toPath()
-        val expandedLimit = maxExpandedBytes
-        ZipFile(zip).use { archive ->
-            val allEntries = archive.entries()
-            val files = mutableListOf<java.util.zip.ZipEntry>()
-            var declaredExpandedBytes = 0L
-            while (allEntries.hasMoreElements()) {
-                val entry = allEntries.nextElement()
-                entries++
-                if (entries > maxEntries) throw IllegalStateException("Runtime archive contains too many entries.")
-                if (!isSafeRuntimeArchiveEntry(entry.name, entry.isDirectory)) {
-                    throw IllegalStateException("Unsafe runtime archive path rejected: ${entry.name.take(120)}")
-                }
-                val normalized = normalizeRuntimeArchiveEntry(entry.name, entry.isDirectory)
-                    ?: throw IllegalStateException("Unsafe runtime archive path rejected: ${entry.name.take(120)}")
-                if (normalized.isEmpty()) continue // harmless archive root directory entry "./"
-                if (!seen.add(normalized)) throw IllegalStateException("Runtime archive contains duplicate path: $normalized")
-                if (!entry.isDirectory) {
-                    if (entry.size < 0L) throw IllegalStateException("Runtime archive entry has unknown expanded size: $normalized")
-                    declaredExpandedBytes += entry.size
-                    if (declaredExpandedBytes > expandedLimit) throw IllegalStateException("Expanded runtime exceeds configured size limit.")
-                    files += entry
-                }
-            }
-            if (entries == 0 || files.none { normalizeRuntimeArchiveEntry(it.name, false) == "runtime-manifest.json" }) {
-                throw IllegalStateException("Runtime ZIP must contain runtime-manifest.json at its root.")
-            }
-            val available = StatFs(destination.absolutePath).availableBytes
-            val required = declaredExpandedBytes + storageReserveBytes
-            if (available < required) {
-                throw IllegalStateException(
-                    "Not enough free storage to extract runtime. Need " +
-                        "${required / (1024 * 1024)} MiB including safety reserve; " +
-                        "available ${available / (1024 * 1024)} MiB."
-                )
-            }
-            val allForExtraction = archive.entries()
-            while (allForExtraction.hasMoreElements()) {
-                val entry = allForExtraction.nextElement()
-                val normalized = normalizeRuntimeArchiveEntry(entry.name, entry.isDirectory)
-                    ?: throw IllegalStateException("Unsafe runtime archive path rejected during extraction: ${entry.name.take(120)}")
-                if (normalized.isEmpty()) continue
-                val output = File(destination, normalized).canonicalFile
-                if (!output.toPath().startsWith(canonicalRoot)) {
-                    throw IllegalStateException("Runtime archive path escapes staging directory.")
-                }
-                if (entry.isDirectory) {
-                    if (!output.mkdirs() && !output.isDirectory) throw IllegalStateException("Cannot create runtime directory: $normalized")
-                } else {
-                    if (!output.parentFile.mkdirs() && !output.parentFile.isDirectory) {
-                        throw IllegalStateException("Cannot create runtime parent directory: $normalized")
-                    }
-                    archive.getInputStream(entry).use { input ->
-                        FileOutputStream(output).use { stream ->
-                            val buffer = ByteArray(64 * 1024)
-                            while (true) {
-                                val count = input.read(buffer)
-                                if (count < 0) break
-                                expandedBytes += count
-                                if (expandedBytes > expandedLimit) throw IllegalStateException("Expanded runtime exceeded configured size limit.")
-                                stream.write(buffer, 0, count)
-                            }
-                        }
-                    }
-                    if (output.length() != entry.size) {
-                        throw IllegalStateException("Runtime archive entry size mismatch: $normalized")
-                    }
-                }
-            }
-        }
-        return entries to expandedBytes
-    }
+    private fun extract(zip: File, destination: File): Pair<Int, Long> =
+        extractRuntimeArchiveSafely(
+            zip = zip,
+            destination = destination,
+            maxEntries = maxEntries,
+            maxExpandedBytes = maxExpandedBytes,
+            storageReserveBytes = storageReserveBytes,
+            availableBytes = { StatFs(destination.absolutePath).availableBytes }
+        )
 
     private fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
