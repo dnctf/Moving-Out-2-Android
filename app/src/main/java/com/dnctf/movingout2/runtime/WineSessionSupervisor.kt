@@ -345,12 +345,8 @@ class WineSessionSupervisor(
             put("LD_LIBRARY_PATH", context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
             put("BOX64_PATH", wine.parentFile?.absolutePath.orEmpty())
             put("BOX64_DYNAREC", "1")
-            val guestLibraryPaths = listOfNotNull(
-                guestGlibcDirectory?.takeIf { it.isDirectory && it.canRead() },
-                guestLibraryDirectory?.takeIf { it.isDirectory && it.canRead() }
-            ).map { it.absolutePath }
-            if (guestLibraryPaths.isNotEmpty()) {
-                put("BOX64_LD_LIBRARY_PATH", guestLibraryPaths.joinToString(":"))
+            WineLaunchCommand.guestLibrarySearchPath(guestGlibcDirectory, guestLibraryDirectory)?.let {
+                put("BOX64_LD_LIBRARY_PATH", it)
             }
         }
 
