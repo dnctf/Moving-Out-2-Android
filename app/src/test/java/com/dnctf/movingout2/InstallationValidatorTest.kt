@@ -128,6 +128,18 @@ class InstallationValidatorTest {
         root.deleteRecursively()
     }
 
+    @Test fun detectsArbitraryUnityExecutableAndMatchingDataDirectory() {
+        val root = fixture()
+        assertTrue(File(root, "mo2.exe").renameTo(File(root, "MovingOut2-Win64.exe")))
+        assertTrue(File(root, "mo2_Data").renameTo(File(root, "MovingOut2-Win64_Data")))
+        val report = InstallationValidator().validate(root)
+        assertEquals(InstallationStatus.VALID, report.status)
+        assertEquals("x86_64", report.detectedArchitecture)
+        assertEquals(29, report.metadataVersion)
+        assertTrue(report.missingFiles.isEmpty())
+        root.deleteRecursively()
+    }
+
     @Test fun caseInsensitiveLookupSupportsUnityMetadataPath() {
         val root = fixture()
         File(root, "GameAssembly.dll").renameTo(File(root, "gameassembly.DLL"))
