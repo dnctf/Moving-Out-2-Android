@@ -33,11 +33,21 @@ object WineLaunchCommand {
         useDxvk: Boolean = true,
         diagnosticHud: Boolean = false
     ): Map<String, String> {
+        // Keep DXVK native-first, delegate the RUNE Steam wrapper to its native
+        // game-directory DLL, and force the in-runtime XInput bridge.
         val overrides = buildList {
-            if (useDxvk) add("d3d11,dxgi=n,b") else add("d3d11,dxgi=b")
+            if (useDxvk) {
+                add("d3d11=n,b")
+                add("dxgi=n,b")
+            } else {
+                add("d3d11=b")
+                add("dxgi=b")
+            }
+            add("steam_api64=n")
             add("xinput1_3,xinput1_4,xinput9_1_0=n,b")
         }.joinToString(";")
         val result = linkedMapOf(
+            "WINEARCH" to "win64",
             "WINEPREFIX" to prefix.absolutePath,
             "WINEDLLOVERRIDES" to overrides,
             "MO2_XINPUT_SHM_PATH" to toWineZPath(sharedInput.absolutePath),
@@ -45,6 +55,9 @@ object WineLaunchCommand {
             "BOX64_DYNAREC_BIGBLOCK" to "1",
             "BOX64_DYNAREC_STRONGMEM" to "1",
             "BOX64_DYNAREC_SAFEFLAGS" to "1",
+            "BOX64_DYNAREC_CALLRET" to "1",
+            "BOX64_AVX" to "0",
+            "PULSE_LATENCY_MSEC" to "60",
             "DXVK_STATE_CACHE" to "1",
             "DXVK_FRAME_RATE" to fpsCap.coerceIn(15, 240).toString(),
             "LD_LIBRARY_PATH" to hostLibraryDirectory.absolutePath
