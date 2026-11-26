@@ -191,7 +191,7 @@ jobs:
             cp -aL "$source" "$GUEST_GLIBC_DIR/$name"
           done
           # Include every additional direct DT_NEEDED dependency reported by ldd.
-          for binary in "$WINE64" "$WINESERVER"; do
+          for binary in "$WINE64" "$WINESERVER" $(find "$RUNNER_TEMP/runtime-input/wine/lib/wine/x86_64-unix" -type f -name "*.so*" -print); do
             LDD_OUTPUT="$(ldd "$binary")"
             printf '%s\n' "$LDD_OUTPUT" | tee "$RUNNER_TEMP/ldd-$(basename "$binary").txt"
             if grep -q "not found" <<<"$LDD_OUTPUT"; then
