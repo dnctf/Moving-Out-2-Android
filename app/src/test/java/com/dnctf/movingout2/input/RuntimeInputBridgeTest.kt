@@ -110,6 +110,21 @@ class RuntimeInputBridgeTest {
         assertEquals(InputBridgeStatus.BRIDGE_READY_WAITING_RUNTIME, bridge.status)
     }
 
+    @Test fun newRuntimeSessionRequiresHeartbeatToAdvancePastPreviousReader() {
+        val fake = FakeTransport().apply { readerHeartbeat = 41L }
+        val bridge = RuntimeInputBridge(fake)
+        assertTrue(bridge.initialize("/tmp/input.shm"))
+        bridge.setNativeRuntimeConnected(true)
+        assertEquals(InputBridgeStatus.BRIDGE_CONNECTED, bridge.status)
+
+        bridge.beginRuntimeSession()
+        assertEquals(InputBridgeStatus.BRIDGE_READY_WAITING_RUNTIME, bridge.status)
+        assertFalse(bridge.refreshRuntimeConnectionFromReader())
+        fake.readerHeartbeat = 42L
+        assertTrue(bridge.refreshRuntimeConnectionFromReader())
+        assertEquals(InputBridgeStatus.BRIDGE_CONNECTED, bridge.status)
+    }
+
     @Test fun unavailableReaderHeartbeatCannotPromoteBridgeToConnected() {
         val fake = FakeTransport().apply { readerHeartbeat = null }
         val bridge = RuntimeInputBridge(fake)

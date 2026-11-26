@@ -46,6 +46,16 @@ class RuntimeInputBridge(private val transport: XInputTransport = NativeXInputTr
     }
 
     /** Explicit session signal; callers must use process/reader evidence, never APK or file presence. */
+    /**
+     * Starts a fresh supervised runtime session. Snapshot the current counter so an old Wine
+     * process heartbeat cannot make a newly launched session appear connected.
+     */
+    fun beginRuntimeSession() {
+        runtimeSessionActive = false
+        lastReaderHeartbeat = transport.readReaderHeartbeat() ?: 0L
+        updateStatus()
+    }
+
     fun setNativeRuntimeConnected(connected: Boolean) {
         runtimeSessionActive = connected
         updateStatus()

@@ -59,7 +59,7 @@ static BOOL init_mapping(void) {
    LARGE_INTEGER sz;
    if(GetFileSizeEx(fileHandle,&sz)&&sz.QuadPart>=MO2X_SIZE){
     mappingHandle=CreateFileMappingA(fileHandle,NULL,PAGE_READWRITE,0,MO2X_SIZE,NULL);
-    if(mappingHandle)view=(const Mapping*)MapViewOfFile(mappingHandle,FILE_MAP_READ|FILE_MAP_WRITE,0,0,MO2X_SIZE);
+    if(mappingHandle)view=(Mapping*)MapViewOfFile(mappingHandle,FILE_MAP_READ|FILE_MAP_WRITE,0,0,MO2X_SIZE);
     if(view && (view->magic!=MO2X_MAGIC||view->version!=MO2X_VERSION||view->total_size!=MO2X_SIZE||view->max_players!=MO2X_SLOTS)){UnmapViewOfFile(view);view=NULL;}
    }
   }
