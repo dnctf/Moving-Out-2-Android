@@ -17,7 +17,7 @@ class RuntimeManifestParserTest {
   bytes[4]=2;bytes[5]=1;bytes[6]=1
   b.putShort(16,3.toShort());b.putShort(18,62.toShort());b.putInt(20,1)
   b.putLong(24,0x400000);b.putLong(32,64);b.putShort(52,64.toShort());b.putShort(54,56.toShort());b.putShort(56,1.toShort())
-  b.putInt(64,1);b.putInt(68,4);b.putLong(72,0);b.putLong(80,0x400000);b.putLong(88,0x400000);b.putLong(96,120);b.putLong(104,120);b.putLong(112,0x1000)
+  b.putInt(64,1);b.putInt(68,5);b.putLong(72,0);b.putLong(80,0x400000);b.putLong(88,0x400000);b.putLong(96,120);b.putLong(104,120);b.putLong(112,0x1000)
   return bytes
  }
  private fun sha(file:File):String{val d=MessageDigest.getInstance("SHA-256");file.inputStream().use{input->val b=ByteArray(4096);while(true){val n=input.read(b);if(n<0)break;d.update(b,0,n)}};return d.digest().joinToString(""){"%02x".format(it)}}
