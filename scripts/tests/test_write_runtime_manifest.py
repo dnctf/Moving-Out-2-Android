@@ -18,6 +18,8 @@ class RuntimeManifestWriterTest(unittest.TestCase):
             "wine/lib/wine/x86_64-windows/msvcp140.dll",
             "dxvk/x64/d3d11.dll", "dxvk/x64/dxgi.dll",
             "wine/lib/wine/libwine.so",
+            "wine/lib/x86_64-linux-gnu/libc.so.6",
+            "wine/lib/x86_64-linux-gnu/libm.so.6",
         ]
         for name in files:
             path = root / name
@@ -29,6 +31,10 @@ class RuntimeManifestWriterTest(unittest.TestCase):
             self.make_root(root)
             subprocess.run(["python3", str(SCRIPT), "--root", str(root), "--version", "test-1"], check=True)
             manifest = json.loads((root / "runtime-manifest.json").read_text())
+            self.assertTrue(manifest["components"]["guestGlibc"]["included"])
+            self.assertEqual(manifest["components"]["guestGlibc"]["path"], "wine/lib/x86_64-linux-gnu")
+            self.assertEqual(manifest["components"]["guestGlibc"]["abi"], "DIRECTORY_SHA256_X86_64")
+            self.assertEqual(len(manifest["components"]["guestGlibc"]["sha256"]), 64)
             self.assertFalse(manifest["components"]["turnip"]["included"])
             for key in ("turnipSo", "turnipIcd"):
                 self.assertFalse(manifest["components"][key]["included"])
