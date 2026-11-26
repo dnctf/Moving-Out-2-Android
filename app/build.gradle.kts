@@ -4,6 +4,7 @@ plugins {
 }
 
 android {
+    androidResources { noCompress += "zip" }
     namespace = "com.dnctf.movingout2"
     compileSdk = 35
     ndkVersion = "27.2.12479018"
