@@ -5,6 +5,7 @@ import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Properties
+import org.json.JSONObject
 import java.security.MessageDigest
 
 enum class RuntimeBundleStatus { NOT_FOUND, INVALID_MANIFEST, INCOMPLETE, READY }
@@ -105,6 +106,18 @@ class RuntimeBundleValidator {
       blockers += "Required Wine Windows module is not PE32+ x86-64: $relative"
      }
     }
+   }
+   val turnipIcd = map["turnipIcd"]
+   if (turnipIcd != null) {
+    val icdLibraryPath = runCatching {
+     JSONObject(turnipIcd.readText(Charsets.UTF_8)).optJSONObject("ICD")
+      ?.optString("library_path").orEmpty()
+    }.getOrElse {
+     blockers += "Turnip ICD JSON parse failed: ${it.message}"
+     ""
+    }
+    if (icdLibraryPath.isBlank()) blockers += "Turnip ICD JSON is missing ICD.library_path."
+    if (map["turnipSo"] == null) blockers += "Turnip ICD is present without libvulkan_freedreno.so."
    }
    if (wine?.parentFile?.isDirectory == true) {
     wine.parentFile.listFiles()?.filter { it.isFile && it.canExecute() }?.forEach { guestBinary ->
