@@ -248,3 +248,6 @@ The latest user brief was implemented incrementally on PR #9 while preserving ex
 - `RuntimeRenderReadinessSnapshot` separates post-launch rendering evidence from preflight Vulkan enumeration. Vulkan physical-device enumeration alone never satisfies render readiness; successful Wine bootstrap/registry, wineserver socket, DXVK D3D11 device creation, and actual surface-frame presentation are all required.
 - Supervisor explicitly logs that its `RUNNING` state means the game process was launched, not that rendering is ready.
 - Steam API DLL override is builtin-only in the current safe profile to avoid loading the modified Steam API emulator observed in the supplied game inventory. This may prevent Steam-dependent game startup until the user restores the official Steam installation; it is not a DRM workaround.
+
+
+- Runtime packager additionally invokes `readelf -d` on inspected ELF payloads so the dynamic dependency tables are at least parseable before bundle generation.
