@@ -194,20 +194,21 @@ class MainActivity : Activity() {
         val dialog = AlertDialog.Builder(this).setTitle("Live Runtime Logs")
             .setView(scroll).setPositiveButton("Close", null).create()
         val handler = Handler(Looper.getMainLooper())
+        val candidates = listOf(
+            File(filesDir, "diagnostics/runtime-process.log"),
+            File(filesDir, "diagnostics/wine_session.log"),
+            File(filesDir, "diagnostics/mo2_player.log")
+        )
+        // Discover Unity's default Player.log once per viewer session; never rescan the full game tree every second.
+        val playerLogs = listOf(
+            File(filesDir, "game_data"),
+            File(filesDir, "game_import"),
+            File(filesDir, "wine_prefixes/moving-out-2/drive_c/users/steamuser/AppData/LocalLow")
+        ).filter { it.isDirectory }.flatMap { root ->
+            root.walkTopDown().maxDepth(12).filter { it.isFile && it.name.equals("Player.log", true) }.toList()
+        }
         val refresh = object : Runnable {
             override fun run() {
-                val candidates = listOf(
-                    File(filesDir, "diagnostics/runtime-process.log"),
-                    File(filesDir, "diagnostics/wine_session.log"),
-                    File(filesDir, "diagnostics/mo2_player.log")
-                )
-                val playerLogs = listOf(
-                    File(filesDir, "game_data"),
-                    File(filesDir, "game_import"),
-                    File(filesDir, "wine_prefixes/moving-out-2/drive_c/users/steamuser/AppData/LocalLow")
-                ).filter { it.isDirectory }.flatMap { root ->
-                    root.walkTopDown().maxDepth(12).filter { it.isFile && it.name.equals("Player.log", true) }.toList()
-                }
                 val content = buildString {
                     (candidates + playerLogs).distinct().forEach { file ->
                         append("===== ").append(file.absolutePath).append(" =====\n")
