@@ -23,6 +23,11 @@ replace_once(
     'endif()\n'
 )
 replace_once(
+    "src/emu/entrypoint.c",
+    "#ifdef ANDROID\\nvoid EXPORT my___libc_init",
+    "#if defined(ANDROID) && !defined(WINLATOR_GLIBC)\\nvoid EXPORT my___libc_init"
+)
+replace_once(
     "src/tools/fileutils.c",
     '    if(FileExist("/data/data/com.termux/files/usr/tmp", 0)) return "/data/data/com.termux/files/usr/tmp";\n',
     '#ifndef BOX64_STANDALONE_ANDROID\n'
@@ -72,4 +77,4 @@ replace_once(
     '            AddPath("/data/data/com.termux/files/usr/lib/box64-x86_64-linux-gnu", &context->box64_ld_lib, 1);\n'
     '        #endif\n'
 )
-print("Applied standalone Android path guards to Box64 CMakeLists.txt, core.c, env.c, and fileutils.c.")
+print("Applied standalone Android path guards and selected the glibc __libc_start_main entrypoint for WINLATOR_GLIBC builds.")
