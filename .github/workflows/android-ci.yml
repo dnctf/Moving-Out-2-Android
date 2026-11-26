@@ -147,16 +147,19 @@ jobs:
           test -f "$APK_PATH"
           MANIFEST_DUMP="$("$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt" dump xmltree "$APK_PATH" AndroidManifest.xml)"
           grep -F "extractNativeLibs" <<<"$MANIFEST_DUMP" | grep -Eq "(0xffffffff|true)"
+          grep -F "largeHeap" <<<"$MANIFEST_DUMP" | grep -Eq "(0xffffffff|true)"
+          grep -F "targetSdkVersion" <<<"$MANIFEST_DUMP" | grep -Eq "(0x23|35)"
           unzip -l "$APK_PATH" | grep -F "lib/arm64-v8a/libbox64.so"
           unzip -lv "$APK_PATH" | grep -F "lib/arm64-v8a/libbox64.so" | grep -Eq "Defl:N"
           mkdir -p "$RUNNER_TEMP/apk-native"
-          unzip -p "$APK_PATH" lib/arm64-v8a/libmo2_input_bridge.so > "$RUNNER_TEMP/apk-native/libmo2_input_bridge.so"
-          unzip -p "$APK_PATH" lib/arm64-v8a/libvulkan_probe.so > "$RUNNER_TEMP/apk-native/libvulkan_probe.so"
           for so in libbox64.so libmo2_input_bridge.so libvulkan_probe.so; do
-            binary="app/src/main/jniLibs/arm64-v8a/$so"
-            [[ "$so" == "libbox64.so" ]] || binary="$RUNNER_TEMP/apk-native/$so"
-            readelf -Wl "$binary" | awk -v name="$so" '/LOAD/{if ($NF != "0x4000") {print "Bad 16 KB LOAD alignment in " name ": " $NF; exit 1} found=1} END{if (!found) exit 1}'
+            unzip -p "$APK_PATH" "lib/arm64-v8a/$so" > "$RUNNER_TEMP/apk-native/$so"
+            file "$RUNNER_TEMP/apk-native/$so" | grep -F "ELF 64-bit LSB"
+            readelf -h "$RUNNER_TEMP/apk-native/$so" | grep -Eq "Class:.*ELF64"
+            readelf -h "$RUNNER_TEMP/apk-native/$so" | grep -Eq "Machine:.*AArch64"
+            readelf -Wl "$RUNNER_TEMP/apk-native/$so" | awk -v name="$so" '/LOAD/{if ($NF != "0x4000") {print "Bad 16 KB LOAD alignment in " name ": " $NF; exit 1} found=1} END{if (!found) exit 1}'
           done
+          cmp "$RUNNER_TEMP/apk-native/libbox64.so" app/src/main/jniLibs/arm64-v8a/libbox64.so
           unzip -l "$APK_PATH" | grep -F "lib/arm64-v8a/libvulkan_probe.so"
           unzip -l "$APK_PATH" | grep -F "lib/arm64-v8a/libmo2_input_bridge.so"
           unzip -l "$APK_PATH" | grep -F "assets/runtime/xinput1_3.dll"
