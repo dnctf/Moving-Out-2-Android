@@ -3,6 +3,13 @@ package com.dnctf.movingout2.runtime
 import java.io.File
 
 object WineLaunchCommand {
+    /** Guest x86-64 search order: GNU glibc first, then Wine's Unix libraries. */
+    fun guestLibrarySearchPath(guestGlibcDirectory: File?, guestWineLibraryDirectory: File?): String? =
+        listOfNotNull(
+            guestGlibcDirectory?.takeIf { it.isDirectory && it.canRead() },
+            guestWineLibraryDirectory?.takeIf { it.isDirectory && it.canRead() }
+        ).joinToString(":") { it.absolutePath }.ifBlank { null }
+
     fun toWineZPath(path: String): String = "Z:" + path.replace('/', '\\')
 
     fun arguments(winePath: String, windowsGamePath: String, width: Int, height: Int): List<String> =
@@ -42,12 +49,8 @@ object WineLaunchCommand {
             "DXVK_FRAME_RATE" to fpsCap.coerceIn(15, 240).toString(),
             "LD_LIBRARY_PATH" to hostLibraryDirectory.absolutePath
         )
-        val guestLibraryPaths = listOfNotNull(
-            guestGlibcDirectory?.takeIf { it.isDirectory && it.canRead() },
-            guestLibraryDirectory?.takeIf { it.isDirectory && it.canRead() }
-        ).map { it.absolutePath }
-        if (guestLibraryPaths.isNotEmpty()) {
-            result["BOX64_LD_LIBRARY_PATH"] = guestLibraryPaths.joinToString(":")
+        guestLibrarySearchPath(guestGlibcDirectory, guestLibraryDirectory)?.let {
+            result["BOX64_LD_LIBRARY_PATH"] = it
         }
         guestBinaryDirectory?.takeIf { it.isDirectory && it.canRead() }?.let {
             result["BOX64_PATH"] = it.absolutePath
