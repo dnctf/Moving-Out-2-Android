@@ -4,6 +4,7 @@ import com.dnctf.movingout2.installation.InstallationStatus
 import com.dnctf.movingout2.installation.InstallationValidator
 import com.dnctf.movingout2.installation.ValidationStage
 import com.dnctf.movingout2.installation.InstallationStagePolicy
+import com.dnctf.movingout2.installation.GameZipRootLocator
 import java.io.File
 import java.nio.file.Files
 import org.junit.Assert.*
@@ -138,6 +139,17 @@ class InstallationValidatorTest {
         assertEquals(29, report.metadataVersion)
         assertTrue(report.missingFiles.isEmpty())
         root.deleteRecursively()
+    }
+
+    @Test fun zipRootLocatorPairsArbitraryUnityExeWithMatchingDataDirectory() {
+        val names = listOf(
+            "payload/MovingOut2-Win64.exe",
+            "payload/GameAssembly.dll",
+            "payload/UnityPlayer.dll",
+            "payload/baselib.dll",
+            "payload/MovingOut2-Win64_Data/il2cpp_data/Metadata/global-metadata.dat"
+        )
+        assertEquals("payload/", GameZipRootLocator.findRootPrefix(names))
     }
 
     @Test fun caseInsensitiveLookupSupportsUnityMetadataPath() {
