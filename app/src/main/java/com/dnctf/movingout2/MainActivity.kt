@@ -63,6 +63,7 @@ class MainActivity : Activity() {
     @Volatile private var vulkanAvailable = false
     @Volatile private var graphicsProbeComplete = false
     private val graphicsProbeInProgress = AtomicBoolean(false)
+    private val runtimeRefreshGeneration = java.util.concurrent.atomic.AtomicInteger(0)
     @Volatile private var lastLaunchReady = false
     private val diagnosticLog = RuntimeDiagnostics()
     private var pendingDiagnosticZip: File? = null
@@ -345,14 +346,21 @@ class MainActivity : Activity() {
     }
 
     private fun ensureRuntimeInstalledOnFirstLaunch() {
-        val report = RuntimeBundleValidator().validate(File(filesDir, "native_runtime/bundle"))
-        if (report.isReady) return
-        if (android.os.Build.SUPPORTED_ABIS.none { it == "arm64-v8a" }) {
-            runtimeStatus.text = "Automatic setup stopped: this app requires an ARM64 (arm64-v8a) Android device."
-            return
-        }
-        runtimeStatus.text = "First-run setup: runtime missing. Preparing automatic download…"
-        startRuntimeRepositoryInstall(automatic = true)
+        Thread({
+            val report = runCatching {
+                RuntimeBundleValidator().validate(File(filesDir, "native_runtime/bundle"))
+            }
+            val supportedAbi = android.os.Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (!supportedAbi) {
+                    runtimeStatus.text = "Automatic setup stopped: this app requires an ARM64 (arm64-v8a) Android device."
+                } else if (report.getOrNull()?.isReady != true) {
+                    runtimeStatus.text = "First-run setup: runtime missing or invalid. Preparing automatic download…"
+                    startRuntimeRepositoryInstall(automatic = true)
+                }
+            }
+        }, "runtime-first-run-check").apply { isDaemon = true; start() }
     }
 
     private fun downloadRuntimeFromRepository() {
@@ -547,21 +555,28 @@ class MainActivity : Activity() {
     }
 
     private fun refreshRuntimeStatus() {
-        val root = File(filesDir, "native_runtime/bundle")
-        val report = RuntimeBundleValidator().validate(root)
-        val graphics = RuntimeGraphicsComponents.assess(root)
-        if (!report.isReady || report.box64 == null) {
-            lastLaunchReady = false
-            playButton.isEnabled = false
-            playButton.alpha = 0.55f
-            runtimeStatus.text = "Runtime bundle: ${report.status}\nLaunch readiness: BLOCKED (runtime not validated)\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${report.blockers.joinToString("\n")}\n${graphics.notes.joinToString("\n")}"
-            return
-        }
+        if (!::gameRegistry.isInitialized) return
+        val generation = runtimeRefreshGeneration.incrementAndGet()
         lastLaunchReady = false
-        playButton.isEnabled = false
-        playButton.alpha = 0.55f
-        runtimeStatus.text = "Runtime bundle: READY (checking nativeLibraryDir exec capability and Vulkan)…"
+        playButton.isEnabled = activeWineSession?.state == WineSessionState.RUNNING
+        playButton.alpha = if (playButton.isEnabled) 1f else 0.55f
+        runtimeStatus.text = "Validating runtime files and checksums in background…"
+
         Thread({
+            val root = File(filesDir, "native_runtime/bundle")
+            val report = RuntimeBundleValidator().validate(root)
+            val graphics = RuntimeGraphicsComponents.assess(root)
+            if (!report.isReady || report.box64 == null) {
+                runOnUiThread {
+                    if (generation != runtimeRefreshGeneration.get() || isFinishing || isDestroyed) return@runOnUiThread
+                    lastLaunchReady = false
+                    playButton.isEnabled = activeWineSession?.state == WineSessionState.RUNNING
+                    playButton.alpha = if (playButton.isEnabled) 1f else 0.55f
+                    runtimeStatus.text = "Runtime bundle: ${report.status}\nLaunch readiness: BLOCKED (runtime not validated)\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${report.blockers.joinToString("\n")}\n${graphics.notes.joinToString("\n")}"
+                }
+                return@Thread
+            }
+
             val exec = runCatching { AndroidExecCapabilityProbe(this, diagnosticLog).probe(report.box64) }
             val active = runCatching { gameRegistry.getActiveGame() }.getOrNull()
             val gamePresent = active?.isReadyToLaunch == true &&
@@ -579,7 +594,7 @@ class MainActivity : Activity() {
             )
             val decision = launchReadinessCoordinator.evaluate(snapshot)
             runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (generation != runtimeRefreshGeneration.get() || isFinishing || isDestroyed) return@runOnUiThread
                 lastLaunchReady = decision.playEnabled
                 val running = activeWineSession?.state == WineSessionState.RUNNING
                 playButton.isEnabled = decision.playEnabled || running
@@ -595,7 +610,8 @@ class MainActivity : Activity() {
                 }
                 runtimeStatus.text = "Runtime bundle: READY\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\nBox64 execution: ${if (snapshot.execProbeAllowed) "ALLOWED" else "BLOCKED"}\n${execText}\n${gameText}\nVulkan: ${if (vulkanAvailable) "AVAILABLE" else if (graphicsProbeComplete) "UNAVAILABLE" else "CHECKING"}\nLaunch readiness: ${decision.readiness}\n${graphics.notes.joinToString("\n")}"
                 if (decision.shouldAutoLaunch && !running) {
-                    diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "auto-launch", "All game/runtime/exec/Vulkan checks passed; triggering one automatic launch for this Activity session."))
+                    diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "auto-launch",
+                        "All game/runtime/exec/Vulkan checks passed; triggering one automatic launch for this Activity session."))
                     playButton.post { if (!isFinishing && !isDestroyed) startGameSession() }
                 }
             }
