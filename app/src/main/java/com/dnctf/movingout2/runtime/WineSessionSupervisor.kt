@@ -340,7 +340,12 @@ class WineSessionSupervisor(
         diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor", "Initializing new WINEPREFIX at ${prefix.absolutePath}"))
         val bootArgs = WineLaunchCommand.winebootArguments(wine.absolutePath)
         val env = buildMap {
+            val wineRoot = wine.parentFile?.parentFile
+                ?: throw IllegalStateException("Unable to resolve Wine root from ${wine.absolutePath}")
             put("WINEPREFIX", prefix.absolutePath)
+            put("WINEDLLPATH", File(wineRoot, "lib/wine").absolutePath)
+            put("WINELOADER", File(wineRoot, "bin/wine64").absolutePath)
+            put("WINESERVER", File(wineRoot, "bin/wineserver").absolutePath)
             put("WINEDLLOVERRIDES", "xinput1_3,xinput1_4,xinput9_1_0=n,b")
             put("LD_LIBRARY_PATH", context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
             put("BOX64_PATH", wine.parentFile?.absolutePath.orEmpty())
