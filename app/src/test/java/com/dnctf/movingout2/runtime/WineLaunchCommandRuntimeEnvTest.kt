@@ -33,7 +33,7 @@ class WineLaunchCommandRuntimeEnvTest {
             assertEquals(prefix.absolutePath, env["WINEPREFIX"])
             assertTrue(env["WINEDLLOVERRIDES"].orEmpty().contains("d3d11=n,b"))
             assertTrue(env["WINEDLLOVERRIDES"].orEmpty().contains("dxgi=n,b"))
-            assertTrue(env["WINEDLLOVERRIDES"].orEmpty().contains("steam_api64=n"))
+            assertTrue(env["WINEDLLOVERRIDES"].orEmpty().contains("steam_api64=b"))
             assertTrue(env["WINEDLLOVERRIDES"].orEmpty().contains("xinput9_1_0=n,b"))
             assertEquals("1", env["BOX64_DYNAREC_STRONGMEM"])
             assertEquals("1", env["BOX64_DYNAREC_SAFEFLAGS"])
