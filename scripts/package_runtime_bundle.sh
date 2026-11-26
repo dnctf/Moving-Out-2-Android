@@ -48,8 +48,12 @@ rm -f "$WIN64"/{mshtml*,jscript*,vbscript*,ieframe*,iexplore.exe,winebrowser.exe
 rm -f "$UNIX64"/{mshtml*,jscript*,vbscript*,ieframe*,iexplore*,winebrowser*,hhctrl*,wined3d*,d3d8*,d3d9*,d3d10*,d3d12*,ddraw*,opengl32*,wineps*,winspool*,sane*,gphoto2*,twain_32*,wineoss*,winealsa*}
 # Keep runtime dynamic symbols but remove debug/unneeded symbols.
 strip --strip-unneeded "$ROOT/wine/bin/wine64" "$ROOT/wine/bin/wineserver"
-command -v llvm-strip >/dev/null 2>&1 || { echo "llvm-strip is required to strip the ARM64 Box64 ELF." >&2; exit 1; }
-llvm-strip --strip-unneeded "$ROOT/box64/bin/box64"
+LLVM_STRIP="$(command -v llvm-strip || true)"
+if [[ -z "$LLVM_STRIP" && -n "${ANDROID_NDK_HOME:-}" ]]; then
+  LLVM_STRIP="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+fi
+[[ -x "$LLVM_STRIP" ]] || { echo "llvm-strip (or the Android NDK llvm-strip) is required for ARM64 Box64." >&2; exit 1; }
+"$LLVM_STRIP" --strip-unneeded "$ROOT/box64/bin/box64"
 while IFS= read -r -d '' elf; do strip --strip-unneeded "$elf"; done < <(find "$ROOT/wine/lib/wine" "$ROOT/wine/lib/x86_64-linux-gnu" -type f \( -name '*.so' -o -name '*.so.*' \) -print0)
 if command -v x86_64-w64-mingw32-strip >/dev/null 2>&1; then
   while IFS= read -r -d '' pe; do x86_64-w64-mingw32-strip --strip-unneeded "$pe"; done < <(find "$WIN64" -type f \( -iname '*.dll' -o -iname '*.exe' \) -print0)
