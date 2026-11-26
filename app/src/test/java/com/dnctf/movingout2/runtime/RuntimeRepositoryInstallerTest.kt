@@ -2,6 +2,7 @@ package com.dnctf.movingout2.runtime
 
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
