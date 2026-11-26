@@ -40,3 +40,31 @@ class LaunchReadinessCoordinator(initiallyLaunched: Boolean = false) {
     @Synchronized
     fun hasAutoLaunched(): Boolean = hasAutoLaunchedInSession
 }
+
+
+/**
+ * Post-launch render readiness is intentionally separate from preflight Vulkan
+ * enumeration. A physical device being visible is not proof of Wine, DXVK, or
+ * SurfaceView presentation.
+ */
+data class RuntimeRenderReadinessSnapshot(
+    val vulkanPhysicalDeviceEnumerated: Boolean = false,
+    val winebootExitCode: Int? = null,
+    val wineRegistryFilesReady: Boolean = false,
+    val wineserverSocketReady: Boolean = false,
+    val dxvkD3d11DeviceCreated: Boolean = false,
+    val surfaceFramePresented: Boolean = false
+) {
+    val isRenderingReady: Boolean
+        get() = winebootExitCode == 0 && wineRegistryFilesReady &&
+            wineserverSocketReady && dxvkD3d11DeviceCreated && surfaceFramePresented
+
+    val blockers: List<String>
+        get() = buildList {
+            if (winebootExitCode != 0) add("WINEBOOT_NOT_CONFIRMED")
+            if (!wineRegistryFilesReady) add("WINE_REGISTRY_NOT_READY")
+            if (!wineserverSocketReady) add("WINESERVER_SOCKET_NOT_READY")
+            if (!dxvkD3d11DeviceCreated) add("DXVK_D3D11_DEVICE_NOT_CREATED")
+            if (!surfaceFramePresented) add("SURFACE_FRAME_NOT_PRESENTED")
+        }
+}
