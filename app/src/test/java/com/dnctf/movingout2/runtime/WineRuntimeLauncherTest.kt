@@ -42,6 +42,18 @@ class WineRuntimeLauncherTest {
         val env = WineLaunchCommand.environment(File("/prefix"), File("/shm"), File("/lib"), 60)
         assertFalse(env.containsKey("VK_ICD_FILENAMES"))
     }
+    @Test fun guestGlibcPrecedesWineLibrariesInBox64SearchPath() {
+        val root = java.nio.file.Files.createTempDirectory("guest-glibc-path").toFile()
+        val glibc = File(root, "wine/lib/x86_64-linux-gnu").apply { mkdirs() }
+        val wineLib = File(root, "wine/lib/wine").apply { mkdirs() }
+        val host = File(root, "host-arm64").apply { mkdirs() }
+        val env = WineLaunchCommand.environment(File(root, "prefix"), File(root, "shm"), host, 30,
+            guestLibraryDirectory = wineLib, guestGlibcDirectory = glibc)
+        assertEquals(glibc.absolutePath + ":" + wineLib.absolutePath, env["BOX64_LD_LIBRARY_PATH"])
+        assertEquals(host.absolutePath, env["LD_LIBRARY_PATH"])
+        assertFalse(env["LD_LIBRARY_PATH"]!!.contains("x86_64-linux-gnu"))
+        root.deleteRecursively()
+    }
     @Test fun neverCopiesHostArm64LibraryPathIntoBox64GuestVariables() {
         val host = File("/host/arm64/lib")
         val env = WineLaunchCommand.environment(File("/prefix"), File("/shm"), host, 60)
