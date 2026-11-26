@@ -11,6 +11,7 @@ while (($#)); do case "$1" in
 command -v zip >/dev/null || { echo "zip command is required." >&2; exit 1; }
 for f in "$BOX64" "$WINE_DIR/bin/wine64" "$WINE_DIR/bin/wineserver" "$DXVK_DIR/d3d11.dll" "$DXVK_DIR/dxgi.dll" "$XINPUT_DIR/xinput1_3.dll" "$XINPUT_DIR/xinput1_4.dll" "$XINPUT_DIR/xinput9_1_0.dll"; do [[ -s "$f" ]] || { echo "Required file missing/empty: $f" >&2;exit 1;}; done
 [[ -d "$WINE_DIR/lib/wine" && -n "$(find -L "$WINE_DIR/lib/wine" -type f -size +0c -print -quit)" ]] || { echo "wine/lib/wine is missing or empty" >&2;exit 1; }
+[[ -d "$WINE_DIR/lib/x86_64-linux-gnu" && -s "$WINE_DIR/lib/x86_64-linux-gnu/libc.so.6" ]] || { echo "wine/lib/x86_64-linux-gnu with libc.so.6 is required" >&2; exit 1; }
 check_elf(){ local f="$1" machine="$2"; command -v readelf >/dev/null || { echo "readelf is required for ABI provenance validation." >&2; exit 1; }; readelf -h "$f" | grep -Eq "Machine:.*$machine" || { echo "Unexpected ELF machine (expected $machine): $f" >&2;exit 1;}; }
 check_elf "$BOX64" "AArch64"
 check_elf "$WINE_DIR/bin/wine64" "Advanced Micro Devices X86-64"
@@ -38,14 +39,21 @@ if [[ -n "$TURNIP_SO" ]];then [[ -s "$TURNIP_SO" ]] || { echo "Turnip SO missing
 OUT_DIR="$(dirname "$OUTPUT")";mkdir -p "$OUT_DIR";OUTPUT="$(cd "$OUT_DIR" && pwd)/$(basename "$OUTPUT")";TMP="$(mktemp -d)";trap 'rm -rf "$TMP"' EXIT
 ROOT="$TMP/root";mkdir -p "$ROOT/box64/bin" "$ROOT/wine/bin" "$ROOT/wine/lib" "$ROOT/dxvk/x64"
 cp "$BOX64" "$ROOT/box64/bin/box64";cp "$WINE_DIR/bin/wine64" "$ROOT/wine/bin/wine64";cp "$WINE_DIR/bin/wineserver" "$ROOT/wine/bin/wineserver"
-cp -aL "$WINE_DIR/lib/wine" "$ROOT/wine/lib/wine";mkdir -p "$ROOT/wine/lib/wine/x86_64-windows";cp "$DXVK_DIR/d3d11.dll" "$ROOT/dxvk/x64/";cp "$DXVK_DIR/dxgi.dll" "$ROOT/dxvk/x64/"
+cp -aL "$WINE_DIR/lib/wine" "$ROOT/wine/lib/wine";mkdir -p "$ROOT/wine/lib/wine/x86_64-windows";cp -aL "$WINE_DIR/lib/x86_64-linux-gnu" "$ROOT/wine/lib/x86_64-linux-gnu";cp "$DXVK_DIR/d3d11.dll" "$ROOT/dxvk/x64/";cp "$DXVK_DIR/dxgi.dll" "$ROOT/dxvk/x64/"
 cp "$XINPUT_DIR/xinput1_3.dll" "$ROOT/wine/lib/wine/x86_64-windows/";cp "$XINPUT_DIR/xinput1_4.dll" "$ROOT/wine/lib/wine/x86_64-windows/";cp "$XINPUT_DIR/xinput9_1_0.dll" "$ROOT/wine/lib/wine/x86_64-windows/"
 for redistributable in vcruntime140.dll vcruntime140_1.dll msvcp140.dll; do
   source="$WINE_DIR/lib/wine/x86_64-windows/$redistributable"
   [[ -s "$source" ]] || { echo "Required VC++ runtime DLL missing from Wine runtime: $source" >&2; exit 1; }
   cp "$source" "$ROOT/wine/lib/wine/x86_64-windows/$redistributable"
 done
-if find "$ROOT/wine/lib/wine" -type l -print -quit | grep -q .; then echo "Wine runtime contains unresolved symlinks; refusing to create a non-portable Android ZIP." >&2; exit 1; fi
+check_guest_glibc(){
+  local count=0
+  [[ -s "$ROOT/wine/lib/x86_64-linux-gnu/libc.so.6" ]] || { echo "Guest glibc libc.so.6 missing" >&2; exit 1; }
+  while IFS= read -r -d '' lib; do check_elf_shared "$lib" "Advanced Micro Devices X86-64"; count=$((count+1)); done < <(find "$ROOT/wine/lib/x86_64-linux-gnu" -type f \( -name '*.so' -o -name '*.so.*' \) -print0)
+  [[ "$count" -gt 0 ]] || { echo "Guest glibc has no ELF shared objects" >&2; exit 1; }
+}
+check_guest_glibc
+if find "$ROOT/wine/lib" -type l -print -quit | grep -q .; then echo "Symlink found under wine/lib; refusing non-portable Android ZIP." >&2; exit 1; fi
 if [[ -n "$TURNIP_SO" ]];then mkdir -p "$ROOT/turnip";cp "$TURNIP_SO" "$ROOT/turnip/libvulkan_freedreno.so";cp "$(dirname "$TURNIP_SO")/freedreno_icd.aarch64.json" "$ROOT/turnip/";fi
 MANIFEST_FILE="$ROOT/runtime-manifest.json"
 python3 scripts/write_runtime_manifest.py --root "$ROOT" --version "$VERSION"
