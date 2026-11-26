@@ -176,7 +176,7 @@ class WineSessionSupervisor(
     ),
     private val onSessionFinished: (() -> Unit)? = null
 ) {
-    val prefix: File = File(context.filesDir, "wine_prefixes/$gameId")
+    val prefix: File = File(context.filesDir, "wineprefix")
     private val sharedInput: File = File(context.filesDir, "xinput_shm.bin")
     private val stateRef = AtomicReference(WineSessionState.IDLE)
     private val validator = RuntimeBundleValidator()
@@ -328,43 +328,98 @@ class WineSessionSupervisor(
     }
 
     private fun bootstrapPrefix(box64: File, wine: File, guestLibraryDirectory: File?, guestGlibcDirectory: File?): Boolean {
-        val systemReg = File(prefix, "system.reg")
-        val system32 = File(prefix, "drive_c/windows/system32")
-        system32.mkdirs()
+        // Migrate the previous per-game prefix without discarding user registry state.
+        val legacyPrefix = File(context.filesDir, "wine_prefixes/$gameId")
+        if (!prefix.exists() && legacyPrefix.isDirectory) {
+            if (!prefix.parentFile?.isDirectory.orFalse() && !prefix.mkdirs()) return false
+            if (!legacyPrefix.renameTo(prefix)) {
+                diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
+                    "Unable to migrate legacy Wine prefix from ${legacyPrefix.absolutePath}."))
+                return false
+            }
+        }
 
-        if (systemReg.isFile) {
-            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor", "Existing WINEPREFIX validated at ${prefix.absolutePath}"))
+        val wineUnixDir = guestLibraryDirectory?.let { File(it, "x86_64-unix") }
+        val wineWindowsDir = guestLibraryDirectory?.let { File(it, "x86_64-windows") }
+        val requiredWineFiles = listOf(
+            wineUnixDir?.let { File(it, "ntdll.so") },
+            wineUnixDir?.let { File(it, "win32u.so") },
+            wineWindowsDir?.let { File(it, "kernel32.dll") },
+            wineWindowsDir?.let { File(it, "user32.dll") }
+        )
+        val missingWineFiles = requiredWineFiles.filter { it == null || !it.isFile || it.length() <= 0L }
+        if (missingWineFiles.isNotEmpty()) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
+                "Wine runtime is missing required Unix/Windows modules: " +
+                    missingWineFiles.joinToString { it?.absolutePath ?: "unresolved Wine library directory" }))
+            return false
+        }
+
+        val systemReg = File(prefix, "system.reg")
+        val userReg = File(prefix, "user.reg")
+        val system32 = File(prefix, "drive_c/windows/system32")
+        if (!system32.mkdirs() && !system32.isDirectory) return false
+
+        if (systemReg.isFile && systemReg.length() > 0L && userReg.isFile && userReg.length() > 0L) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor",
+                "Existing WINEPREFIX registry files validated at ${prefix.absolutePath}"))
             return true
         }
 
-        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor", "Initializing new WINEPREFIX at ${prefix.absolutePath}"))
+        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor",
+            "Initializing win64 WINEPREFIX at ${prefix.absolutePath}"))
         val bootArgs = WineLaunchCommand.winebootArguments(wine.absolutePath)
+        val hostLibraryDir = context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir
         val env = buildMap {
+            put("WINEARCH", "win64")
             put("WINEPREFIX", prefix.absolutePath)
+            put("WINEDLLPATH", guestLibraryDirectory?.absolutePath.orEmpty())
             put("WINEDLLOVERRIDES", "xinput1_3,xinput1_4,xinput9_1_0=n,b")
-            put("LD_LIBRARY_PATH", context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
+            put("LD_LIBRARY_PATH", hostLibraryDir)
             put("BOX64_PATH", wine.parentFile?.absolutePath.orEmpty())
             put("BOX64_DYNAREC", "1")
+            put("BOX64_DYNAREC_BIGBLOCK", "1")
+            put("BOX64_DYNAREC_STRONGMEM", "1")
+            put("BOX64_DYNAREC_SAFEFLAGS", "1")
+            put("BOX64_DYNAREC_CALLRET", "1")
             WineLaunchCommand.guestLibrarySearchPath(guestGlibcDirectory, guestLibraryDirectory)?.let {
                 put("BOX64_LD_LIBRARY_PATH", it)
             }
         }
 
         return try {
-            val proc = runner.start(box64, bootArgs, env, prefix, "BOX64-WINE")
-            val exit = proc.waitFor(20000)
-            if (exit.timedOut || (exit.exitCode != null && exit.exitCode != 0)) {
-                diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "wineboot initialization failed: exit=${exit.exitCode}, timedOut=${exit.timedOut}"))
+            val proc = runner.start(box64, bootArgs, env, prefix, "WINEBOOT")
+            val exit = proc.waitFor(30000)
+            if (exit.timedOut || exit.exitCode != 0) {
+                diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
+                    "wineboot --init failed: exit=${exit.exitCode}, timedOut=${exit.timedOut}"))
                 false
             } else {
-                diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor", "wineboot prefix bootstrap completed successfully"))
-                true
+                val deadline = System.currentTimeMillis() + 10000L
+                while (System.currentTimeMillis() < deadline &&
+                    (!systemReg.isFile || systemReg.length() == 0L || !userReg.isFile || userReg.length() == 0L)) {
+                    Thread.sleep(100)
+                }
+                val registryReady = systemReg.isFile && systemReg.length() > 0L &&
+                    userReg.isFile && userReg.length() > 0L
+                if (!registryReady) {
+                    diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
+                        "wineboot exited successfully but system.reg/user.reg were not created."))
+                    false
+                } else {
+                    diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor",
+                        "wineboot --init completed; system.reg and user.reg are present."))
+                    true
+                }
             }
         } catch (e: Exception) {
-            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "wineboot invocation threw: ${e.message}"))
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
+                "wineboot invocation threw: ${e.message}"))
             false
         }
     }
+
+    private fun Boolean?.orFalse(): Boolean = this == true
 
     private fun configureWinePrefixRegistry() {
         val userReg = File(prefix, "user.reg")
@@ -374,14 +429,18 @@ class WineSessionSupervisor(
         }
         val current = runCatching { userReg.readText() }.getOrDefault("")
         val marker = "[Software\\Wine\\Direct3D]"
-        if (!current.contains(marker)) {
-            userReg.appendText(
-                "\n[Software\\Wine\\Direct3D]\n" +
-                    "\"csmt\"=\"enabled\"\n" +
-                    "\n[Software\\Wine\\WineDbg]\n" +
-                    "\"ShowCrashDialog\"=dword:00000000\n"
-            )
+        val additions = buildString {
+            if (!current.contains("\"Version\"=\"win10\"")) {
+                append("\n[Software\\Wine]\n\"Version\"=\"win10\"\n")
+            }
+            if (!current.contains(marker)) {
+                append("\n[Software\\Wine\\Direct3D]\n")
+                append("\"csmt\"=\"enabled\"\n")
+                append("\n[Software\\Wine\\WineDbg]\n")
+                append("\"ShowCrashDialog\"=dword:00000000\n")
+            }
         }
+        if (additions.isNotEmpty()) userReg.appendText(additions)
     }
 
     private fun deployXInputDlls() {
