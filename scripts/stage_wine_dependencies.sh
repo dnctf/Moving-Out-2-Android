@@ -22,7 +22,6 @@ is_box64_wrapper() {
 already_staged() {
   local name="$1"
   [[ -e "$GLIBC_DIR/$name" || -e "$UNIX_DIR/$name" ]] && return 0
-  find "$WINE_LIB" -type f -o -type l 2>/dev/null | grep -Fqx "$WINE_LIB/$name" && return 0
   find "$WINE_LIB" -name "$name" -print -quit 2>/dev/null | grep -q .
 }
 
