@@ -15,10 +15,30 @@ class WineRuntimeLauncherTest {
         assertEquals(listOf("/runtime/box64", "Z:\\games\\mo2.exe", "-force-d3d11", "-screen-width", "1920", "-screen-height", "1080", "-screen-fullscreen", "1"), args)
     }
 
+    @Test fun addsUnityPlayerLogFileArgumentAsWineZPath() {
+        val args = WineLaunchCommand.arguments(
+            "/runtime/wine/bin/wine64", "Z:\\games\\mo2.exe", 1280, 720,
+            File("/data/user/0/com.example/files/diagnostics/mo2_player.log")
+        )
+        assertEquals("-logFile", args[args.size - 2])
+        assertEquals("Z:\\data\\user\\0\\com.example\\files\\diagnostics\\mo2_player.log", args.last())
+    }
+
+    @Test fun configuresDxvkDiagnosticLogPathAndAdditionalHostLibraryPath() {
+        val env = WineLaunchCommand.environment(
+            File("/prefix"), File("/xinput_shm.bin"), File("/native/lib"), 60,
+            dxvkDirectory = File("/dxvk"), diagnosticsDirectory = File("/diagnostics"),
+            additionalHostLibraryDirectory = File("/turnip")
+        )
+        assertEquals("/native/lib:/turnip", env["LD_LIBRARY_PATH"])
+        assertEquals("info", env["DXVK_LOG_LEVEL"])
+        assertEquals("/diagnostics", env["DXVK_LOG_PATH"])
+    }
+
     @Test fun includesRuntimeEnvironmentAndOptionalTurnip() {
         val env = WineLaunchCommand.environment(File("/prefix"), File("/xinput_shm.bin"), File("/bundle/lib"), 45, File("/turnip/icd.json"), File("/dxvk"))
         assertEquals("/prefix", env["WINEPREFIX"])
-        assertEquals("d3d11=n,b;dxgi=n,b;steam_api64=n;xinput1_3,xinput1_4,xinput9_1_0=n,b", env["WINEDLLOVERRIDES"])
+        assertEquals("d3d11=n,b;dxgi=n,b;steam_api64=b;xinput1_3,xinput1_4,xinput9_1_0=n,b", env["WINEDLLOVERRIDES"])
         assertEquals("Z:\\xinput_shm.bin", env["MO2_XINPUT_SHM_PATH"])
         assertEquals("1", env["BOX64_DYNAREC_STRONGMEM"])
         assertEquals("45", env["DXVK_FRAME_RATE"])
@@ -28,7 +48,7 @@ class WineRuntimeLauncherTest {
     @Test fun dxvkCanBeDisabledWithoutDisablingXinputOverrides() {
         val env = WineLaunchCommand.environment(File("/prefix"), File("/shm"), File("/lib"), 60,
             dxvkDirectory = File("/dxvk"), useDxvk = false)
-        assertEquals("d3d11=b;dxgi=b;steam_api64=n;xinput1_3,xinput1_4,xinput9_1_0=n,b", env["WINEDLLOVERRIDES"])
+        assertEquals("d3d11=b;dxgi=b;steam_api64=b;xinput1_3,xinput1_4,xinput9_1_0=n,b", env["WINEDLLOVERRIDES"])
         assertFalse(env.containsKey("DXVK_DLL_PATH"))
     }
 
