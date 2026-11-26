@@ -38,7 +38,7 @@ object WineSaveDataManager {
         return written
     }
 
-    fun import(sourceZip: File, localLow: File): Long {
+    fun importArchive(sourceZip: File, localLow: File): Long {
         if (!sourceZip.isFile || !sourceZip.canRead()) throw IOException("Save archive is unavailable.")
         val root = localLow.canonicalFile
         if (!root.mkdirs() && !root.isDirectory) throw IOException("Cannot create Wine LocalLow save directory.")
