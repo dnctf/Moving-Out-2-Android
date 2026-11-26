@@ -62,7 +62,7 @@ class SafGameImporter(
         val availableBefore = runCatching { StatFs(context.filesDir.absolutePath).availableBytes }
             .getOrElse { throw IOException("Unable to determine available app storage.", it) }
         if (!safGameImportStorageSatisfied(availableBefore, requiredSpace)) {
-            throw IOException("Insufficient app storage. Extraction and reserve require at least \${requiredSpace / (1024 * 1024)} MiB free.")
+            throw IOException("Insufficient app storage. Extraction and reserve require at least ${requiredSpace / (1024 * 1024)} MiB free.")
         }
 
         val target = File(context.filesDir, "game_data")
@@ -92,7 +92,7 @@ class SafGameImporter(
             val validation = InstallationValidator().validate(staging)
             if (validation.status != InstallationStatus.VALID ||
                 validation.missingFiles.isNotEmpty() || validation.accessErrors.isNotEmpty()) {
-                throw IOException("Copied game failed validation: \${validation.status}; missing=\${validation.missingFiles.joinToString()}; errors=\${validation.accessErrors.joinToString()}")
+                throw IOException("Copied game failed validation: ${validation.status}; missing=${validation.missingFiles.joinToString()}; errors=${validation.accessErrors.joinToString()}")
             }
 
             if (target.exists()) {
@@ -118,7 +118,7 @@ class SafGameImporter(
                     throw IOException("SAF import failed and the new target could not be removed; previous game remains in backup.", error)
                 }
                 if (!backup.renameTo(target)) {
-                    throw IOException("SAF import failed and rollback could not restore the previous game; backup remains at \${backup.absolutePath}.", error)
+                    throw IOException("SAF import failed and rollback could not restore the previous game; backup remains at ${backup.absolutePath}.", error)
                 }
             }
             throw error
@@ -157,7 +157,7 @@ class SafGameImporter(
                         }
                         if (total > maxExpandedBytes) throw IOException("SAF game directory exceeds the $maxExpandedBytes byte expansion limit.")
                     }
-                    else -> throw IOException("Unsupported SAF entry: \${child.name ?: "(unnamed)"}")
+                    else -> throw IOException("Unsupported SAF entry: ${child.name ?: "(unnamed)"}")
                 }
             }
         }
@@ -240,10 +240,10 @@ internal class SafGameEntryNameRegistry {
     fun register(name: String): String {
         if (name.isBlank() || name == "." || name == ".." ||
             name.contains('/') || name.contains('\\') || name.contains('\u0000')) {
-            throw IOException("Unsafe SAF entry name: \${name.take(160)}")
+            throw IOException("Unsafe SAF entry name: ${name.take(160)}")
         }
         val key = Normalizer.normalize(name, Normalizer.Form.NFKC).lowercase(Locale.ROOT)
-        if (!names.add(key)) throw IOException("Duplicate/colliding SAF entry name: \${name.take(160)}")
+        if (!names.add(key)) throw IOException("Duplicate/colliding SAF entry name: ${name.take(160)}")
         return name
     }
 }
