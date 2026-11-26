@@ -240,3 +240,11 @@ The latest user brief was implemented incrementally on PR #9 while preserving ex
 - No dry-run `wineboot --init` was possible because a real Wine runtime bundle is not available in the repository context.
 - No physical DBY2-W09 proof exists yet for Box64 execution, Wine bootstrap, ntdll loading, DXVK D3D11 creation, Vulkan frame presentation, or game launch.
 - CI must pass on the final PR head after these changes; intermediate runs may be cancelled when newer commits supersede them.
+
+
+### Additional launch and render-readiness changes
+- Supervisor deploys manifest-validated `dxvk/x64/d3d11.dll` and `dxgi.dll` into the Wine prefix `drive_c/windows/system32` before launch when DXVK is enabled.
+- `WineLaunchCommand.arguments` supports Unity `-logFile Z:\\...\\mo2_player.log`.
+- `RuntimeRenderReadinessSnapshot` separates post-launch rendering evidence from preflight Vulkan enumeration. Vulkan physical-device enumeration alone never satisfies render readiness; successful Wine bootstrap/registry, wineserver socket, DXVK D3D11 device creation, and actual surface-frame presentation are all required.
+- Supervisor explicitly logs that its `RUNNING` state means the game process was launched, not that rendering is ready.
+- Steam API DLL override is builtin-only in the current safe profile to avoid loading the modified Steam API emulator observed in the supplied game inventory. This may prevent Steam-dependent game startup until the user restores the official Steam installation; it is not a DRM workaround.
