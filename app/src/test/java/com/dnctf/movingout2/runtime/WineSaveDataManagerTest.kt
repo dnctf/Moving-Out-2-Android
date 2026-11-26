@@ -19,7 +19,7 @@ class WineSaveDataManagerTest {
             val archive = File(root, "saves.zip")
             assertEquals(bytes.size.toLong(), WineSaveDataManager.export(File(root, "source"), archive))
             val destination = File(root, "prefix/LocalLow")
-            assertEquals(bytes.size.toLong(), WineSaveDataManager.import(archive, destination))
+            assertEquals(bytes.size.toLong(), WineSaveDataManager.importArchive(archive, destination))
             assertTrue(File(destination, "Studio/Game/profile.dat").readBytes().contentEquals(bytes))
         } finally { root.deleteRecursively() }
     }
@@ -31,7 +31,7 @@ class WineSaveDataManagerTest {
             ZipOutputStream(archive.outputStream()).use { zip ->
                 zip.putNextEntry(ZipEntry("../outside.txt")); zip.write(byteArrayOf(1)); zip.closeEntry()
             }
-            try { WineSaveDataManager.import(archive, File(root, "LocalLow")); fail("Zip-slip path must be rejected") }
+            try { WineSaveDataManager.importArchive(archive, File(root, "LocalLow")); fail("Zip-slip path must be rejected") }
             catch (_: java.io.IOException) { }
             assertTrue(!File(root, "outside.txt").exists())
         } finally { root.deleteRecursively() }
