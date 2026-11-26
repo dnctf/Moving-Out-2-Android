@@ -1,251 +1,113 @@
 # Moving Out 2 Android
 
-Android ARM64 compatibility launcher, emulation supervisor, and runtime integration architecture for **Moving Out 2** (Windows x64 Unity/IL2CPP).
+[![Version](https://img.shields.io/badge/version-0.2.0--alpha.4-blue)](https://github.com/dnctf/Moving-Out-2-Android)
+[![Platform](https://img.shields.io/badge/platform-Android%208.0%2B%20%7C%20arm64--v8a-green)](https://developer.android.com/ndk/guides/abis)
+[![Runtime](https://img.shields.io/badge/runtime-Box64%20%2B%20Wine%20%2B%20DXVK%20%2B%20Turnip-orange)](https://github.com/dnctf/Moving-Out-2-Android)
+[![Status](https://img.shields.io/badge/status-Active%20Development-yellow)](https://github.com/dnctf/Moving-Out-2-Android)
 
-> **Status (P0.1 – P2 Complete):** Process supervisor, isolated prefix bootstrap, Vulkan swapchain presentation probe, transactional ZIP importer with rollback, unified game registry, XInput shared-memory IPC binding, runtime settings consumer, lightweight telemetry HUD overlay, and modernized Node 24 CI are fully integrated and verified via automated test suites. Actual gameplay and sustained frame-rates require physical validation on target Qualcomm Snapdragon devices.
+An experimental Android ARM64 compatibility launcher/runtime wrapper for running the Windows x86-64 edition of **Moving Out 2**. The project integrates Box64, Wine, DXVK, Vulkan driver selection, game-data import, and an XInput bridge.
 
-*Independent project, not affiliated with Team17 or SMG Studio.*
+> **Development status:** Active development. CI has built and verified a Debug APK, but physical execution of Box64/Wine, Wine prefix bootstrap, DXVK presentation, and successful entry into the game have not yet been demonstrated on the reference device. A successful JVM/NDK build is not proof of playable gameplay.
 
----
+This is an independent community project and is not affiliated with Team17 or SMG Studio.
 
-## 1. Target Hardware & Specifications
+## Project targets
 
-- **Game:** Moving Out 2 (Windows x64)
-- **Target Engine:** Unity 2021.3.16f1 / IL2CPP (64-bit PE32+)
-- **Host Architecture:** Android ARM64 (`arm64-v8a`), API 26 (Android 8.0) to API 35 (Android 15)
-- **Target Hardware Range:** Qualcomm Snapdragon 855+ (Adreno 640) up to Snapdragon 888 (Adreno 660) / 8 Gen 1+ (reference device: Huawei MatePad DBY2-W09 / Snapdragon 865/870).
-- **Minimum Performance Target:** 30 FPS sustained at 70–75% resolution scale with conservative Dynarec flags.
+| Item | Target |
+|---|---|
+| Game | Moving Out 2, Windows x86-64 |
+| Game build | v1.2.274 (user-supplied installation) |
+| Engine | Unity 2021.3.16f1 / IL2CPP |
+| Graphics API | Direct3D 11 via DXVK → Vulkan |
+| Android ABI | `arm64-v8a` |
+| Android API | Android 8.0+ (minSdk 26); target SDK 35 |
+| Reference device | Huawei MatePad Air DBY2-W09 |
+| Reference SoC/GPU | Snapdragon 888 / Adreno 660 |
+| Reference memory | 8 GB RAM |
+| Performance objective | 30 FPS target, initially 70–75% render scale; not yet validated |
 
-*Notice:* Users must provide legitimate, user-owned game files. This repository does not distribute game files, proprietary game assets, or native runtime binaries.
+## Runtime execution pipeline
 
----
-
-## 2. Emulation Stack & Runtime Architecture (P0.1 – P2)
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        Moving Out 2 Android App                        │
-│                                                                        │
-│  ┌──────────────────────┐  ┌─────────────────────┐  ┌────────────────┐ │
-│  │     MainActivity     │  │    GameSurfaceHost  │  │ Telemetry HUD  │ │
-│  │   (UI, SAF & Flow)   │  │   (SurfaceView KHR) │  │  (FPS/RAM/Thm) │ │
-│  └──────────┬───────────┘  └──────────┬──────────┘  └────────┬───────┘ │
-│             │                         │                      │         │
-│  ┌──────────▼───────────┐  ┌──────────▼──────────┐           │         │
-│  │     GameRegistry     │  │ VulkanNativeProbe   │           │         │
-│  │ (SAF & ZIP SSOT)     │  │ (VkSwapchainKHR)    │           │         │
-│  └──────────┬───────────┘  └─────────────────────┘           │         │
-│             │                                                │         │
-│  ┌──────────▼────────────────────────────────────────────────▼──────┐  │
-│  │                    WineSessionSupervisor                          │  │
-│  │  State Machine: IDLE -> VALIDATING -> BOOTSTRAP -> WINESERVER -> │  │
-│  │                 LAUNCH -> RUNNING -> STOPPING -> STOPPED/FAILED   │  │
-│  └──────────┬────────────────────────────────────────────────────────┘  │
-│             │                                                          │
-│  ┌──────────▼───────────┐  ┌─────────────────────┐  ┌────────────────┐ │
-│  │  ControllerInput     │  │ RuntimeSettings     │  │ AndroidExec    │ │
-│  │  Coordinator (Touch) │  │ Consumer (Dynarec/  │  │ Capability    │ │
-│  │  & Gamepad Translator│  │ DXVK HUD/Resolution)│  │ Probe (SELinux)│ │
-│  └──────────┬───────────┘  └─────────────────────┘  └────────────────┘ │
-└─────────────┼──────────────────────────────────────────────────────────┘
-              │ Shared Memory Seqlock IPC (128 B)
-              ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                    Linux Host Layer (Android OS)                       │
-│  /proc/self/status | PowerManager Thermal | ANativeWindow              │
-│  Host Box64 Executable (ELF64 AArch64)                                 │
-└─────────────┬──────────────────────────────────────────────────────────┘
-              │ User-space Emulation (x86_64 to ARM64 Dynarec)
-              ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                    Wine & Guest Runtime (x86_64)                       │
-│  • wineserver -f -p (Persistent process supervisor & socket polling)   │
-│  • WINEPREFIX (Isolated per game: filesDir/wine_prefixes/<game_id>)     │
-│  • System32 Overrides: WINEDLLOVERRIDES="d3d11,dxgi,xinput1_3,...=n,b" │
-│  • Native Guest DLLs: xinput1_3.dll & xinput1_4.dll (MO2X reader)      │
-│  • DXVK (Direct3D 11 -> Vulkan) & Turnip Freedreno Vulkan Driver      │
-│  • Target Game Executable: mo2.exe (Unity IL2CPP x64)                  │
-└────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+  A[Android app / launcher] --> B[SAF game-folder or ZIP import]
+  B --> C[Internal game-data validation]
+  C --> D[Runtime bundle validation / extraction]
+  D --> E[Box64 ARM64 from nativeLibraryDir]
+  E --> F[Wine x86-64 guest runtime]
+  F --> G[Wine prefix / wineboot / ntdll]
+  G --> H[mo2.exe with original game directory]
+  H --> I[Direct3D 11]
+  I --> J[DXVK]
+  J --> K[Vulkan ICD / Android graphics driver]
+  K --> L[SurfaceView / ANativeWindow presentation]
+  L --> M[Game menu and gameplay]
+  N[XInput DLLs + MO2X shared memory] --> H
 ```
 
-### Module Breakdown
+The diagram describes the intended execution path. Individual stages remain subject to the verification matrix below; in particular, the Vulkan probe is not equivalent to a Wine/DXVK swapchain connected to the Android `SurfaceView`.
 
-1. **P0.1 — ABI Integrity & Executable Capability Probe:**
-   - `RuntimeBinaryInspector`: Strict ELF64 AArch64 host, ELF64 x86-64 guest, and PE32+ DLL binary header verification.
-   - `RuntimeManifestParser`: Schema v2 with provenance and SHA-256 validation.
-   - `AndroidExecCapabilityProbe`: Preflights executable launch (`box64 --version`), detects SELinux `execute_no_trans` EACCES denials, and provides SHA-256 identical fallback from `nativeLibraryDir/libbox64.so`.
-   - `WineLaunchCommand`: Strict separation between host ARM64 `LD_LIBRARY_PATH` and guest x86-64 `BOX64_LD_LIBRARY_PATH` / `BOX64_PATH`.
+## Runtime components
 
-2. **P0.2 — Wineserver Process Supervisor & Prefix Bootstrap:**
-   - `WineSessionSupervisor`: Thread-safe state machine (`IDLE` -> `VALIDATING_PREFLIGHT` -> `BOOTSTRAPPING_PREFIX` -> `STARTING_WINESERVER` -> `LAUNCHING_TARGET` -> `RUNNING` -> `STOPPING` -> `STOPPED` / `FAILED`).
-   - Prefix Isolation: Dedicated prefixes per game (`filesDir/wine_prefixes/<game_id>`).
-   - Bootstrap Sequence: Automatic `box64 wineboot --init` execution when `system.reg` is missing.
-   - Readiness Probe: Active polling of wineserver socket and signal-0 responsiveness before target launch.
-   - Structured Logging & Crash Coupling: Combined tagged stdout/stderr (`[WINESERVER]` and `[BOX64-WINE]`), ring buffer, file export, and coupled teardown preventing orphan/zombie processes.
+| Component | Implementation / current evidence | Status |
+|---|---|---|
+| Android app | Kotlin, Android SDK 35, arm64-v8a | CI build verified |
+| SAF importer | Transactional copy into app-private storage, structural validation | Implemented; unknown-size SAF provider edge case still requires hardening |
+| Runtime bundle | Manifest/schema and SHA-256 validation, ZIP extraction | Automated validation exists; device install/launch not proven |
+| Box64 | ARM64 native executable packaged as `lib/arm64-v8a/libbox64.so`; legacy JNI packaging | Debug APK packaging and ELF inspection verified; on-device exec still required |
+| Wine | x86-64 Wine binaries and guest glibc search paths | Bootstrap code and unit tests present; `wineboot`/ntdll device execution unverified |
+| DXVK | D3D11/DXGI native overrides | DLL/configuration presence is not proof of rendering |
+| Vulkan | Native Vulkan capability/swapchain probe | Probe builds; Wine/DXVK WSI integration and device presentation unverified |
+| Turnip | Optional Mesa Freedreno ICD payload | Device driver load and stability unverified |
+| XInput | xinput1_3, xinput1_4, xinput9_1_0 and MO2X bridge | DLL build/package and protocol CI checks pass; in-game input unverified |
+| Game launch | `mo2.exe`, original game working directory | Not yet verified on physical hardware |
+| Main menu/gameplay | End-to-end game session | Not yet verified |
+| 30 FPS target | Snapdragon 888 / Adreno 660 | Performance target only; no benchmark claim |
 
-3. **P0.3 — Vulkan SurfaceView & Swapchain Presentation Bridge:**
-   - `vulkan_probe.cpp` (C++20 NDK): Queries `ANativeWindow`, initializes `VkSurfaceKHR` via `VK_KHR_android_surface`, validates presentation queue support, creates `VkSwapchainKHR`, and executes an acquire/present test frame.
-   - `GameSurfaceHost`: Lifecycle-aware `SurfaceView` component detaching render pipelines safely on `surfaceDestroyed` to prevent native driver SIGSEGV.
+## Build and CI
 
-4. **P1.1 & P1.2 — ZIP Importer Hardening & Game Registry:**
-   - `GameZipImporter`: Destination concurrency lock, transactional staging, pre-swap backup, atomic swap, and fault-injection rollback covering mid-extraction failures and user cancellations.
-   - `GameRegistry`: Single source of truth unifying SAF directory scans and internal extracted ZIPs with filesystem validation.
+The Android CI workflow runs the JVM unit-test task, builds a Debug APK, verifies packaged native libraries and XInput assets, and uploads a short-lived Actions artifact. The CI pipeline does **not** establish that the game runs on an Android device.
 
-5. **P1.3 & P1.4 — XInput Shared-Memory Binding & Settings Consumer:**
-   - `libmo2_input_bridge.so` & `ControllerInputCoordinator`: Lock-free sequence lock (seqlock) IPC over `MO2_XINPUT_SHM_PATH`. Merges touch multi-touch, dominant thumbsticks, and physical gamepads. Guarantees deterministic neutral zeroing on pause or backgrounding.
-   - `RuntimeSettingsConsumer`: Maps user preferences (resolution scaling, 30/45/60 FPS limits, graphics presets, Turnip ICD, Box64 dynarec profiles) into runtime launch plans.
-
-6. **P2 — CI Modernization & Telemetry Overlay:**
-   - Modernized GitHub Actions targeting Node 24 natively (`actions/checkout@v6`, `actions/setup-java@v6`, `gradle/actions/setup-gradle@v6`, `actions/upload-artifact@v6`).
-   - C++20 standard compliance across all native components.
-   - `TelemetryCollector` & `TelemetryOverlayView`: Real-time HUD calculating rolling FPS, frame times, `/proc/self/status` RAM metrics (`VmRSS`, `VmSize`), and `PowerManager` thermal throttling alerts.
-
----
-
-## 3. Technical Verification: Automated vs Physical Hardware
-
-To maintain rigorous engineering honesty, project verification is explicitly divided into two domains:
-
-| Component / Layer | Automated CI / JVM / NDK Status | Physical Hardware Requirement |
-| :--- | :--- | :--- |
-| **Kotlin Unit Tests** | **PASS (200+ unit tests)** | Verified in standard CI runners |
-| **C++20 Native Code** | **PASS (NDK Clang build)** | Verified in standard CI runners |
-| **MO2X Shared-Memory Layout** | **PASS (layout_test assertions)** | Verified across bitmask/alignment bounds |
-| **XInput DLL Assets** | **PASS (MinGW-w64 build)** | Packaged in APK `assets/runtime/` |
-| **Box64 Execution & SELinux** | Simulated / Validated in JVM | **Requires Qualcomm hardware (ADB shell)** |
-| **Turnip Adreno ICD Load** | Schema & Path Validated | **Requires Snapdragon Adreno 6xx GPU** |
-| **Vulkan Swapchain Presentation** | Native JNI Bridge Compiled | **Requires physical SurfaceView present test** |
-| **In-game 30 FPS Performance** | Mathematical Config Ready | **Requires physical benchmark with telemetry** |
-
----
-
-## 4. Automatic First-Run Runtime Setup
-
-On first app launch, the launcher checks the device's ARM64 ABI, collects device and
-Vulkan information, downloads the newest published `runtime-v*` bundle, verifies its
-SHA-256 and manifest v2, checks free storage, extracts into a staging directory, and
-activates it only after validation succeeds. If setup fails, use **Repair / download
-runtime** from the launcher to retry.
-
-The installer requires sufficient internal storage for the downloaded archive, expanded
-runtime and a safety reserve. Runtime files are kept in the app-private directory. The
-app prefers the Android system Vulkan driver; optional Turnip payloads are not forced
-onto devices based only on a GPU-family guess. Android system/kernel drivers cannot be
-silently replaced by an ordinary app.
-
-See [Automatic Runtime Downloads](docs/AUTOMATIC_RUNTIME_DOWNLOADS.md) for the release
-asset contract, extraction rules, storage requirements and device-driver policy.
-
----
-
-## 5. How to Build & Run Tests
-
-### Prerequisites
-- JDK 17 (Temurin recommended)
-- Android SDK 35 (`platforms;android-35`, `build-tools;35.0.0`)
-- Android NDK `27.2.12479018` & CMake `3.22.1`
-- MinGW-w64 (`x86_64-w64-mingw32-gcc-posix`) for XInput DLL assets
-
-### Compile Native Assets & Run Tests
-```bash
-# 1. Verify MO2X C++20 shared memory layout
-g++ -std=c++20 -Wall -Wextra -Werror native/wine-xinput/layout_test.cpp -I native/wine-xinput -o /tmp/mo2x-test
-/tmp/mo2x-test
-
-# 2. Build Wine XInput DLLs
-chmod +x native/wine-xinput/build_wine_xinput.sh
-MINGW_CC=x86_64-w64-mingw32-gcc-posix native/wine-xinput/build_wine_xinput.sh native/wine-xinput/out
-mkdir -p app/src/main/assets/runtime
-cp native/wine-xinput/out/xinput1_3.dll app/src/main/assets/runtime/
-cp native/wine-xinput/out/xinput1_4.dll app/src/main/assets/runtime/
-
-# 3. Run all unit tests
-gradle --no-daemon testDebugUnitTest
-
-# 4. Assemble Debug APK
-gradle --no-daemon assembleDebug
-```
-
----
-
-## 5. Physical Snapdragon ADB Verification Checklist
-
-Connect target device (Snapdragon 855+ / 865 / 870 / 888) via ADB:
+Typical local commands:
 
 ```bash
-# 1. Install debug APK
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-
-# 2. Grant permissions
-adb shell pm grant com.dnctf.movingout2 android.permission.READ_EXTERNAL_STORAGE
-
-# 3. Verify native libraries in app directory
-adb shell "run-as com.dnctf.movingout2 ls -la lib/"
-
-# 4. Check Vulkan loader and Adreno driver on device
-adb shell "dumpsys SurfaceFlinger | grep -i vulkan"
-
-# 5. Monitor real-time logs during launch
-adb logcat -s MO2XInput:V MO2Runtime:V AndroidExecProbe:V [WINESERVER]:V [BOX64-WINE]:V
+./gradlew testDebugUnitTest --stacktrace
+./gradlew assembleDebug
 ```
 
+The CI workflow uses Gradle 8.9, JDK 17, Android SDK 35, and NDK 27.2.12479018.
 
----
+Debug APK artifacts are temporary CI outputs, not public releases. Public GitHub Releases are intentionally withheld while runtime and physical-device gates remain open.
 
-## 7. Downloads & Pre-Releases
+## Setup and usage
 
-This project publishes the Android application and the emulation runtime as **separate release assets**. Install both components; the APK does not contain the full Wine/Box64 runtime bundle.
+1. Build or obtain a Debug APK from a successful CI run. Do not treat an artifact as a stable release.
+2. Obtain the runtime bundle from a trusted project build artifact or the project's documented runtime-bundle source. Verify its SHA-256 before importing it.
+3. Open the app and import the runtime ZIP when prompted. Wait for extraction and manifest/hash validation to finish.
+4. Select the root directory of the user's own Moving Out 2 Windows installation through Android's Storage Access Framework (SAF), or use the supported game ZIP import flow.
+5. Ensure the selected root contains `mo2.exe`, `GameAssembly.dll`, `UnityPlayer.dll`, `mo2_Data/`, and the required x86-64 plugin files. The original RUNE files, when present in the user's installation, must remain together in the game directory.
+6. Connect a compatible Bluetooth or USB controller if testing physical input. XInput translation is experimental until validated inside the game.
+7. Do not assume the Play action will reach the game: inspect the session diagnostics if bootstrap or launch fails.
 
-### Latest Runtime Bundle
+### Diagnostics
 
-- **Runtime release:** [Moving Out 2 Runtime 0.1.0 (pre-release)](https://github.com/dnctf/Moving-Out-2-Android/releases/tag/runtime-v0.1.0-34)
-- **Runtime archive:** [moving-out-2-runtime-arm64-v8a.zip](https://github.com/dnctf/Moving-Out-2-Android/releases/download/runtime-v0.1.0-34/moving-out-2-runtime-arm64-v8a.zip)
-- **Runtime checksums:** [SHA256SUMS.txt](https://github.com/dnctf/Moving-Out-2-Android/releases/download/runtime-v0.1.0-34/SHA256SUMS.txt)
+When reporting a failure, export the app's **Diagnostic ZIP** and include it with:
 
-Runtime package schema v2 contains the ARM64 Box64 host binary, x86_64 Wine executables and guest libraries, DXVK D3D11/DXGI DLLs, XInput 1.3/1.4 DLLs, and a manifest with component ABI declarations and SHA-256 hashes. Optional Turnip components are included only when supplied to the packager.
+- Android model, Android version, ABI, SoC/GPU and driver information;
+- runtime manifest and SHA-256 validation report;
+- Box64 execution probe result, including stdout, stderr and exit code;
+- Wine bootstrap/session logs, including `wineboot --init` exit status;
+- Wine prefix registry validation status;
+- DXVK/Vulkan/SurfaceView probe output;
+- game executable validation and process exit status;
+- XInput bridge/controller diagnostics.
 
-### Android APK Pre-Release
+Remove personal file paths or other private information before sharing diagnostics publicly.
 
-The alpha APK is signed so Android Package Installer can install it. The current CI fallback uses a runner-generated debug key: it is suitable for installation/testing, but its signing identity is not stable across fresh CI runners. A subsequent build may therefore require uninstalling the prior alpha before installing the new one. Before stable/public distribution, configure a persistent private release keystore in GitHub Actions secrets and switch the release signing configuration to that key.
+## Game data and legal notice
 
-APK pre-releases are published independently by the **Publish Android APK Pre-Release** GitHub Actions workflow. Each release includes:
-- ARM64 Android APK (release variant, signed with a CI-generated Android debug key for alpha testing).
-- `SHA256SUMS.txt` for integrity verification.
-- Release notes describing the build, installation, limitations and test status.
+This repository is a compatibility launcher/runtime wrapper. **It does not include, host, or distribute Moving Out 2 game files, copyrighted assets, proprietary DLLs, Steam emulation files, or a preinstalled game image.** Users are responsible for supplying game data they are legally entitled to use. Do not upload game archives, RUNE/Steam wrapper files, or other copyrighted game content to this repository or its issue tracker.
 
-Open [GitHub Releases](https://github.com/dnctf/Moving-Out-2-Android/releases) and select the latest `app-v*` pre-release. The APK release workflow is manually triggered from **Actions → Publish Android APK Pre-Release → Run workflow**. The current update version is `0.2.0-alpha.2` (Android `versionCode` 2). The release workflow can be run manually, and it also runs when the release workflow or app version configuration changes on `main`.
+## Contribution and issue reports
 
-### Installation Order
-
-1. Install the APK. If Android reports a signature conflict with an older build, uninstall the older build first; this alpha is signed with a CI-generated debug key. Because the key is not persistent across fresh runners, uninstall the older alpha first if Android reports a signature mismatch. The incremented `versionCode` supports normal upgrade ordering when the signing identity matches.
-2. Open the app and use its runtime setup/download flow, or download the runtime ZIP above and import it through the app if prompted.
-3. Import your own legally obtained Moving Out 2 Windows game directory/archive. The game itself is not distributed here.
-4. Connect a controller or configure the on-screen controls, then launch only after the app reports that game files and runtime validation have passed.
-
-### Compatibility & Known Limitations
-
-- APK target: Android ARM64 `arm64-v8a`; minimum Android 8.0 (API 26), target SDK 35.
-- Intended test range: Qualcomm Snapdragon 855-class and newer Adreno devices. This is a target range, not a guarantee of compatibility.
-- Huawei DBY2-W09 / Snapdragon platform validation, sustained gameplay, Vulkan presentation stability, thermal behavior and FPS are still physical-device test items unless a release explicitly reports otherwise.
-- CI success means automated compilation, package-content checks and unit tests passed. It does **not** prove the game boots or reaches playable performance on every device.
-- Users must provide their own game files. No proprietary game data is included.
-- This is an independent compatibility project and is not affiliated with Team17 or SMG Studio.
-
-### Verify an APK Download
-
-Linux:
-```bash
-sha256sum -c SHA256SUMS.txt
-```
-
-If the checksum file contains a filename different from the downloaded APK filename, compare the hash manually:
-```bash
-sha256sum Moving-Out-2-Android-*-arm64-v8a-debug-signed.apk
-cat SHA256SUMS.txt
-```
-
-
-## 8. License & Trademarks
-
-- Moving Out 2 is a registered trademark of Team17 / SMG Studio.
-- Source code in this repository is licensed under the MIT License.
+Please include the exact commit or CI run, device details, reproduction steps, and a redacted Diagnostic ZIP when filing runtime issues. Clearly distinguish automated test results from behavior observed on physical hardware.
