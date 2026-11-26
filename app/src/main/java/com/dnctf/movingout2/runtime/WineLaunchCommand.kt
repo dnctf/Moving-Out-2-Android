@@ -114,7 +114,7 @@ object WineLaunchCommand {
             "dxvk.useStateCache = True",
             "dxvk.logLevel = info",
             "dxvk.shaderCache = True"
-        ).joinToString("\\n", postfix = "\\n")
+        ).joinToString("\n", postfix = "\n")
         val temporary = File(prefix, "dxvk.conf.tmp")
         temporary.writeText(content, Charsets.UTF_8)
         if (config.exists() && !config.delete()) throw java.io.IOException("Unable to replace dxvk.conf.")
