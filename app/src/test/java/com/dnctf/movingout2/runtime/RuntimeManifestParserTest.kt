@@ -5,9 +5,21 @@ import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.security.MessageDigest
 
 class RuntimeManifestParserTest {
+ private fun x64SharedElf():ByteArray{
+  val bytes=ByteArray(120)
+  val b=ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+  bytes[0]=0x7f;bytes[1]='E'.code.toByte();bytes[2]='L'.code.toByte();bytes[3]='F'.code.toByte()
+  bytes[4]=2;bytes[5]=1;bytes[6]=1
+  b.putShort(16,3.toShort());b.putShort(18,62.toShort());b.putInt(20,1)
+  b.putLong(24,0x400000);b.putLong(32,64);b.putShort(52,64.toShort());b.putShort(54,56.toShort());b.putShort(56,1.toShort())
+  b.putInt(64,1);b.putInt(68,4);b.putLong(72,0);b.putLong(80,0x400000);b.putLong(88,0x400000);b.putLong(96,120);b.putLong(104,120);b.putLong(112,0x1000)
+  return bytes
+ }
  private fun sha(file:File):String{val d=MessageDigest.getInstance("SHA-256");file.inputStream().use{input->val b=ByteArray(4096);while(true){val n=input.read(b);if(n<0)break;d.update(b,0,n)}};return d.digest().joinToString(""){"%02x".format(it)}}
  private fun fixture(turnip:Boolean=false):File{
   val root=Files.createTempDirectory("manifest-v1").toFile()
@@ -25,6 +37,9 @@ class RuntimeManifestParserTest {
   put("wineserver","wine/bin/wineserver","server")
   val lib=File(root,"wine/lib/wine");lib.mkdirs();File(lib,"module.so").writeText("module")
   components.put("wineLib",JSONObject().put("included",true).put("path","wine/lib/wine").put("sha256",hashDir(lib)).put("abi","DIRECTORY_SHA256_X86_64"))
+  val glibc=File(root,"wine/lib/x86_64-linux-gnu");glibc.mkdirs()
+  File(glibc,"libc.so.6").writeBytes(x64SharedElf())
+  components.put("guestGlibc",JSONObject().put("included",true).put("path","wine/lib/x86_64-linux-gnu").put("sha256",hashDir(glibc)).put("abi","DIRECTORY_SHA256_X86_64"))
   put("d3d11","dxvk/x64/d3d11.dll","d3d")
   put("dxgi","dxvk/x64/dxgi.dll","dxgi")
   put("xinput1_3","wine/lib/wine/x86_64-windows/xinput1_3.dll","xinput3")
@@ -52,6 +67,33 @@ class RuntimeManifestParserTest {
  }
  private fun hashDir(dir:File):String{val listing=StringBuilder();dir.walkTopDown().filter{it.isFile}.sortedBy{it.relativeTo(dir).invariantSeparatorsPath}.forEach{f->listing.append(sha(f)).append("  ./").append(f.relativeTo(dir).invariantSeparatorsPath).append('\n')};val d=MessageDigest.getInstance("SHA-256");d.update(listing.toString().toByteArray(Charsets.UTF_8));return d.digest().joinToString(""){"%02x".format(it)}}
  @Test fun acceptsValidBundleWithAndWithoutTurnip(){val a=fixture();assertTrue(RuntimeManifestParser().validate(a).errors.toString(),RuntimeManifestParser().validate(a).valid);a.deleteRecursively();val b=fixture(true);assertTrue(RuntimeManifestParser().validate(b).errors.toString(),RuntimeManifestParser().validate(b).valid);b.deleteRecursively()}
+ @Test fun rejectsMissingGuestGlibcComponent(){
+  val root=fixture()
+  val json=JSONObject(File(root,"runtime-manifest.json").readText())
+  json.getJSONObject("components").remove("guestGlibc")
+  File(root,"runtime-manifest.json").writeText(json.toString())
+  val result=RuntimeManifestParser().validate(root)
+  assertFalse(result.valid)
+  assertTrue(result.errors.any{it.contains("guestGlibc")})
+  root.deleteRecursively()
+ }
+ @Test fun rejectsGuestGlibcHashMismatch(){
+  val root=fixture()
+  File(root,"wine/lib/x86_64-linux-gnu/libc.so.6").appendBytes(byteArrayOf(7))
+  assertTrue(RuntimeManifestParser().validate(root).errors.any{it.contains("SHA-256 mismatch: guestGlibc")})
+  root.deleteRecursively()
+ }
+ @Test fun rejectsNonElfGuestGlibcEvenWhenHashMatches(){
+  val root=fixture()
+  val libc=File(root,"wine/lib/x86_64-linux-gnu/libc.so.6");libc.writeText("not ELF")
+  val json=JSONObject(File(root,"runtime-manifest.json").readText())
+  json.getJSONObject("components").getJSONObject("guestGlibc").put("sha256",hashDir(libc.parentFile!!))
+  File(root,"runtime-manifest.json").writeText(json.toString())
+  val result=RuntimeManifestParser().validate(root)
+  assertFalse(result.valid)
+  assertTrue(result.errors.any{it.contains("Guest glibc object is not ELF64 x86-64")})
+  root.deleteRecursively()
+ }
  @Test fun rejectsUnexpectedPackagerProvenance(){
   val root=fixture()
   val json=JSONObject(File(root,"runtime-manifest.json").readText())
