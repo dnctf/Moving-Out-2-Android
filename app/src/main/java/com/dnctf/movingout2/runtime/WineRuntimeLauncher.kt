@@ -1,6 +1,7 @@
 package com.dnctf.movingout2.runtime
 
 import android.content.Context
+import com.dnctf.movingout2.input.InputBridgeStatus
 import com.dnctf.movingout2.input.RuntimeInputBridge
 import java.io.File
 import java.io.IOException
@@ -144,7 +145,9 @@ class WineRuntimeLauncher(
         if (!inputBridge.isNativeAvailable()) throw IOException("Native MO2X bridge is unavailable; refusing to launch with non-shared fallback input.")
         if (!inputBridge.initialize(sharedInput.absolutePath)) throw IOException("MO2X input bridge initialization failed.")
         return try {
-            RuntimeProcess(diagnostics).start(plan.executable, plan.arguments, plan.environment, plan.workingDirectory)
+            val process = RuntimeProcess(diagnostics).start(plan.executable, plan.arguments, plan.environment, plan.workingDirectory)
+            startReaderHeartbeatMonitor(process)
+            process
         } catch (error: Exception) {
             runRuntimeCleanupSequence(
                 neutralize = { neutralizeInputBridge() },
@@ -153,6 +156,45 @@ class WineRuntimeLauncher(
                 stopServer = { stopWineserver() }
             )
             throw error
+        }
+    }
+
+    /** Runtime UI/diagnostics can display this without inferring connectivity from process startup. */
+    fun inputBridgeStatus(): InputBridgeStatus = inputBridge.status
+
+    private fun startReaderHeartbeatMonitor(process: ProcessResult) {
+        Thread({
+            var previous = inputBridge.status
+            while (process.process.isAlive) {
+                inputBridge.refreshRuntimeConnectionFromReader()
+                val current = inputBridge.status
+                if (current != previous) {
+                    diagnostics.record(RuntimeDiagnostic(
+                        RuntimeDiagnostic.Severity.INFO,
+                        "input-bridge",
+                        "Wine XInput reader status changed: $current."
+                    ))
+                    previous = current
+                }
+                try {
+                    Thread.sleep(200L)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                }
+            }
+            inputBridge.setNativeRuntimeConnected(false)
+            val finalStatus = inputBridge.status
+            if (finalStatus != previous) {
+                diagnostics.record(RuntimeDiagnostic(
+                    RuntimeDiagnostic.Severity.INFO,
+                    "input-bridge",
+                    "Wine process ended; reader status is $finalStatus."
+                ))
+            }
+        }, "mo2x-reader-monitor").apply {
+            isDaemon = true
+            start()
         }
     }
 

@@ -13,9 +13,10 @@
 #define MO2X_SLOTS 4u
 
 typedef struct { uint32_t seq; uint8_t connected,reserved; uint16_t buttons; uint8_t lt,rt; int16_t lx,ly,rx,ry; uint8_t padding[6]; } Slot;
-typedef struct { uint32_t magic,version,total_size,max_players; uint64_t last_update_ns,reserved; Slot slots[4]; } Mapping;
+typedef struct { uint32_t magic,version,total_size,max_players; uint64_t last_update_ns,reader_heartbeat; Slot slots[4]; } Mapping;
 _Static_assert(sizeof(Slot)==24,"MO2X slot layout");
 _Static_assert(sizeof(Mapping)==128,"MO2X mapping layout");
+_Static_assert(offsetof(Mapping,reader_heartbeat)==24,"MO2X reader heartbeat offset");
 typedef struct { WORD wButtons; BYTE bLeftTrigger,bRightTrigger; SHORT sThumbLX,sThumbLY,sThumbRX,sThumbRY; } XINPUT_GAMEPAD;
 typedef struct { DWORD dwPacketNumber; XINPUT_GAMEPAD Gamepad; } XINPUT_STATE;
 typedef struct { WORD wLeftMotorSpeed,wRightMotorSpeed; } XINPUT_VIBRATION;
@@ -35,7 +36,7 @@ typedef struct { DWORD dwFlags; BYTE bReserved; BYTE bVirtualKey; WCHAR Unicode;
 #define BATTERY_LEVEL_FULL 3
 
 static HANDLE fileHandle=INVALID_HANDLE_VALUE, mappingHandle=NULL;
-static const Mapping *view=NULL;
+static Mapping *view=NULL;
 static volatile LONG initState=0;
 static BOOL init_mapping(void) {
  LONG prior=InterlockedCompareExchange(&initState,1,0);
@@ -45,7 +46,7 @@ static BOOL init_mapping(void) {
   /* Wine maps Android app-private paths through Z:\\; also accept Wine's
      explicit Unix-path namespace for callers that pass a POSIX path. */
   for (int attempt=0; attempt < 3 && fileHandle == INVALID_HANDLE_VALUE; ++attempt) {
-   fileHandle=CreateFileA(path,GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
+   fileHandle=CreateFileA(path,GENERIC_READ|GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
    if (fileHandle == INVALID_HANDLE_VALUE && GetLastError() == ERROR_SHARING_VIOLATION) Sleep(25u * (attempt + 1));
    else break;
   }
@@ -57,8 +58,8 @@ static BOOL init_mapping(void) {
   if(fileHandle!=INVALID_HANDLE_VALUE){
    LARGE_INTEGER sz;
    if(GetFileSizeEx(fileHandle,&sz)&&sz.QuadPart>=MO2X_SIZE){
-    mappingHandle=CreateFileMappingA(fileHandle,NULL,PAGE_READONLY,0,MO2X_SIZE,NULL);
-    if(mappingHandle)view=(const Mapping*)MapViewOfFile(mappingHandle,FILE_MAP_READ,0,0,MO2X_SIZE);
+    mappingHandle=CreateFileMappingA(fileHandle,NULL,PAGE_READWRITE,0,MO2X_SIZE,NULL);
+    if(mappingHandle)view=(const Mapping*)MapViewOfFile(mappingHandle,FILE_MAP_READ|FILE_MAP_WRITE,0,0,MO2X_SIZE);
     if(view && (view->magic!=MO2X_MAGIC||view->version!=MO2X_VERSION||view->total_size!=MO2X_SIZE||view->max_players!=MO2X_SLOTS)){UnmapViewOfFile(view);view=NULL;}
    }
   }
@@ -67,6 +68,7 @@ static BOOL init_mapping(void) {
 }
 static BOOL read_slot(DWORD user,Slot*out){
  if(user>=4||!init_mapping()||!view)return FALSE;
+ InterlockedIncrement64((volatile LONG64*)&view->reader_heartbeat);
  const volatile BYTE *p=(const volatile BYTE*)&view->slots[user];
  for(int tries=0;tries<1000;tries++){
   /* InterlockedCompareExchange is a read-modify-write and faults on FILE_MAP_READ.

@@ -139,3 +139,34 @@ Java_com_dnctf_movingout2_input_NativeXInputTransport_nativeReadSnapshot(JNIEnv*
     munmap(addr, kMapSize);
     return stable ? JNI_TRUE : JNI_FALSE;
 }
+
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_dnctf_movingout2_input_NativeXInputTransport_nativeReadReaderHeartbeat(JNIEnv* env, jobject, jstring path) {
+    if (!path) return static_cast<jlong>(-1);
+    const char* utf = env->GetStringUTFChars(path, nullptr);
+    if (!utf) return static_cast<jlong>(-1);
+    const int fd = open(utf, O_RDONLY | O_CLOEXEC);
+    env->ReleaseStringUTFChars(path, utf);
+    if (fd < 0) return static_cast<jlong>(-1);
+
+    struct stat st{};
+    if (fstat(fd, &st) != 0 || st.st_size < static_cast<off_t>(kMapSize)) {
+        close(fd);
+        return static_cast<jlong>(-1);
+    }
+    void* address = mmap(nullptr, kMapSize, PROT_READ, MAP_SHARED, fd, 0);
+    close(fd);
+    if (address == MAP_FAILED) return static_cast<jlong>(-1);
+
+    const auto* mapping = static_cast<const XInputShm*>(address);
+    const bool valid = mapping->header.magic == XINPUT_SHM_MAGIC &&
+        mapping->header.version == XINPUT_SHM_VERSION &&
+        mapping->header.total_size == kMapSize &&
+        mapping->header.max_players == XINPUT_SHM_MAX_PLAYERS;
+    const uint64_t heartbeat = valid
+        ? __atomic_load_n(&mapping->header.reader_heartbeat, __ATOMIC_ACQUIRE)
+        : 0;
+    munmap(address, kMapSize);
+    return valid ? static_cast<jlong>(heartbeat) : static_cast<jlong>(-1);
+}

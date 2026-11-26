@@ -6,6 +6,8 @@ interface XInputTransport {
     fun destroy()
     fun isNativeAvailable(): Boolean
     fun isInitialized(): Boolean
+    /** Monotonic count of XInput DLL reads; null means this transport cannot observe a reader. */
+    fun readReaderHeartbeat(): Long? = null
 
     companion object {
         const val MAX_PLAYERS = 4

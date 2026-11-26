@@ -27,6 +27,8 @@ data class RuntimeInputCapabilities(
 )
 
 class RuntimeInputBridge(private val transport: XInputTransport = NativeXInputTransport()) {
+    @Volatile private var runtimeSessionActive = false
+    @Volatile private var lastReaderHeartbeat = 0L
     @Volatile var status = InputBridgeStatus.BRIDGE_UNSUPPORTED
         private set
     val capabilities: RuntimeInputCapabilities get() = RuntimeInputCapabilities(
@@ -38,11 +40,39 @@ class RuntimeInputBridge(private val transport: XInputTransport = NativeXInputTr
 
     fun initialize(shmFilePath: String): Boolean {
         val initialized = transport.init(shmFilePath)
+        if (initialized) lastReaderHeartbeat = 0L
         updateStatus()
         return initialized
     }
 
-    fun setNativeRuntimeConnected(connected: Boolean) = updateStatus(connected)
+    /** Explicit session signal; callers must use process/reader evidence, never APK or file presence. */
+    fun setNativeRuntimeConnected(connected: Boolean) {
+        runtimeSessionActive = connected
+        updateStatus()
+    }
+
+    /**
+     * Promotes the bridge only after the Wine XInput DLL has actually read the MO2X mapping.
+     * The DLL increments this shared counter from XInput entry points; process startup alone
+     * intentionally leaves the status in BRIDGE_READY_WAITING_RUNTIME.
+     */
+    fun refreshRuntimeConnectionFromReader(): Boolean {
+        if (!transport.isNativeAvailable() || !transport.isInitialized()) return false
+        val heartbeat = transport.readReaderHeartbeat() ?: return false
+        when {
+            heartbeat > 0L && heartbeat != lastReaderHeartbeat -> {
+                lastReaderHeartbeat = heartbeat
+                runtimeSessionActive = true
+                updateStatus()
+            }
+            heartbeat == 0L && lastReaderHeartbeat > 0L -> {
+                lastReaderHeartbeat = 0L
+                runtimeSessionActive = false
+                updateStatus()
+            }
+        }
+        return status == InputBridgeStatus.BRIDGE_CONNECTED
+    }
 
     fun packet(virtualState: ControllerState, physicalState: ControllerState = ControllerState(), merge: Boolean = true): XInputPacket {
         val state = if (merge) {
@@ -97,14 +127,16 @@ class RuntimeInputBridge(private val transport: XInputTransport = NativeXInputTr
 
     fun destroy() {
         transport.destroy()
+        runtimeSessionActive = false
+        lastReaderHeartbeat = 0L
         status = InputBridgeStatus.BRIDGE_UNSUPPORTED
     }
     fun isNativeAvailable() = transport.isNativeAvailable()
     fun isInitialized() = transport.isInitialized()
 
-    private fun updateStatus(runtimeConnected: Boolean = false) {
+    private fun updateStatus() {
         status = when {
-            runtimeConnected && transport.isNativeAvailable() && transport.isInitialized() -> InputBridgeStatus.BRIDGE_CONNECTED
+            runtimeSessionActive && transport.isNativeAvailable() && transport.isInitialized() -> InputBridgeStatus.BRIDGE_CONNECTED
             transport.isNativeAvailable() && transport.isInitialized() -> InputBridgeStatus.BRIDGE_READY_WAITING_RUNTIME
             else -> InputBridgeStatus.BRIDGE_UNSUPPORTED
         }

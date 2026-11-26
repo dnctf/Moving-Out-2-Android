@@ -106,6 +106,12 @@ class NativeXInputTransport(forceFallbackForTesting: Boolean = false) : XInputTr
         return ByteArray(XInputTransport.PACKET_SIZE_BYTES).also { buffer.position(0); buffer.get(it) }
     }
 
+    override fun readReaderHeartbeat(): Long? {
+        if (!nativeAvailable || !initialized) return null
+        val path = sharedPath ?: return null
+        return runCatching { nativeReadReaderHeartbeat(path) }.getOrNull()?.takeIf { it >= 0L }
+    }
+
     private fun neutralizeFallback() {
         for (i in 0 until XInputTransport.MAX_PLAYERS) fallback[i] = neutralPacket()
     }
@@ -120,6 +126,7 @@ class NativeXInputTransport(forceFallbackForTesting: Boolean = false) : XInputTr
     private external fun nativeWriteSerializedPacket(playerIndex: Int, connected: Boolean, packet: ByteBuffer): Boolean
     private external fun nativeDestroySharedMemory(): Boolean
     private external fun nativeReadSnapshot(path: String, playerIndex: Int, buffer: ByteBuffer): Boolean
+    private external fun nativeReadReaderHeartbeat(path: String): Long
 
     companion object {
         private val nativeLeaseLock = Any()

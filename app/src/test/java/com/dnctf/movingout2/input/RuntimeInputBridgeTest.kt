@@ -10,6 +10,7 @@ class RuntimeInputBridgeTest {
         var lastConnected = false
         var lastPacket = byteArrayOf()
         var disconnectFailures = mutableSetOf<Int>()
+        var readerHeartbeat: Long? = 0L
         override fun init(shmFilePath: String) = (shmFilePath.isNotBlank()).also { initialized = it }
         override fun writePacket(playerIndex: Int, connected: Boolean, packet: ByteArray): Boolean {
             lastPlayer = playerIndex; lastConnected = connected; lastPacket = packet.copyOf()
@@ -18,6 +19,7 @@ class RuntimeInputBridgeTest {
         override fun destroy() { initialized = false }
         override fun isNativeAvailable() = true
         override fun isInitialized() = initialized
+        override fun readReaderHeartbeat() = readerHeartbeat
     }
 
     @Test fun xInputSerializationIsLittleEndianAndFixedSize() {
@@ -86,6 +88,36 @@ class RuntimeInputBridgeTest {
         bridge.destroy()
         assertEquals(InputBridgeStatus.BRIDGE_UNSUPPORTED, bridge.status)
     }
+    @Test fun bridgeConnectsOnlyAfterWineXInputReaderHeartbeatAdvances() {
+        val fake = FakeTransport()
+        val bridge = RuntimeInputBridge(fake)
+        assertTrue(bridge.initialize("/tmp/input.shm"))
+        assertEquals(InputBridgeStatus.BRIDGE_READY_WAITING_RUNTIME, bridge.status)
+        assertFalse(bridge.refreshRuntimeConnectionFromReader())
+        assertEquals(InputBridgeStatus.BRIDGE_READY_WAITING_RUNTIME, bridge.status)
+
+        fake.readerHeartbeat = 1L
+        assertTrue(bridge.refreshRuntimeConnectionFromReader())
+        assertEquals(InputBridgeStatus.BRIDGE_CONNECTED, bridge.status)
+        assertTrue(bridge.capabilities.runtimeConnectionConfirmed)
+
+        assertTrue(bridge.refreshRuntimeConnectionFromReader())
+        fake.readerHeartbeat = 2L
+        assertTrue(bridge.refreshRuntimeConnectionFromReader())
+
+        fake.readerHeartbeat = 0L
+        assertFalse(bridge.refreshRuntimeConnectionFromReader())
+        assertEquals(InputBridgeStatus.BRIDGE_READY_WAITING_RUNTIME, bridge.status)
+    }
+
+    @Test fun unavailableReaderHeartbeatCannotPromoteBridgeToConnected() {
+        val fake = FakeTransport().apply { readerHeartbeat = null }
+        val bridge = RuntimeInputBridge(fake)
+        assertTrue(bridge.initialize("/tmp/input.shm"))
+        assertFalse(bridge.refreshRuntimeConnectionFromReader())
+        assertEquals(InputBridgeStatus.BRIDGE_READY_WAITING_RUNTIME, bridge.status)
+    }
+
     @Test fun neutralizationIsIdempotentAfterBridgeDestroy() {
         val fake = FakeTransport()
         val bridge = RuntimeInputBridge(fake)

@@ -33,13 +33,14 @@ struct alignas(8) XInputShmHeader {
     uint32_t total_size;
     uint32_t max_players;
     uint64_t last_update_ns;
-    uint64_t reserved_header;
+    uint64_t reader_heartbeat;
 };
 struct alignas(8) XInputShm {
     XInputShmHeader header;
     XInputShmSlot slots[XINPUT_SHM_MAX_PLAYERS];
 };
 static_assert(sizeof(XInputShmHeader) == 32, "MO2X header must be 32 bytes");
+static_assert(offsetof(XInputShmHeader, reader_heartbeat) == 24, "MO2X reader heartbeat offset");
 static_assert(sizeof(XInputShmSlot) == 24, "MO2X slot must be 24 bytes");
 static_assert(offsetof(XInputShmSlot, seq) == 0, "slot seq offset");
 static_assert(offsetof(XInputShmSlot, connected) == 4, "slot connected offset");
