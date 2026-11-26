@@ -20,7 +20,7 @@ internal object GameRegistryLayout {
     }
 
     fun dataDirectory(root: File, executableName: String? = null): File? {
-        val exe = if (executableName == null) executable(root) else executable(root, executableName)
+        val exe = (if (executableName == null) executable(root) else executable(root, executableName))
             ?: return null
         return findChild(root, UnityDataDirectoryLocator.directoryName(exe.name))?.takeIf { it.isDirectory }
     }
