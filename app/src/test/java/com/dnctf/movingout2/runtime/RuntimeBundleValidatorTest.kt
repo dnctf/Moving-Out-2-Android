@@ -190,6 +190,47 @@ class RuntimeBundleValidatorTest {
         root.deleteRecursively()
     }
 
+    @Test fun rejectsMissingGuestGlibcComponent() {
+        val root = jsonManifestBundle()
+        val manifest = JSONObject(File(root, "runtime-manifest.json").readText())
+        manifest.getJSONObject("components").remove("guestGlibc")
+        File(root, "runtime-manifest.json").writeText(manifest.toString())
+        val report = RuntimeBundleValidator().validate(root)
+        assertEquals(RuntimeBundleStatus.INCOMPLETE, report.status)
+        assertTrue(report.blockers.any { it.contains("guestGlibc") })
+        root.deleteRecursively()
+    }
+
+    @Test fun rejectsGuestGlibcDirectoryHashMismatch() {
+        val root = jsonManifestBundle()
+        File(root, "wine/lib/x86_64-linux-gnu/libc.so.6").appendBytes(byteArrayOf(1))
+        val report = RuntimeBundleValidator().validate(root)
+        assertEquals(RuntimeBundleStatus.INCOMPLETE, report.status)
+        assertTrue(report.blockers.any { it.contains("SHA-256 mismatch: guestGlibc") })
+        root.deleteRecursively()
+    }
+
+    @Test fun rejectsNonElfGuestGlibcWhenDirectoryHashMatches() {
+        val root = jsonManifestBundle()
+        val libc = File(root, "wine/lib/x86_64-linux-gnu/libc.so.6")
+        libc.writeText("not an ELF shared object")
+        val manifest = JSONObject(File(root, "runtime-manifest.json").readText())
+        manifest.getJSONObject("components").getJSONObject("guestGlibc").put("sha256", directorySha256(libc.parentFile!!))
+        File(root, "runtime-manifest.json").writeText(manifest.toString())
+        val report = RuntimeBundleValidator().validate(root)
+        assertEquals(RuntimeBundleStatus.INCOMPLETE, report.status)
+        assertTrue(report.blockers.any { it.contains("Guest glibc") && it.contains("ELF64 x86-64") })
+        root.deleteRecursively()
+    }
+
+    @Test fun validatesAndExposesGuestGlibcDirectory() {
+        val root = jsonManifestBundle()
+        val report = RuntimeBundleValidator().validate(root)
+        assertEquals(RuntimeBundleStatus.READY, report.status)
+        assertEquals(File(root, "wine/lib/x86_64-linux-gnu").canonicalFile, report.guestGlibcDirectory?.canonicalFile)
+        root.deleteRecursively()
+    }
+
     @Test fun rejectsWrongArchitectureInJsonManifestEvenWhenChecksumMatches() {
         val root = jsonManifestBundle()
         val box64 = File(root, "box64/bin/box64")
