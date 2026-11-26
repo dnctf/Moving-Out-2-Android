@@ -346,7 +346,7 @@ class MainActivity : Activity() {
         val installedVersion = runCatching {
             org.json.JSONObject(File(installedRoot, "runtime-manifest.json").readText()).optString("bundleVersion")
         }.getOrNull()
-        if (report.isReady && (embeddedVersion == null || embeddedVersion == installedVersion)) return
+        if (report.isReady && !com.dnctf.movingout2.runtime.shouldInstallBundledRuntime(installedVersion, embeddedVersion)) return
         if (android.os.Build.SUPPORTED_ABIS.none { it == "arm64-v8a" }) {
             runtimeStatus.text = "Automatic setup stopped: this app requires an ARM64 (arm64-v8a) Android device."
             return
