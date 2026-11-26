@@ -44,3 +44,21 @@ Gradle stores the ZIP asset without recompression. CI compares the APK asset byt
 Both wineboot and game launch set `WINEDLLPATH`, `WINELOADER`, and `WINESERVER` from the Wine bundle root. `BOX64_LD_LIBRARY_PATH` searches guest glibc before Wine UNIX modules; `LD_LIBRARY_PATH` remains reserved for Android ARM64 native libraries. The runtime audit checks `DT_NEEDED` for Wine launchers and `x86_64-unix/*.so` modules while allowing libraries supplied by Box64 native wrappers.
 
 The default DXVK is upstream 1.10.3, pinned by SHA-256 `8d1a3c912761b450c879f98478ae64f6f6639e40ce6848170a0f6b8596fd53c6`, the Vulkan 1.1-compatible upstream line. Packaging prunes selected desktop-only Wine components, strips symbols, removes non-runtime metadata, and uses ZIP level 9. CI enforces a compressed bundle budget below 110 MiB. This size gate deliberately fails instead of removing additional core Windows/Unity components without validation.
+
+ 
+## Dependency closure and APK verification
+ 
+The CI staging step walks `DT_NEEDED` recursively from `wine64`, `wineserver`,
+and Wine UNIX modules. It copies unresolved x86-64 system libraries into the
+guest glibc directory with symlinks dereferenced, while known Box64 graphics,
+Vulkan, and X11 wrappers stay on the ARM64 host side. The bundle audit checks
+the resulting Wine and glibc dependency closure before manifest generation.
+ 
+The runtime workflow also assembles a self-contained debug APK from the exact
+runtime ZIP and Box64 ELF produced by that run. It compares the embedded asset
+byte-for-byte and checks that the ZIP is stored without recompression. The
+release workflow repeats the same check for the signed integrated APK.
+ 
+The installer extraction and activation logic is unit-testable independently:
+ZIP traversal/entry limits, root manifest presence, offline extraction, atomic
+replacement, and rollback to the previous bundle are covered by Kotlin tests.
