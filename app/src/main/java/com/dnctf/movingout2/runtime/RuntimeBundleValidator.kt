@@ -8,7 +8,7 @@ import java.util.Properties
 import java.security.MessageDigest
 
 enum class RuntimeBundleStatus { NOT_FOUND, INVALID_MANIFEST, INCOMPLETE, READY }
-data class RuntimeBundleReport(val status:RuntimeBundleStatus,val root:File?,val box64:File?,val wine64:File?,val wineserver:File?,val libraryDirectory:File?,val blockers:List<String>,val manifestVersion:Int?=null){val isReady:Boolean get()=status==RuntimeBundleStatus.READY}
+data class RuntimeBundleReport(val status:RuntimeBundleStatus,val root:File?,val box64:File?,val wine64:File?,val wineserver:File?,val libraryDirectory:File?,val blockers:List<String>,val manifestVersion:Int?=null,val guestGlibcDirectory:File?=null){val isReady:Boolean get()=status==RuntimeBundleStatus.READY}
 class RuntimeBundleValidator {
  fun resolveBox64ForExecution(
   bundleBox64: File,
@@ -37,7 +37,7 @@ class RuntimeBundleValidator {
   if(File(canonical,"runtime-manifest.json").exists()){
    val parsed=RuntimeManifestParser().validate(canonical)
    val map=parsed.componentFiles
-   val box=map["box64"];val wine=map["wine64"];val server=map["wineserver"];val libs=map["wineLib"]
+   val box=map["box64"];val wine=map["wine64"];val server=map["wineserver"];val libs=map["wineLib"];val glibc=map["guestGlibc"]
    val blockers=parsed.errors.toMutableList()
    fun requireFormat(key: String, file: File?, format: String, executable: Boolean = true) {
     if (file == null) return
@@ -56,6 +56,19 @@ class RuntimeBundleValidator {
    requireFormat("vcruntime140_1", map["vcruntime140_1"], RuntimeBinaryInspector.PE32_PLUS_X86_64, executable = false)
    requireFormat("msvcp140", map["msvcp140"], RuntimeBinaryInspector.PE32_PLUS_X86_64, executable = false)
    map["turnipSo"]?.let { requireFormat("turnipSo", it, RuntimeBinaryInspector.ELF64_AARCH64_SHARED, executable = false) }
+   if (glibc != null) {
+    val libc = File(glibc, "libc.so.6")
+    if (!libc.isFile || libc.length() <= 0L) blockers += "Guest glibc libc.so.6 is missing or empty."
+    val guestGlibcObjects = glibc.walkTopDown().filter {
+     it.isFile && (it.name.endsWith(".so", true) || it.name.contains(".so.", true))
+    }.toList()
+    if (guestGlibcObjects.isEmpty()) blockers += "Guest glibc directory contains no shared ELF objects."
+    guestGlibcObjects.forEach { library ->
+     if (!RuntimeBinaryInspector.matches(library, RuntimeBinaryInspector.ELF64_X86_64_SHARED)) {
+      blockers += "Guest glibc library is not ELF64 x86-64 shared: ${library.relativeTo(canonical).invariantSeparatorsPath}"
+     }
+    }
+   }
    if (libs != null) {
     val guestLibraries = libs.walkTopDown().filter { it.isFile && (it.name.endsWith(".so", true) || it.name.contains(".so.", true)) }.toList()
     if (guestLibraries.isEmpty()) blockers += "Wine guest library directory contains no shared ELF objects."
@@ -72,9 +85,9 @@ class RuntimeBundleValidator {
      }
     }
    }
-   if(box==null||wine==null||server==null||libs==null)blockers+="Required runtime files/directories unresolved."
+   if(box==null||wine==null||server==null||libs==null||glibc==null)blockers+="Required runtime files/directories unresolved."
    val ready=blockers.isEmpty()
-   return RuntimeBundleReport(if(ready)RuntimeBundleStatus.READY else RuntimeBundleStatus.INCOMPLETE,canonical,box,wine,server,libs,blockers.distinct(),2)
+   return RuntimeBundleReport(if(ready)RuntimeBundleStatus.READY else RuntimeBundleStatus.INCOMPLETE,canonical,box,wine,server,libs,blockers.distinct(),2,glibc)
   }
   val manifest=File(canonical,"runtime.properties")
   if(!manifest.isFile||!manifest.canRead())return report(RuntimeBundleStatus.INVALID_MANIFEST,canonical,listOf("runtime.properties missing or unreadable."))
