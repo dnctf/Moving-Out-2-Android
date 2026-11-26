@@ -45,14 +45,14 @@ WIN64="$ROOT/wine/lib/wine/x86_64-windows"
 UNIX64="$ROOT/wine/lib/wine/x86_64-unix"
 # Prune desktop-only Windows applications and unused graphics/printing/audio backends.
 rm -f "$WIN64"/{mshtml*,jscript*,vbscript*,ieframe*,iexplore.exe,winebrowser.exe,hh.exe,hhctrl.ocx,winedbg.exe,oleview.exe,wordpad.exe,notepad.exe,write.exe,progman.exe,winhlp32.exe,clock.exe,eject.exe,uninstaller.exe,msiexec.exe,wined3d*,d3d8*,d3d9*,d3d10*,d3d12*,ddraw*,opengl32*,wineps*,winspool*,sane*,gphoto2*,twain_32*,wineoss*,winealsa*}
-rm -f "$UNIX64"/{wined3d*,d3d8*,d3d9*,d3d10*,d3d12*,ddraw*,opengl32*,wineps*,winspool*,sane*,gphoto2*,twain_32*,wineoss*,winealsa*}
+rm -f "$UNIX64"/{mshtml*,jscript*,vbscript*,ieframe*,iexplore*,winebrowser*,hhctrl*,wined3d*,d3d8*,d3d9*,d3d10*,d3d12*,ddraw*,opengl32*,wineps*,winspool*,sane*,gphoto2*,twain_32*,wineoss*,winealsa*}
 # Keep runtime dynamic symbols but remove debug/unneeded symbols.
 strip --strip-unneeded "$ROOT/wine/bin/wine64" "$ROOT/wine/bin/wineserver" "$ROOT/box64/bin/box64"
 while IFS= read -r -d '' elf; do strip --strip-unneeded "$elf"; done < <(find "$UNIX64" "$ROOT/wine/lib/x86_64-linux-gnu" -type f \( -name '*.so' -o -name '*.so.*' \) -print0)
 if command -v x86_64-w64-mingw32-strip >/dev/null 2>&1; then
   while IFS= read -r -d '' pe; do x86_64-w64-mingw32-strip --strip-unneeded "$pe"; done < <(find "$WIN64" -type f \( -iname '*.dll' -o -iname '*.exe' \) -print0)
 fi
-find "$ROOT/wine/lib/wine" -type f \( -name '*.a' -o -name '*.def' -o -name '*.h' -o -name '*.idl' -o -name '*.man' \) -delete
+find "$ROOT/wine/lib/wine" -type f \( -name '*.a' -o -name '*.def' -o -name '*.h' -o -name '*.idl' -o -name '*.tlb' -o -name '*.man' \) -delete
 rm -rf "$ROOT/wine/lib/wine/locale" "$ROOT/wine/lib/wine/doc" "$ROOT/wine/lib/wine/documentation"
 for redistributable in vcruntime140.dll vcruntime140_1.dll msvcp140.dll; do
   source="$WINE_DIR/lib/wine/x86_64-windows/$redistributable"
