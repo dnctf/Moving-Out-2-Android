@@ -85,7 +85,16 @@ rm -f "$OUTPUT"
 (cd "$ROOT" && zip -9 -qr "$OUTPUT" .)
 ZIP_MIB=$(( $(stat -c%s "$OUTPUT") / 1024 / 1024 ))
 echo "Compressed runtime bundle size: $ZIP_MIB MiB (target <110 MiB)"
-if (( ZIP_MIB >= 110 )); then echo "Runtime bundle exceeds the 110 MiB release budget." >&2; exit 1; fi
+if (( ZIP_MIB >= 110 )); then
+  echo "Runtime bundle exceeds the 110 MiB release budget." >&2
+  echo "Largest Wine runtime directories:" >&2
+  du -sh "$ROOT/wine/lib/wine/"* "$ROOT/wine/lib/x86_64-linux-gnu" 2>/dev/null | sort -h | tail -20 >&2
+  echo "Largest uncompressed files:" >&2
+  find "$ROOT/wine/lib/wine" -type f -printf '%s %p\\n' | sort -nr | head -40 >&2
+  echo "Largest compressed ZIP entries (bytes compressed, bytes original, path):" >&2
+  unzip -lv "$OUTPUT" | awk 'NR > 3 && $2 ~ /Defl/ { print $3, $1, $NF }' | sort -nr | head -40 >&2
+  exit 1
+fi
 unzip -p "$OUTPUT" runtime-manifest.json | python3 -m json.tool > /dev/null
 (cd "$OUT_DIR" && sha256sum "$(basename "$OUTPUT")" > SHA256SUMS.txt)
 test -s "$OUT_DIR/SHA256SUMS.txt"
