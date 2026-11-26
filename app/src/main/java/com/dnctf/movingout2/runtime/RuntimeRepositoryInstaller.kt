@@ -113,6 +113,7 @@ class RuntimeRepositoryInstaller(
             }
             val report = validator.validate(staging)
             if (!report.isReady) throw IllegalStateException("Bundled runtime failed manifest v2, SHA-256 or ABI validation: " + report.blockers.joinToString("; "))
+            backup.deleteRecursively()
             if (target.exists() && !target.renameTo(backup)) throw IllegalStateException("Cannot preserve current runtime bundle.")
             if (!staging.renameTo(target)) throw IllegalStateException("Cannot atomically activate bundled runtime.")
             activated = true
