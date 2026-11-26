@@ -47,6 +47,8 @@ while IFS= read -r -d '' lib; do
 done < <(find "$GLIBC_DIR" -type f -name '*.so*' -print0)
 (( glibc_count > 0 )) || { echo "No guest glibc shared objects found." >&2; exit 1; }
 UNIX_DIR="$ROOT/wine/lib/wine/x86_64-unix"
+[[ -d "$UNIX_DIR" ]] || { echo "Wine x86_64-unix module directory is missing." >&2; exit 1; }
+for module in ntdll.so win32u.so winevulkan.so; do [[ -s "$UNIX_DIR/$module" ]] || { echo "Required Wine UNIX module missing: $module" >&2; exit 1; }; done
 resolve_needed() {
   local owner="$1" needed="$2"
   if [[ -e "$GLIBC_DIR/$needed" || -e "$UNIX_DIR/$needed" ]]; then return 0; fi
