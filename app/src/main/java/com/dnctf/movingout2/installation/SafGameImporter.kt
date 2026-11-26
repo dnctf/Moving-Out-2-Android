@@ -84,6 +84,9 @@ class SafGameImporter(
         try {
             copyDirectory(source, staging, 0, counters, totalBytes, onProgress, cancelled, visitedDirectories)
             if (cancelled()) throw IOException("Game import cancelled.")
+            if (counters[0] != totalBytes) {
+                throw IOException("SAF source changed or reported inconsistent file sizes during copy: expected $totalBytes bytes, copied ${counters[0]} bytes.")
+            }
             val availableAfterCopy = StatFs(context.filesDir.absolutePath).availableBytes
             if (!safGameImportStorageSatisfied(availableAfterCopy, storageReserveBytes)) {
                 throw IOException("SAF game import aborted: free storage fell below the configured reserve.")
