@@ -82,6 +82,9 @@ class MainActivity : Activity() {
     private val pickRuntimeZip = 1007
     private val pickControllerProfileImport = 1005
     private val pickControllerProfileExport = 1006
+    private val pickSaveDataImport = 1008
+    private val pickSaveDataExport = 1009
+    private var pendingSaveDataArchive: File? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -341,6 +344,34 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
+    private fun wineLocalLowDirectory() =
+        File(filesDir, "runtime/wineprefix/drive_c/users/steamuser/AppData/LocalLow")
+
+    private fun openSaveDataExport() {
+        Thread({
+            val archive = File(cacheDir, "wine-save-export.zip")
+            val result = runCatching {
+                com.dnctf.movingout2.runtime.WineSaveDataManager.export(wineLocalLowDirectory(), archive)
+                archive
+            }
+            runOnUiThread {
+                result.onSuccess { pendingSaveDataArchive = it
+                    startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE); type = "application/zip"
+                        putExtra(Intent.EXTRA_TITLE, "moving-out-2-wine-saves.zip")
+                    }, pickSaveDataExport)
+                }.onFailure { Toast.makeText(this, "Save export failed: ${it.message}", Toast.LENGTH_LONG).show() }
+            }
+        }, "wine-save-export").apply { isDaemon = true; start() }
+    }
+
+    private fun openSaveDataImport() {
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE); type = "application/zip"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }, pickSaveDataImport)
+    }
+
     private fun openControllerProfileImport() {
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE); type = "application/json"; addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -561,6 +592,8 @@ class MainActivity : Activity() {
         val profileImportButton = Button(this).apply { text = "Import profile JSON"; setOnClickListener { dialog?.dismiss(); openControllerProfileImport() } }
         val profileExportButton = Button(this).apply { text = "Export current profile JSON"; setOnClickListener { dialog?.dismiss(); openControllerProfileExport() } }
         panel.addView(profileImportButton); panel.addView(profileExportButton)
+        panel.addView(Button(this).apply { text = "Export Wine save data (LocalLow)"; setOnClickListener { dialog?.dismiss(); openSaveDataExport() } })
+        panel.addView(Button(this).apply { text = "Import Wine save data ZIP"; setOnClickListener { dialog?.dismiss(); openSaveDataImport() } })
 
         panel.addView(TextView(this).apply { text = "FPS cap target"; textSize = 16f })
         val fpsOptions = listOf("30 FPS (recommended minimum)", "45 FPS", "60 FPS")
@@ -795,6 +828,28 @@ class MainActivity : Activity() {
             return
         }
         when (requestCode) {
+            pickSaveDataExport -> runCatching {
+                val archive = pendingSaveDataArchive ?: error("Save archive was not prepared.")
+                contentResolver.openOutputStream(uri)?.use { output -> archive.inputStream().use { it.copyTo(output) } }
+                    ?: error("Save export destination is unavailable.")
+                Toast.makeText(this, "Wine save data exported.", Toast.LENGTH_LONG).show()
+            }.onFailure { Toast.makeText(this, "Save export failed: ${it.message}", Toast.LENGTH_LONG).show() }
+                .also { pendingSaveDataArchive?.delete(); pendingSaveDataArchive = null }
+            pickSaveDataImport -> {
+                Thread({
+                    val result = runCatching {
+                        val archive = File(cacheDir, "wine-save-import.zip")
+                        contentResolver.openInputStream(uri)?.use { input -> archive.outputStream().use { input.copyTo(it) } }
+                            ?: error("Save archive cannot be opened.")
+                        val localLow = File(filesDir, "runtime/wineprefix/drive_c/users/steamuser/AppData/LocalLow")
+                        val bytes = com.dnctf.movingout2.runtime.WineSaveDataManager.import(archive, localLow)
+                        archive.delete()
+                        bytes
+                    }
+                    runOnUiThread { result.onSuccess { Toast.makeText(this, "Save data imported: ${it / (1024 * 1024)} MiB", Toast.LENGTH_LONG).show() }
+                        .onFailure { Toast.makeText(this, "Save import failed: ${it.message}", Toast.LENGTH_LONG).show() } }
+                }, "wine-save-import").apply { isDaemon = true; start() }
+            }
             pickControllerProfileImport -> runCatching {
                 val raw = contentResolver.openInputStream(uri)?.use { stream ->
                     readBoundedUtf8Profile(stream)
