@@ -326,14 +326,32 @@ class MainActivity : Activity() {
         }, pickRuntimeBundle)
     }
 
+    private fun bundledRuntimeVersion(): String? = runCatching {
+        assets.open("runtime-bundle.zip").use { stream ->
+            java.util.zip.ZipInputStream(stream).use { zip ->
+                var entry = zip.nextEntry
+                while (entry != null && com.dnctf.movingout2.runtime.normalizeRuntimeArchiveEntry(entry.name, entry.isDirectory) != "runtime-manifest.json") entry = zip.nextEntry
+                if (entry == null) null else {
+                    val json = zip.bufferedReader().readText()
+                    org.json.JSONObject(json).optString("bundleVersion").takeIf { it.isNotBlank() }
+                }
+            }
+        }
+    }.getOrNull()
+
     private fun ensureRuntimeInstalledOnFirstLaunch() {
-        val report = RuntimeBundleValidator().validate(File(filesDir, "native_runtime/bundle"))
-        if (report.isReady) return
+        val installedRoot = File(filesDir, "native_runtime/bundle")
+        val report = RuntimeBundleValidator().validate(installedRoot)
+        val embeddedVersion = bundledRuntimeVersion()
+        val installedVersion = runCatching {
+            org.json.JSONObject(File(installedRoot, "runtime-manifest.json").readText()).optString("bundleVersion")
+        }.getOrNull()
+        if (report.isReady && !com.dnctf.movingout2.runtime.shouldInstallBundledRuntime(installedVersion, embeddedVersion)) return
         if (android.os.Build.SUPPORTED_ABIS.none { it == "arm64-v8a" }) {
             runtimeStatus.text = "Automatic setup stopped: this app requires an ARM64 (arm64-v8a) Android device."
             return
         }
-        runtimeStatus.text = "First-run setup: runtime missing. Preparing automatic download…"
+        runtimeStatus.text = "First-run setup: checking the APK-embedded runtime for offline installation…"
         startRuntimeRepositoryInstall(automatic = true)
     }
 
@@ -357,9 +375,11 @@ class MainActivity : Activity() {
                 if (device.abi.none { it == "arm64-v8a" }) {
                     throw IllegalStateException("Unsupported CPU ABI. This runtime requires arm64-v8a.")
                 }
-                com.dnctf.movingout2.runtime.RuntimeRepositoryInstaller(this, diagnostics = diagnosticLog).installLatest { message ->
+                val installer = com.dnctf.movingout2.runtime.RuntimeRepositoryInstaller(this, diagnostics = diagnosticLog)
+                val progress: (String) -> Unit = { message ->
                     runOnUiThread { if (!isFinishing && !isDestroyed) runtimeStatus.text = message }
                 }
+                installer.installFromBundledAsset(progress) ?: installer.installLatest(progress)
             }
             runtimeInstallInProgress.set(false)
             runOnUiThread {
@@ -644,6 +664,8 @@ class MainActivity : Activity() {
             File(root, "dxvk/x64").takeIf { it.isDirectory }
         )
         Thread({
+            // Consume the one-shot auto-launch token before any Wine process is started.
+            launchReadinessCoordinator.markAutoLaunched()
             val started = runCatching { supervisor.startSession(gameExe, runtimeSettings.launchOptions) }
             runOnUiThread {
                 if (isFinishing || isDestroyed) {

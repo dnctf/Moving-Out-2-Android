@@ -16,7 +16,7 @@ ASSETS=(
   "release-output/moving-out-2-runtime-arm64-v8a.zip.sha256"
   "release-output/SHA256SUMS.txt"
 )
-NOTES="Install the APK, connect to the internet, and launch. The app downloads and validates the matching runtime from this same release. Import your own legally obtained game files. Alpha APK uses an ephemeral CI debug signing key; uninstall an older build if Android rejects an update. No game files are included. Physical-device launch and graphics compatibility still require testing."
+NOTES="Install the self-contained APK and launch: the validated runtime is embedded and installed offline on first run. The matching runtime ZIP is also published as a recovery/fallback asset. Import your own legally obtained game files. Alpha APK uses an ephemeral CI debug signing key; uninstall an older build if Android rejects an update. No game files are included. Physical-device launch and graphics compatibility still require testing."
 
 api() {
   gh api -H "X-GitHub-Api-Version: $API_VERSION" "$@"

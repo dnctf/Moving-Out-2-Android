@@ -41,11 +41,33 @@ ROOT="$TMP/root";mkdir -p "$ROOT/box64/bin" "$ROOT/wine/bin" "$ROOT/wine/lib" "$
 cp "$BOX64" "$ROOT/box64/bin/box64";cp "$WINE_DIR/bin/wine64" "$ROOT/wine/bin/wine64";cp "$WINE_DIR/bin/wineserver" "$ROOT/wine/bin/wineserver"
 cp -aL "$WINE_DIR/lib/wine" "$ROOT/wine/lib/wine";mkdir -p "$ROOT/wine/lib/wine/x86_64-windows";cp -aL "$WINE_DIR/lib/x86_64-linux-gnu" "$ROOT/wine/lib/x86_64-linux-gnu";cp "$DXVK_DIR/d3d11.dll" "$ROOT/dxvk/x64/";cp "$DXVK_DIR/dxgi.dll" "$ROOT/dxvk/x64/"
 cp "$XINPUT_DIR/xinput1_3.dll" "$ROOT/wine/lib/wine/x86_64-windows/";cp "$XINPUT_DIR/xinput1_4.dll" "$ROOT/wine/lib/wine/x86_64-windows/";cp "$XINPUT_DIR/xinput9_1_0.dll" "$ROOT/wine/lib/wine/x86_64-windows/"
+WIN64="$ROOT/wine/lib/wine/x86_64-windows"
+UNIX64="$ROOT/wine/lib/wine/x86_64-unix"
+# Prune desktop-only Windows applications and unused graphics/printing/audio backends.
+rm -f "$WIN64"/{mshtml*,jscript*,vbscript*,ieframe*,iexplore.exe,winebrowser.exe,hh.exe,hhctrl.ocx,winedbg.exe,oleview.exe,wordpad.exe,notepad.exe,write.exe,progman.exe,winhlp32.exe,clock.exe,eject.exe,uninstaller.exe,msiexec.exe,wined3d*,d3d8*,d3d9*,d3d10*,d3d12*,ddraw*,opengl32*,wineps*,winspool*,sane*,gphoto2*,twain_32*,wineoss*,winealsa*}
+rm -f "$UNIX64"/{mshtml*,jscript*,vbscript*,ieframe*,iexplore*,winebrowser*,hhctrl*,wined3d*,d3d8*,d3d9*,d3d10*,d3d12*,ddraw*,opengl32*,wineps*,winspool*,sane*,gphoto2*,twain_32*,wineoss*,winealsa*}
+# Keep runtime dynamic symbols but remove debug/unneeded symbols.
+strip --strip-unneeded "$ROOT/wine/bin/wine64" "$ROOT/wine/bin/wineserver"
+LLVM_STRIP="$(command -v llvm-strip || true)"
+if [[ -z "$LLVM_STRIP" && -n "${ANDROID_NDK_HOME:-}" ]]; then
+  LLVM_STRIP="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+fi
+[[ -x "$LLVM_STRIP" ]] || { echo "llvm-strip (or the Android NDK llvm-strip) is required for ARM64 Box64." >&2; exit 1; }
+"$LLVM_STRIP" --strip-unneeded "$ROOT/box64/bin/box64"
+while IFS= read -r -d '' elf; do strip --strip-unneeded "$elf"; done < <(find "$ROOT/wine/lib/wine" "$ROOT/wine/lib/x86_64-linux-gnu" -type f \( -name '*.so' -o -name '*.so.*' \) -print0)
+if command -v x86_64-w64-mingw32-strip >/dev/null 2>&1; then
+  while IFS= read -r -d '' pe; do x86_64-w64-mingw32-strip --strip-unneeded "$pe"; done < <(find "$WIN64" -type f \( -iname '*.dll' -o -iname '*.exe' \) -print0)
+fi
+find "$ROOT/wine/lib/wine" -type f \( -name '*.a' -o -name '*.def' -o -name '*.h' -o -name '*.idl' -o -name '*.tlb' -o -name '*.man' \) -delete
+rm -rf "$ROOT/wine/lib/wine/locale" "$ROOT/wine/lib/wine/doc" "$ROOT/wine/lib/wine/documentation"
 for redistributable in vcruntime140.dll vcruntime140_1.dll msvcp140.dll; do
   source="$WINE_DIR/lib/wine/x86_64-windows/$redistributable"
   [[ -s "$source" ]] || { echo "Required VC++ runtime DLL missing from Wine runtime: $source" >&2; exit 1; }
   cp "$source" "$ROOT/wine/lib/wine/x86_64-windows/$redistributable"
 done
+if command -v x86_64-w64-mingw32-strip >/dev/null 2>&1; then
+  x86_64-w64-mingw32-strip --strip-unneeded "$ROOT/wine/lib/wine/x86_64-windows/"{vcruntime140.dll,vcruntime140_1.dll,msvcp140.dll}
+fi
 check_guest_glibc(){
   local count=0
   [[ -s "$ROOT/wine/lib/x86_64-linux-gnu/libc.so.6" ]] || { echo "Guest glibc libc.so.6 missing" >&2; exit 1; }
@@ -58,9 +80,23 @@ if [[ -n "$TURNIP_SO" ]];then mkdir -p "$ROOT/turnip";cp "$TURNIP_SO" "$ROOT/tur
 MANIFEST_FILE="$ROOT/runtime-manifest.json"
 python3 scripts/write_runtime_manifest.py --root "$ROOT" --version "$VERSION"
 python3 -m json.tool "$MANIFEST_FILE" > /dev/null
+# Validate the post-strip bundle before ZIP creation and before the size-budget gate.
+scripts/audit_runtime_bundle.sh "$ROOT"
 mkdir -p "$OUT_DIR"
 rm -f "$OUTPUT"
-(cd "$ROOT" && zip -qr "$OUTPUT" .)
+(cd "$ROOT" && zip -9 -qr "$OUTPUT" .)
+ZIP_MIB=$(( $(stat -c%s "$OUTPUT") / 1024 / 1024 ))
+echo "Compressed runtime bundle size: $ZIP_MIB MiB (target <110 MiB)"
+if (( ZIP_MIB >= 110 )); then
+  echo "Runtime bundle exceeds the 110 MiB release budget." >&2
+  echo "Largest Wine runtime directories:" >&2
+  du -sh "$ROOT/wine/lib/wine/"* "$ROOT/wine/lib/x86_64-linux-gnu" 2>/dev/null | sort -h | tail -20 >&2
+  echo "Largest uncompressed files:" >&2
+  find "$ROOT/wine/lib/wine" -type f -printf '%s %p\\n' | sort -nr | head -40 >&2
+  echo "Largest compressed ZIP entries (bytes compressed, bytes original, path):" >&2
+  unzip -lv "$OUTPUT" | awk 'NR > 3 && $2 ~ /Defl/ { print $3, $1, $NF }' | sort -nr | head -40 >&2
+  exit 1
+fi
 unzip -p "$OUTPUT" runtime-manifest.json | python3 -m json.tool > /dev/null
 (cd "$OUT_DIR" && sha256sum "$(basename "$OUTPUT")" > SHA256SUMS.txt)
 test -s "$OUT_DIR/SHA256SUMS.txt"

@@ -339,16 +339,13 @@ class WineSessionSupervisor(
 
         diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor", "Initializing new WINEPREFIX at ${prefix.absolutePath}"))
         val bootArgs = WineLaunchCommand.winebootArguments(wine.absolutePath)
-        val env = buildMap {
-            put("WINEPREFIX", prefix.absolutePath)
-            put("WINEDLLOVERRIDES", "xinput1_3,xinput1_4,xinput9_1_0=n,b")
-            put("LD_LIBRARY_PATH", context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
-            put("BOX64_PATH", wine.parentFile?.absolutePath.orEmpty())
-            put("BOX64_DYNAREC", "1")
-            WineLaunchCommand.guestLibrarySearchPath(guestGlibcDirectory, guestLibraryDirectory)?.let {
-                put("BOX64_LD_LIBRARY_PATH", it)
-            }
-        }
+        val env = WineLaunchCommand.bootstrapEnvironment(
+            prefix = prefix,
+            wineBinary = wine,
+            hostLibraryDirectory = File(context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir),
+            guestLibraryDirectory = guestLibraryDirectory,
+            guestGlibcDirectory = guestGlibcDirectory
+        )
 
         return try {
             val proc = runner.start(box64, bootArgs, env, prefix, "BOX64-WINE")

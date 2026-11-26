@@ -2,7 +2,7 @@ name: Build Runtime Bundle
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'runtime/**']
     paths:
       - ".github/workflows/build-runtime.yml"
       - ".github/workflows/publish-apk-prerelease.yml"
@@ -20,17 +20,17 @@ on:
       dxvk_url:
         description: "Verified DXVK release archive URL (x64 package)"
         required: false
-        default: "https://github.com/doitsujin/dxvk/releases/download/v3.1.1/dxvk-3.1.1.tar.gz"
+        default: "https://github.com/doitsujin/dxvk/releases/download/v1.10.3/dxvk-1.10.3.tar.gz"
         type: string
       dxvk_sha256:
         description: "Expected SHA-256 of the DXVK archive"
         required: false
-        default: "40565b4a724aadc4433fa4e010b4b23916d9b1f1baeee64e17186db94f54e608"
+        default: "8d1a3c912761b450c879f98478ae64f6f6639e40ce6848170a0f6b8596fd53c6"
         type: string
       bundle_version:
         description: "Runtime bundle version"
         required: false
-        default: "0.1.1"
+        default: "0.1.2"
         type: string
 
 permissions:
@@ -180,7 +180,7 @@ jobs:
           install -m 0755 "$WINE64" "$RUNNER_TEMP/runtime-input/wine/bin/wine64"
           install -m 0755 "$WINESERVER" "$RUNNER_TEMP/runtime-input/wine/bin/wineserver"
           cp -aL "$WINE_LIB_DIR" "$RUNNER_TEMP/runtime-input/wine/lib/wine"
-          # Stage the guest glibc loader closure required by Ubuntu x86_64 Wine.
+          # Resolve every DT_NEEDED recursively from Wine ELF roots. Native graphics/X11/Vulkan wrappers remain host-side.
           GUEST_GLIBC_DIR="$RUNNER_TEMP/runtime-input/wine/lib/x86_64-linux-gnu"
           mkdir -p "$GUEST_GLIBC_DIR"
           REQUIRED_GLIBC=(libc.so.6 libm.so.6 libdl.so.2 libpthread.so.0 librt.so.1 libresolv.so.2 libgcc_s.so.1 ld-linux-x86-64.so.2)
@@ -190,27 +190,9 @@ jobs:
             [[ -e "$source" ]] || { echo "::error::Required guest glibc object missing: $name"; exit 1; }
             cp -aL "$source" "$GUEST_GLIBC_DIR/$name"
           done
-          # Include every additional direct DT_NEEDED dependency reported by ldd.
-          for binary in "$WINE64" "$WINESERVER"; do
-            LDD_OUTPUT="$(ldd "$binary")"
-            printf '%s\n' "$LDD_OUTPUT" | tee "$RUNNER_TEMP/ldd-$(basename "$binary").txt"
-            if grep -q "not found" <<<"$LDD_OUTPUT"; then
-              echo "::error::Unresolved DT_NEEDED dependency for $binary"
-              exit 1
-            fi
-            while IFS= read -r dependency; do
-              [[ -n "$dependency" && -f "$dependency" ]] || continue
-              cp -aL "$dependency" "$GUEST_GLIBC_DIR/$(basename "$dependency")"
-            done < <(printf '%s\n' "$LDD_OUTPUT" | awk '/=> \/[^ ]+/ {print $3} /^\// {print $1}' | sort -u)
-          done
-          for library in "$GUEST_GLIBC_DIR"/*.so*; do
-            [[ -f "$library" && ! -L "$library" ]] || { echo "::error::Guest glibc object is not a regular file: $library"; exit 1; }
-            readelf -h "$library" | grep -Eq 'Class:.*ELF64'
-            readelf -h "$library" | grep -Eqi 'Machine:.*(Advanced Micro Devices X86-64|X86-64)'
-            readelf -h "$library" | grep -Eq 'Type:.*DYN'
-          done
+          chmod +x scripts/stage_wine_dependencies.sh
+          scripts/stage_wine_dependencies.sh "$RUNNER_TEMP/runtime-input/wine"
           if find "$RUNNER_TEMP/runtime-input/wine/lib" -type l -print -quit | grep -q .; then echo "::error::Symlink found in staged Wine libraries."; exit 1; fi
-          find -L "$RUNNER_TEMP/runtime-input/wine/lib/wine" -type f -name '*.so*' -print -quit | grep -q .
           echo "Resolved Wine ELF launchers:"
           readelf -h "$WINE64" | grep -E 'Class:|Machine:'
           readelf -h "$WINESERVER" | grep -E 'Class:|Machine:'
@@ -220,8 +202,8 @@ jobs:
       - name: Download and verify DXVK release
         shell: bash
         env:
-          DXVK_URL: ${{ inputs.dxvk_url || 'https://github.com/doitsujin/dxvk/releases/download/v3.1.1/dxvk-3.1.1.tar.gz' }}
-          DXVK_SHA256: ${{ inputs.dxvk_sha256 || '40565b4a724aadc4433fa4e010b4b23916d9b1f1baeee64e17186db94f54e608' }}
+          DXVK_URL: ${{ inputs.dxvk_url || 'https://github.com/doitsujin/dxvk/releases/download/v1.10.3/dxvk-1.10.3.tar.gz' }}
+          DXVK_SHA256: ${{ inputs.dxvk_sha256 || '8d1a3c912761b450c879f98478ae64f6f6639e40ce6848170a0f6b8596fd53c6' }}
         run: |
           set -euo pipefail
           if [[ -z "$DXVK_URL" || ! "$DXVK_SHA256" =~ ^[a-fA-F0-9]{64}$ ]]; then
@@ -293,7 +275,7 @@ jobs:
             --wine-dir "$RUNNER_TEMP/runtime-input/wine" \
             --dxvk-dir "$RUNNER_TEMP/runtime-input/dxvk/x64" \
             --xinput-dir "$RUNNER_TEMP/runtime-input/xinput" \
-            --bundle-version "${{ inputs.bundle_version || '0.1.1' }}" \
+            --bundle-version "${{ inputs.bundle_version || '0.1.2' }}" \
             --output "dist/moving-out-2-runtime-arm64-v8a.zip"
           test -s dist/SHA256SUMS.txt
           sha256sum dist/moving-out-2-runtime-arm64-v8a.zip > dist/moving-out-2-runtime-arm64-v8a.zip.sha256
@@ -313,6 +295,25 @@ jobs:
 
       - name: Run Kotlin unit tests
         run: gradle --no-daemon testDebugUnitTest
+
+      - name: Build self-contained debug APK and verify embedded runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/assets app/src/main/jniLibs/arm64-v8a
+          cp dist/moving-out-2-runtime-arm64-v8a.zip app/src/main/assets/runtime-bundle.zip
+          unzip -p dist/moving-out-2-runtime-arm64-v8a.zip box64/bin/box64 > app/src/main/jniLibs/arm64-v8a/libbox64.so
+          chmod 0755 app/src/main/jniLibs/arm64-v8a/libbox64.so
+          cmp app/src/main/jniLibs/arm64-v8a/libbox64.so <(unzip -p dist/moving-out-2-runtime-arm64-v8a.zip box64/bin/box64)
+          readelf -Wl app/src/main/jniLibs/arm64-v8a/libbox64.so | awk '/LOAD/{if ($NF != "0x4000") exit 1; found=1} END{if (!found) exit 1}'
+          gradle --no-daemon assembleDebug
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          unzip -p "$APK" assets/runtime-bundle.zip > "$RUNNER_TEMP/runtime-from-debug-apk.zip"
+          cmp "$RUNNER_TEMP/runtime-from-debug-apk.zip" dist/moving-out-2-runtime-arm64-v8a.zip
+          unzip -lv "$APK" | grep -F "assets/runtime-bundle.zip" | grep -Eq "Stored"
+          sha256sum "$RUNNER_TEMP/runtime-from-debug-apk.zip" dist/moving-out-2-runtime-arm64-v8a.zip
+          echo "Self-contained debug APK verified: $APK"
 
       - name: Upload runtime bundle and provenance
         uses: actions/upload-artifact@v6

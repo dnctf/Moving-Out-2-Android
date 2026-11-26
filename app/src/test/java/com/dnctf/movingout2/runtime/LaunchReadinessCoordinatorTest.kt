@@ -54,4 +54,15 @@ class LaunchReadinessCoordinatorTest {
         assertTrue(decision.playEnabled)
         assertFalse(decision.shouldAutoLaunch)
     }
+    @Test fun failedAutoLaunchDoesNotResetOneShotGuard() {
+        val coordinator = LaunchReadinessCoordinator()
+        val initial = coordinator.evaluate(ready)
+        assertTrue(initial.shouldAutoLaunch)
+        coordinator.markAutoLaunched() // MainActivity consumes this before startSession().
+        // A WineSessionState.FAILED transition has no coordinator reset operation.
+        val afterFailure = coordinator.evaluate(ready)
+        assertFalse(afterFailure.shouldAutoLaunch)
+        assertTrue(coordinator.hasAutoLaunched())
+    }
+
 }

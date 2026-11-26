@@ -2,10 +2,15 @@ package com.dnctf.movingout2.runtime
 
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
+import java.nio.file.Files
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class RuntimeRepositoryInstallerTest {
 
@@ -85,4 +90,102 @@ class RuntimeRepositoryInstallerTest {
         assertTrue(isSafeRuntimeArchiveEntry("wine/lib/", true))
         assertTrue(isSafeRuntimeArchiveEntry("runtime${0x5c.toChar()}bin${0x5c.toChar()}wine64", false))
     }
+
+    private fun writeZip(file: File, entries: List<Pair<String, ByteArray>>) {
+        ZipOutputStream(file.outputStream()).use { zip ->
+            entries.forEach { (name, bytes) ->
+                zip.putNextEntry(ZipEntry(name))
+                zip.write(bytes)
+                zip.closeEntry()
+            }
+        }
+    }
+
+    @Test fun extractsEmbeddedRuntimeArchiveOfflineWithManifestAtRoot() {
+        val root = Files.createTempDirectory("offline-runtime-extract").toFile()
+        try {
+            val archive = File(root, "runtime.zip")
+            val staging = File(root, "bundle_staging").apply { mkdirs() }
+            writeZip(archive, listOf(
+                "runtime-manifest.json" to """{"schemaVersion":2}""".toByteArray(),
+                "box64/bin/box64" to byteArrayOf(1, 2, 3, 4)
+            ))
+            val counts = extractRuntimeArchiveSafely(
+                zip = archive,
+                destination = staging,
+                maxEntries = 10,
+                maxExpandedBytes = 1024,
+                availableBytes = { 1024L * 1024L }
+            )
+            assertEquals(2, counts.first)
+            assertEquals(23L, counts.second)
+            assertEquals("""{"schemaVersion":2}""", File(staging, "runtime-manifest.json").readText())
+            assertArrayEquals(byteArrayOf(1, 2, 3, 4), File(staging, "box64/bin/box64").readBytes())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun rejectsTraversalEntryBeforeWritingOutsideStaging() {
+        val root = Files.createTempDirectory("offline-runtime-traversal").toFile()
+        try {
+            val archive = File(root, "malicious.zip")
+            val staging = File(root, "bundle_staging").apply { mkdirs() }
+            writeZip(archive, listOf(
+                "runtime-manifest.json" to "{}".toByteArray(),
+                "../escaped.txt" to "no".toByteArray()
+            ))
+            val error = runCatching {
+                extractRuntimeArchiveSafely(archive, staging, 10, 1024, availableBytes = { 1024L * 1024L })
+            }.exceptionOrNull()
+            assertTrue(error is IllegalStateException)
+            assertFalse(File(root.parentFile, "escaped.txt").exists())
+            assertFalse(File(root, "escaped.txt").exists())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun atomicActivationRestoresPreviousRuntimeWhenPostActivationValidationFails() {
+        val root = Files.createTempDirectory("runtime-atomic-rollback").toFile()
+        try {
+            val target = File(root, "bundle").apply { mkdirs() }
+            File(target, "version.txt").writeText("old")
+            val staging = File(root, "bundle_staging").apply { mkdirs() }
+            File(staging, "version.txt").writeText("new")
+            val backup = File(root, "bundle_backup")
+            val error = runCatching {
+                activateRuntimeBundleAtomically(staging, target, backup) { false }
+            }.exceptionOrNull()
+            assertTrue(error is IllegalStateException)
+            assertEquals("old", File(target, "version.txt").readText())
+            assertFalse(backup.exists())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun atomicActivationReplacesRuntimeOnlyAfterSuccessfulValidation() {
+        val root = Files.createTempDirectory("runtime-atomic-commit").toFile()
+        try {
+            val target = File(root, "bundle").apply { mkdirs() }
+            File(target, "version.txt").writeText("old")
+            val staging = File(root, "bundle_staging").apply { mkdirs() }
+            File(staging, "version.txt").writeText("new")
+            val backup = File(root, "bundle_backup")
+            activateRuntimeBundleAtomically(staging, target, backup) { File(it, "version.txt").readText() == "new" }
+            assertEquals("new", File(target, "version.txt").readText())
+            assertFalse(backup.exists())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test fun embeddedBundleReplacesMissingOrOlderVersionButNotCurrentRuntime() {
+        assertFalse(shouldInstallBundledRuntime("0.1.2", null))
+        assertFalse(shouldInstallBundledRuntime("0.1.2", "0.1.2"))
+        assertTrue(shouldInstallBundledRuntime("0.1.1", "0.1.2"))
+        assertTrue(shouldInstallBundledRuntime(null, "0.1.2"))
+    }
+
 }
