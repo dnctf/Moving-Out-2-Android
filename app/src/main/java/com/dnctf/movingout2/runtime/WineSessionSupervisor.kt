@@ -432,6 +432,7 @@ class WineSessionSupervisor(
             val proc = runner.start(box64, bootArgs, env, prefix, "WINEBOOT", createProcessGroup = true)
             val exit = proc.waitFor(30000)
             if (exit.timedOut || exit.exitCode != 0) {
+                proc.terminateProcessGroup(gracePeriodMs = 300)
                 diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
                     "wineboot --init failed: exit=${exit.exitCode}, timedOut=${exit.timedOut}"))
                 false
@@ -444,6 +445,7 @@ class WineSessionSupervisor(
                 val registryReady = systemReg.isFile && systemReg.length() > 0L &&
                     userReg.isFile && userReg.length() > 0L
                 if (!registryReady) {
+                    proc.terminateProcessGroup(gracePeriodMs = 300)
                     diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
                         "wineboot exited successfully but system.reg/user.reg were not created."))
                     false
