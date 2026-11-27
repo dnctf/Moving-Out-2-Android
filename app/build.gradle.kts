@@ -72,28 +72,29 @@ android {
 val processGroupLauncherJniDir = layout.buildDirectory.dir("generated/processGroupLauncher/jniLibs")
 android.sourceSets.getByName("debug").jniLibs.srcDir(processGroupLauncherJniDir)
 
-val stageProcessGroupLauncherDebug = tasks.register<Copy>("stageProcessGroupLauncherDebug") {
+val stageProcessGroupLauncherDebug = tasks.register("stageProcessGroupLauncherDebug") {
+    // Do not resolve the executable with a provider: Gradle queries providers while
+    // building the task graph, i.e. before `externalNativeBuildDebug` has produced the
+    // artifact, which makes `assembleDebug` fail even on a clean x86_64 CI runner.
+    // Discover and copy the output only at execution time, after the native build.
     dependsOn("externalNativeBuildDebug")
-    val processGroupLauncherSource = providers.provider {
-        // CMake emits PIE executable `libmo2_process_group.so` (PREFIX lib + SUFFIX .so,
-        // OUTPUT_NAME mo2_process_group); the target name itself is `mo2_process_group_launcher`.
-        val includePatterns = listOf("**/libmo2_process_group.so")
-        val primary = fileTree(projectDir.resolve(".cxx/Debug")).matching {
-            includePatterns.forEach { include(it) }
-        }.files
+    val destinationDir = processGroupLauncherJniDir.get().dir("arm64-v8a").asFile
+    doLast {
+        // CMake target `mo2_process_group_launcher` emits `libmo2_process_group.so`
+        // (PREFIX lib + SUFFIX .so, OUTPUT_NAME mo2_process_group).
+        val includePattern = "**/libmo2_process_group.so"
+        val primary = fileTree(projectDir.resolve(".cxx/Debug")).matching { include(includePattern) }.files
         val candidates = if (primary.isNotEmpty()) primary else {
             fileTree(layout.buildDirectory.dir("intermediates/cxx/Debug").get().asFile).matching {
-                includePatterns.forEach { include(it) }
+                include(includePattern)
             }.files
         }
         if (candidates.size != 1) {
             throw GradleException("Expected one ARM64 process-group launcher executable, found ${candidates.size}: ${candidates.joinToString()}")
         }
-        candidates.single()
+        destinationDir.mkdirs()
+        candidates.single().copyTo(File(destinationDir, "libmo2_process_group.so"), overwrite = true)
     }
-    from(processGroupLauncherSource)
-    into(processGroupLauncherJniDir.get().dir("arm64-v8a").asFile)
-    rename { "libmo2_process_group.so" }
 }
 
 tasks.matching { it.name == "mergeDebugNativeLibs" }.configureEach {
