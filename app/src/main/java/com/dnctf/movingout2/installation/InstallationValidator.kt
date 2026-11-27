@@ -93,10 +93,18 @@ class InstallationValidator {
             hardwareBlockers.isNotEmpty() -> InstallationStatus.INCOMPATIBLE
             else -> InstallationStatus.VALID
         }
-        stages += StageResult(ValidationStage.LAUNCH_READINESS, false,
-            listOf("DEFERRED: native runtime, execProbe and Vulkan readiness are evaluated by the launcher coordinator."))
+        val runtimeReport = runtimeBundleRoot?.let { RuntimeBundleValidator().validate(it) }
+        val runtimeReady = runtimeReport?.isReady == true
+        stages += StageResult(ValidationStage.LAUNCH_READINESS, runtimeReady,
+            if (runtimeReady) emptyList() else runtimeReport?.blockers
+                ?: listOf("Runtime bundle was not supplied for integrity validation."))
+        val runtimeStatus = when {
+            runtimeReady -> "READY"
+            runtimeReport == null -> "RUNTIME_NOT_INSTALLED"
+            else -> "RUNTIME_INVALID: " + runtimeReport.blockers.joinToString("; ")
+        }
         return InstallationReport(status, stages, missing.distinct(), errors.distinct(), exeArch, unityVersion,
-            metadataVersion, hardwareBlockers.toList())
+            metadataVersion, hardwareBlockers.toList(), runtimeStatus)
     }
 
     /** Detect a Unity Windows player using the executable + matching *_Data directory pair. */
