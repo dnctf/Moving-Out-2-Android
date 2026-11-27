@@ -34,7 +34,7 @@ class RuntimeStageDiagnostics(context: Context) {
                 if (!logFile.renameTo(previous)) logFile.delete()
             }
             FileOutputStream(logFile, true).bufferedWriter(Charsets.UTF_8).use {
-                it.append(timestamp.format(Date())).append(' ').append(payload).newLine()
+                it.append(timestamp.format(Date())).append(' ').append(payload).append('\n')
                 if (error != null) {
                     val trace = StringWriter().also { writer -> error.printStackTrace(PrintWriter(writer)) }.toString()
                     it.append(trace.take(12000))

@@ -45,6 +45,12 @@ class GameRegistry(
     }
 
     @Synchronized
+    fun registerDirectFolder(gameRoot: File, displayName: String = "Moving Out 2 (Device Folder)"): RegisteredGame {
+        repository.registerImported(gameRoot.absolutePath, displayName)
+        return validateAndCacheImported(gameRoot.absolutePath, displayName)
+    }
+
+    @Synchronized
     fun getActiveGame(): RegisteredGame? {
         val installations = repository.allInstallations()
         if (installations.isEmpty()) {
@@ -53,6 +59,8 @@ class GameRegistry(
             val internalRoot = File(context.filesDir, "game_import")
             val candidate = findGameRoot(internalRoot)
             if (candidate != null) return registerImportedZip(candidate)
+            val knownRoot = scanKnownPaths()
+            if (knownRoot != null) return registerDirectFolder(knownRoot)
             return null
         }
 
@@ -64,6 +72,25 @@ class GameRegistry(
             }
         }
         return installations.firstOrNull()?.let { revalidate(it.installationId) }
+    }
+
+    fun scanKnownPaths(): File? {
+        val knownPaths = listOf(
+            "/sdcard/Download/Moving.Out.2/Moving.Out.2/Moving Out 2",
+            "/sdcard/Download/Moving.Out.2",
+            "/sdcard/Download/Moving Out 2/Moving out 2",
+            "/sdcard/Download/Moving Out 2",
+            "/storage/emulated/0/Download/Moving.Out.2/Moving.Out.2/Moving Out 2",
+            "/storage/emulated/0/Download/Moving Out 2/Moving out 2"
+        )
+        for (path in knownPaths) {
+            val dir = File(path)
+            if (dir.isDirectory && dir.canRead()) {
+                val found = findGameRoot(dir)
+                if (found != null) return found
+            }
+        }
+        return null
     }
 
     @Synchronized
