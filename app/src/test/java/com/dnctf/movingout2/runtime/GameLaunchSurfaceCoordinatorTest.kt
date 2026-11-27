@@ -24,6 +24,9 @@ class GameLaunchSurfaceCoordinatorTest {
         val destroyed = coordinator.onSurfaceDestroyed()
         assertTrue(destroyed.stopSession)
         assertEquals(GameLaunchSurfaceState.STOPPING, destroyed.state)
+        val repeatedDestroy = coordinator.onSurfaceDestroyed()
+        assertFalse(repeatedDestroy.stopSession)
+        assertEquals(GameLaunchSurfaceState.STOPPING, repeatedDestroy.state)
         coordinator.onSessionStopped()
         assertEquals(GameLaunchSurfaceState.IDLE, coordinator.currentState())
     }
