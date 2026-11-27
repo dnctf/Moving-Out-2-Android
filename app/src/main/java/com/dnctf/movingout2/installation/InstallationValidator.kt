@@ -3,6 +3,7 @@ package com.dnctf.movingout2.installation
 import java.io.File
 import java.io.InputStream
 import java.io.IOException
+import com.dnctf.movingout2.runtime.RuntimeBundleValidator
 
 enum class ValidationStage { FOLDER_ACCESS, CORE_FILES, STRUCTURE, VERSION_ARCH, COMPATIBILITY, LAUNCH_READINESS }
 enum class InstallationStatus { VALID, INCOMPLETE, ACCESS_ERROR, INVALID_STRUCTURE, INCOMPATIBLE, RUNTIME_NOT_INSTALLED }
@@ -17,13 +18,21 @@ data class InstallationReport(
     val status: InstallationStatus, val stages: List<StageResult>, val missingFiles: List<String>,
     val accessErrors: List<String>, val detectedArchitecture: String?, val detectedUnityVersion: String?,
     val metadataVersion: Int?, val hardwareBlockers: List<String>, val runtimeStatus: String = "RUNTIME_NOT_INSTALLED"
-) { val isReadyForRuntime: Boolean get() = false }
+) {
+    val isReadyForRuntime: Boolean
+        get() = status == InstallationStatus.VALID &&
+            runtimeStatus == "READY" &&
+            hardwareBlockers.isEmpty() &&
+            listOf(ValidationStage.FOLDER_ACCESS, ValidationStage.CORE_FILES, ValidationStage.STRUCTURE,
+                ValidationStage.VERSION_ARCH, ValidationStage.LAUNCH_READINESS)
+                .all { required -> stages.any { it.stage == required && it.passed } }
+}
 
 class InstallationValidator {
     private val requiredGameLibraries = listOf("GameAssembly.dll", "UnityPlayer.dll", "baselib.dll")
     private val metadataMagic = byteArrayOf(0xaf.toByte(), 0x1b, 0xb1.toByte(), 0xfa.toByte())
 
-    fun validate(root: File, persistablePermission: Boolean = true, hardwareBlockers: List<String> = emptyList()): InstallationReport {
+    fun validate(root: File, persistablePermission: Boolean = true, hardwareBlockers: List<String> = emptyList(), runtimeBundleRoot: File? = null): InstallationReport {
         val missing = mutableListOf<String>()
         val errors = mutableListOf<String>()
         val stages = mutableListOf<StageResult>()
