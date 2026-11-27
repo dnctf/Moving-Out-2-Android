@@ -25,6 +25,7 @@ target_link_libraries(mo2_input_bridge PRIVATE ${LOG_LIBRARY})
 add_executable(mo2_process_group_launcher process_group_launcher.cpp)
 set_target_properties(mo2_process_group_launcher PROPERTIES
     OUTPUT_NAME "mo2_process_group_launcher"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
 target_compile_options(mo2_process_group_launcher PRIVATE -Wall -Wextra -Werror)
 target_link_options(mo2_process_group_launcher PRIVATE
