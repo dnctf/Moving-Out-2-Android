@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/build-runtime.yml"
       - ".github/workflows/publish-apk-prerelease.yml"
+      - ".github/workflows/publish-matched-prerelease.yml"
       - "scripts/**"
       - "native/wine-xinput/**"
       - "app/src/main/java/com/dnctf/movingout2/runtime/**"
