@@ -820,7 +820,7 @@ class MainActivity : Activity() {
                     pendingGameExecutable = null
                     pendingGameLaunchOptions = null
                     val session = activeWineSession
-                    if (decision.stopSession && session != null) {
+                    if (session != null && decision.state == com.dnctf.movingout2.runtime.GameLaunchSurfaceState.STOPPING) {
                         // Keep the retained ANativeWindow reference alive until the runtime is stopped.
                         Thread({
                             session.shutdownAll()
