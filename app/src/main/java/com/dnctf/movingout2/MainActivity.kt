@@ -757,14 +757,14 @@ class MainActivity : Activity() {
                         if (isFinishing || isDestroyed) return@runOnUiThread
                         result.onSuccess { imported ->
                             val graphics = RuntimeGraphicsComponents.assess(File(filesDir, "native_runtime/bundle"))
-                            runtimeStatus.text = "Runtime bundle: STRUCTURE_VALIDATED\\nCopied ${imported.copiedFiles} files (${imported.copiedBytes} bytes).\\nDXVK: ${graphics.dxvk}\\nTurnip: ${graphics.turnip}\\n${graphics.notes.joinToString("\\n")}\\nExecution/driver loading not verified; launch remains blocked."
+                            runtimeStatus.text = "Runtime bundle: STRUCTURE_VALIDATED\nCopied ${imported.copiedFiles} files (${imported.copiedBytes} bytes).\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${graphics.notes.joinToString("\n")}\nExecution/driver loading not verified; launch remains blocked."
                             refreshRuntimeStatus()
                             Toast.makeText(this, "Runtime folder imported and structurally validated.", Toast.LENGTH_LONG).show()
                         }.onFailure { error ->
                             val trace = java.io.StringWriter().also { error.printStackTrace(java.io.PrintWriter(it)) }.toString()
                             diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime-folder-import",
-                                "${error.javaClass.name}: ${error.message ?: "no message"}\\n$trace"))
-                            runtimeStatus.text = "Runtime folder import failed safely: ${error.message ?: error.javaClass.simpleName}\\nExisting bundle is preserved when possible."
+                                "${error.javaClass.name}: ${error.message ?: "no message"}\n$trace"))
+                            runtimeStatus.text = "Runtime folder import failed safely: ${error.message ?: error.javaClass.simpleName}\nExisting bundle is preserved when possible."
                             Toast.makeText(this, "Runtime folder import failed: ${error.message}", Toast.LENGTH_LONG).show()
                         }
                     }
