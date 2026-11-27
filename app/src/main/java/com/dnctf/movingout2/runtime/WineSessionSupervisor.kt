@@ -155,6 +155,11 @@ class DefaultSessionProcessRunner(
             synchronized(fileLock) {
                 runCatching {
                     file.parentFile?.mkdirs()
+                    if (file.exists() && file.length() >= 2L * 1024L * 1024L) {
+                        val rotated = File(file.parentFile, file.name + ".1")
+                        if (rotated.exists()) rotated.delete()
+                        if (!file.renameTo(rotated)) file.delete()
+                    }
                     FileWriter(file, true).use { writer ->
                         writer.write("[${System.currentTimeMillis()}] $formattedMessage\n")
                     }
