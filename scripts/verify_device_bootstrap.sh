@@ -51,6 +51,7 @@ if ! "${ADB[@]}" exec-out run-as "$PACKAGE" cat files/diagnostics/native-runtime
   echo "WARNING: native-runtime.log unavailable"
   : > "$OUT_DIR/native-runtime.log"
 fi
+if ! "${ADB[@]}" exec-out run-as "$PACKAGE" cat files/diagnostics/native-runtime.log.1 > "$OUT_DIR/native-runtime.log.1" 2>/dev/null; then : > "$OUT_DIR/native-runtime.log.1"; fi
 if [[ "$FAILURE" -ne 0 || "$LOGCAT_STATUS" -ne 0 ]]; then
   echo "Diagnostic collection saved under $OUT_DIR"
   exit 1
