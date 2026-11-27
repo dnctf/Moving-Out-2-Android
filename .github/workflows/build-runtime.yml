@@ -314,7 +314,34 @@ jobs:
       - name: Run Kotlin unit tests
         run: gradle --no-daemon testDebugUnitTest
 
-      - name: Upload runtime bundle and provenance
+      # Build the APK in this same job from the exact Box64 file already copied
+      # into the runtime bundle. Never rebuild Box64 independently for this APK.
+      - name: Build matching APK with runtime Box64 binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p app/src/main/jniLibs/arm64-v8a app/src/main/assets/runtime
+          install -m 0755 "$RUNNER_TEMP/runtime-input/box64/box64" app/src/main/jniLibs/arm64-v8a/libbox64.so
+          for dll in xinput1_3.dll xinput1_4.dll xinput9_1_0.dll; do
+            install -m 0644 "$RUNNER_TEMP/runtime-input/xinput/$dll" "app/src/main/assets/runtime/$dll"
+          done
+          gradle --no-daemon assembleDebug
+          APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK_PATH"
+          unzip -p "$APK_PATH" lib/arm64-v8a/libbox64.so > "$RUNNER_TEMP/apk-libbox64.so"
+          APK_BOX64_SHA="$(sha256sum "$RUNNER_TEMP/apk-libbox64.so" | awk '{print $1}')"
+          BUNDLE_BOX64_SHA="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["components"]["box64"]["sha256"])' "$RUNNER_TEMP/runtime-audit/runtime-manifest.json")"
+          [[ "$APK_BOX64_SHA" == "$BUNDLE_BOX64_SHA" ]] || {
+            echo "::error::APK Box64 SHA256 ($APK_BOX64_SHA) differs from runtime manifest ($BUNDLE_BOX64_SHA)"
+            exit 1
+          }
+          readelf -h "$RUNNER_TEMP/apk-libbox64.so" | grep -Eq 'Class:.*ELF64'
+          readelf -h "$RUNNER_TEMP/apk-libbox64.so" | grep -Eq 'Machine:.*AArch64'
+          install -m 0644 "$APK_PATH" dist/Moving-Out-2-Android-debug-matched.apk
+          echo "MATCHED_BOX64_SHA256=$APK_BOX64_SHA" | tee dist/box64-provenance.txt
+          echo "APK and runtime bundle contain byte-identical Box64: $APK_BOX64_SHA"
+
+      - name: Upload runtime bundle, matching APK and provenance
         uses: actions/upload-artifact@v6
         with:
           name: moving-out-2-runtime-${{ github.run_number }}
@@ -323,6 +350,8 @@ jobs:
             dist/*.zip.sha256
             dist/SHA256SUMS.txt
             dist/wine-package-versions.txt
+            dist/Moving-Out-2-Android-debug-matched.apk
+            dist/box64-provenance.txt
           if-no-files-found: error
           retention-days: 30
 
