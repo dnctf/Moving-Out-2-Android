@@ -2,10 +2,6 @@ package com.dnctf.movingout2.runtime
 
 import java.io.File
 import java.util.concurrent.TimeUnit
-import android.system.ErrnoException
-import android.system.Os
-import android.system.OsConstants
-
 data class ExitResult(val exitCode: Int?, val pid: Long?, val timedOut: Boolean, val terminatedByUser: Boolean, val durationMs: Long)
 interface ProcessGroupController {
     fun assign(pid: Long, processGroupId: Long): Boolean
@@ -14,30 +10,30 @@ interface ProcessGroupController {
     fun isGroupAlive(processGroupId: Long): Boolean
 }
 
-class AndroidProcessGroupController : ProcessGroupController {
-    override fun assign(pid: Long, processGroupId: Long): Boolean = runCatching {
-        Os.setpgid(pid.toInt(), processGroupId.toInt())
-        true
-    }.getOrDefault(false)
-
-    override fun signalProcess(pid: Long, signal: Int): Boolean = runCatching {
-        Os.kill(pid.toInt(), signal)
-        true
-    }.getOrDefault(false)
-
-    override fun signalGroup(processGroupId: Long, signal: Int): Boolean = runCatching {
-        Os.kill(-processGroupId.toInt(), signal)
-        true
-    }.getOrDefault(false)
-
-    override fun isGroupAlive(processGroupId: Long): Boolean = try {
-        Os.kill(-processGroupId.toInt(), 0)
-        true
-    } catch (error: ErrnoException) {
-        error.errno != OsConstants.ESRCH
-    } catch (_: Exception) { false }
+object RuntimeSignals {
+    const val SIGKILL = 9
+    const val SIGCONT = 18
+    const val SIGTERM = 15
 }
 
+internal object NativeProcessGroup {
+    private val loaded = runCatching { System.loadLibrary("vulkan_probe"); true }.getOrDefault(false)
+    private external fun assignNative(pid: Long, processGroupId: Long): Boolean
+    private external fun signalProcessNative(pid: Long, signal: Int): Boolean
+    private external fun signalGroupNative(processGroupId: Long, signal: Int): Boolean
+    private external fun isGroupAliveNative(processGroupId: Long): Boolean
+    fun assign(pid: Long, processGroupId: Long) = loaded && runCatching { assignNative(pid, processGroupId) }.getOrDefault(false)
+    fun signalProcess(pid: Long, signal: Int) = loaded && runCatching { signalProcessNative(pid, signal) }.getOrDefault(false)
+    fun signalGroup(processGroupId: Long, signal: Int) = loaded && runCatching { signalGroupNative(processGroupId, signal) }.getOrDefault(false)
+    fun isGroupAlive(processGroupId: Long) = loaded && runCatching { isGroupAliveNative(processGroupId) }.getOrDefault(false)
+}
+
+class AndroidProcessGroupController : ProcessGroupController {
+    override fun assign(pid: Long, processGroupId: Long): Boolean = NativeProcessGroup.assign(pid, processGroupId)
+    override fun signalProcess(pid: Long, signal: Int): Boolean = NativeProcessGroup.signalProcess(pid, signal)
+    override fun signalGroup(processGroupId: Long, signal: Int): Boolean = NativeProcessGroup.signalGroup(processGroupId, signal)
+    override fun isGroupAlive(processGroupId: Long): Boolean = NativeProcessGroup.isGroupAlive(processGroupId)
+}
 data class SpawnedRuntimeProcess(val process: Process, val pid: Long?, val processGroupId: Long?)
 
 object ProcessGroupSpawner {
@@ -78,12 +74,12 @@ object ProcessGroupSpawner {
             }
             val group = processGroupId ?: pid
             if (!controller.assign(pid, group)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to assign PID $pid to process group $group.")
             }
-            if (!controller.signalProcess(pid, OsConstants.SIGCONT)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+            if (!controller.signalProcess(pid, RuntimeSignals.SIGCONT)) {
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to resume process-group child PID $pid.")
             }
@@ -122,11 +118,11 @@ data class ProcessResult(
     fun terminateProcessGroup(gracePeriodMs: Long = 500): Boolean {
         val group = processGroupId ?: return !process.isAlive || stop(gracePeriodMs).let { !process.isAlive }
         val controller = processGroupController ?: return false
-        controller.signalGroup(group, OsConstants.SIGTERM)
+        controller.signalGroup(group, RuntimeSignals.SIGTERM)
         val termDeadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
         while (System.nanoTime() < termDeadline && controller.isGroupAlive(group)) Thread.sleep(20)
         if (controller.isGroupAlive(group)) {
-            controller.signalGroup(group, OsConstants.SIGKILL)
+            controller.signalGroup(group, RuntimeSignals.SIGKILL)
             val killDeadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(FORCE_REAP_TIMEOUT_MS)
             while (System.nanoTime() < killDeadline && controller.isGroupAlive(group)) Thread.sleep(20)
         }
@@ -240,12 +236,12 @@ class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xi
             }
             val group = processGroupId ?: pid
             if (!controller.assign(pid, group)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to assign PID $pid to process group $group.")
             }
-            if (!controller.signalProcess(pid, OsConstants.SIGCONT)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+            if (!controller.signalProcess(pid, RuntimeSignals.SIGCONT)) {
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to resume process-group child PID $pid.")
             }
@@ -284,10 +280,10 @@ data class ProcessResult(
     fun terminateProcessGroup(gracePeriodMs: Long = 500): Boolean {
         val group = processGroupId ?: return !process.isAlive || stop(gracePeriodMs).let { !process.isAlive }
         val controller = processGroupController ?: return false
-        controller.signalGroup(group, OsConstants.SIGTERM)
+        controller.signalGroup(group, RuntimeSignals.SIGTERM)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
         while (System.nanoTime() < deadline && controller.isGroupAlive(group)) Thread.sleep(20)
-        if (controller.isGroupAlive(group)) controller.signalGroup(group, OsConstants.SIGKILL)
+        if (controller.isGroupAlive(group)) controller.signalGroup(group, RuntimeSignals.SIGKILL)
         process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         closeStreamsAndJoinReaders()
         return !controller.isGroupAlive(group)
@@ -391,12 +387,12 @@ class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xi
             }
             val group = processGroupId ?: pid
             if (!controller.assign(pid, group)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to assign PID $pid to process group $group.")
             }
-            if (!controller.signalProcess(pid, OsConstants.SIGCONT)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+            if (!controller.signalProcess(pid, RuntimeSignals.SIGCONT)) {
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to resume process-group child PID $pid.")
             }
@@ -435,10 +431,10 @@ data class ProcessResult(
     fun terminateProcessGroup(gracePeriodMs: Long = 500): Boolean {
         val group = processGroupId ?: return !process.isAlive || stop(gracePeriodMs).let { !process.isAlive }
         val controller = processGroupController ?: return false
-        controller.signalGroup(group, OsConstants.SIGTERM)
+        controller.signalGroup(group, RuntimeSignals.SIGTERM)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
         while (System.nanoTime() < deadline && controller.isGroupAlive(group)) Thread.sleep(20)
-        if (controller.isGroupAlive(group)) controller.signalGroup(group, OsConstants.SIGKILL)
+        if (controller.isGroupAlive(group)) controller.signalGroup(group, RuntimeSignals.SIGKILL)
         process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         closeStreamsAndJoinReaders()
         return !controller.isGroupAlive(group)
@@ -542,12 +538,12 @@ class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xi
             }
             val group = processGroupId ?: pid
             if (!controller.assign(pid, group)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to assign PID $pid to process group $group.")
             }
-            if (!controller.signalProcess(pid, OsConstants.SIGCONT)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+            if (!controller.signalProcess(pid, RuntimeSignals.SIGCONT)) {
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to resume process-group child PID $pid.")
             }
@@ -586,10 +582,10 @@ data class ProcessResult(
     fun terminateProcessGroup(gracePeriodMs: Long = 500): Boolean {
         val group = processGroupId ?: return !process.isAlive || stop(gracePeriodMs).let { !process.isAlive }
         val controller = processGroupController ?: return false
-        controller.signalGroup(group, OsConstants.SIGTERM)
+        controller.signalGroup(group, RuntimeSignals.SIGTERM)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
         while (System.nanoTime() < deadline && controller.isGroupAlive(group)) Thread.sleep(20)
-        if (controller.isGroupAlive(group)) controller.signalGroup(group, OsConstants.SIGKILL)
+        if (controller.isGroupAlive(group)) controller.signalGroup(group, RuntimeSignals.SIGKILL)
         process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         closeStreamsAndJoinReaders()
         return !controller.isGroupAlive(group)
@@ -693,12 +689,12 @@ class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xi
             }
             val group = processGroupId ?: pid
             if (!controller.assign(pid, group)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to assign PID $pid to process group $group.")
             }
-            if (!controller.signalProcess(pid, OsConstants.SIGCONT)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+            if (!controller.signalProcess(pid, RuntimeSignals.SIGCONT)) {
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to resume process-group child PID $pid.")
             }
@@ -737,10 +733,10 @@ data class ProcessResult(
     fun terminateProcessGroup(gracePeriodMs: Long = 500): Boolean {
         val group = processGroupId ?: return !process.isAlive || stop(gracePeriodMs).let { !process.isAlive }
         val controller = processGroupController ?: return false
-        controller.signalGroup(group, OsConstants.SIGTERM)
+        controller.signalGroup(group, RuntimeSignals.SIGTERM)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
         while (System.nanoTime() < deadline && controller.isGroupAlive(group)) Thread.sleep(20)
-        if (controller.isGroupAlive(group)) controller.signalGroup(group, OsConstants.SIGKILL)
+        if (controller.isGroupAlive(group)) controller.signalGroup(group, RuntimeSignals.SIGKILL)
         process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         closeStreamsAndJoinReaders()
         return !controller.isGroupAlive(group)
@@ -844,12 +840,12 @@ class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xi
             }
             val group = processGroupId ?: pid
             if (!controller.assign(pid, group)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to assign PID $pid to process group $group.")
             }
-            if (!controller.signalProcess(pid, OsConstants.SIGCONT)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+            if (!controller.signalProcess(pid, RuntimeSignals.SIGCONT)) {
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to resume process-group child PID $pid.")
             }
@@ -888,10 +884,10 @@ data class ProcessResult(
     fun terminateProcessGroup(gracePeriodMs: Long = 500): Boolean {
         val group = processGroupId ?: return !process.isAlive || stop(gracePeriodMs).let { !process.isAlive }
         val controller = processGroupController ?: return false
-        controller.signalGroup(group, OsConstants.SIGTERM)
+        controller.signalGroup(group, RuntimeSignals.SIGTERM)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
         while (System.nanoTime() < deadline && controller.isGroupAlive(group)) Thread.sleep(20)
-        if (controller.isGroupAlive(group)) controller.signalGroup(group, OsConstants.SIGKILL)
+        if (controller.isGroupAlive(group)) controller.signalGroup(group, RuntimeSignals.SIGKILL)
         process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         closeStreamsAndJoinReaders()
         return !controller.isGroupAlive(group)
@@ -995,12 +991,12 @@ class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xi
             }
             val group = processGroupId ?: pid
             if (!controller.assign(pid, group)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to assign PID $pid to process group $group.")
             }
-            if (!controller.signalProcess(pid, OsConstants.SIGCONT)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+            if (!controller.signalProcess(pid, RuntimeSignals.SIGCONT)) {
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to resume process-group child PID $pid.")
             }
@@ -1039,10 +1035,10 @@ data class ProcessResult(
     fun terminateProcessGroup(gracePeriodMs: Long = 500): Boolean {
         val group = processGroupId ?: return !process.isAlive || stop(gracePeriodMs).let { !process.isAlive }
         val controller = processGroupController ?: return false
-        controller.signalGroup(group, OsConstants.SIGTERM)
+        controller.signalGroup(group, RuntimeSignals.SIGTERM)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
         while (System.nanoTime() < deadline && controller.isGroupAlive(group)) Thread.sleep(20)
-        if (controller.isGroupAlive(group)) controller.signalGroup(group, OsConstants.SIGKILL)
+        if (controller.isGroupAlive(group)) controller.signalGroup(group, RuntimeSignals.SIGKILL)
         process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         closeStreamsAndJoinReaders()
         return !controller.isGroupAlive(group)
@@ -1146,12 +1142,12 @@ class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xi
             }
             val group = processGroupId ?: pid
             if (!controller.assign(pid, group)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to assign PID $pid to process group $group.")
             }
-            if (!controller.signalProcess(pid, OsConstants.SIGCONT)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+            if (!controller.signalProcess(pid, RuntimeSignals.SIGCONT)) {
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to resume process-group child PID $pid.")
             }
@@ -1190,10 +1186,10 @@ data class ProcessResult(
     fun terminateProcessGroup(gracePeriodMs: Long = 500): Boolean {
         val group = processGroupId ?: return !process.isAlive || stop(gracePeriodMs).let { !process.isAlive }
         val controller = processGroupController ?: return false
-        controller.signalGroup(group, OsConstants.SIGTERM)
+        controller.signalGroup(group, RuntimeSignals.SIGTERM)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
         while (System.nanoTime() < deadline && controller.isGroupAlive(group)) Thread.sleep(20)
-        if (controller.isGroupAlive(group)) controller.signalGroup(group, OsConstants.SIGKILL)
+        if (controller.isGroupAlive(group)) controller.signalGroup(group, RuntimeSignals.SIGKILL)
         process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         closeStreamsAndJoinReaders()
         return !controller.isGroupAlive(group)
@@ -1297,12 +1293,12 @@ class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xi
             }
             val group = processGroupId ?: pid
             if (!controller.assign(pid, group)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to assign PID $pid to process group $group.")
             }
-            if (!controller.signalProcess(pid, OsConstants.SIGCONT)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+            if (!controller.signalProcess(pid, RuntimeSignals.SIGCONT)) {
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to resume process-group child PID $pid.")
             }
@@ -1341,10 +1337,10 @@ data class ProcessResult(
     fun terminateProcessGroup(gracePeriodMs: Long = 500): Boolean {
         val group = processGroupId ?: return !process.isAlive || stop(gracePeriodMs).let { !process.isAlive }
         val controller = processGroupController ?: return false
-        controller.signalGroup(group, OsConstants.SIGTERM)
+        controller.signalGroup(group, RuntimeSignals.SIGTERM)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
         while (System.nanoTime() < deadline && controller.isGroupAlive(group)) Thread.sleep(20)
-        if (controller.isGroupAlive(group)) controller.signalGroup(group, OsConstants.SIGKILL)
+        if (controller.isGroupAlive(group)) controller.signalGroup(group, RuntimeSignals.SIGKILL)
         process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         closeStreamsAndJoinReaders()
         return !controller.isGroupAlive(group)
@@ -1448,12 +1444,12 @@ class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xi
             }
             val group = processGroupId ?: pid
             if (!controller.assign(pid, group)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to assign PID $pid to process group $group.")
             }
-            if (!controller.signalProcess(pid, OsConstants.SIGCONT)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+            if (!controller.signalProcess(pid, RuntimeSignals.SIGCONT)) {
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to resume process-group child PID $pid.")
             }
@@ -1492,10 +1488,10 @@ data class ProcessResult(
     fun terminateProcessGroup(gracePeriodMs: Long = 500): Boolean {
         val group = processGroupId ?: return !process.isAlive || stop(gracePeriodMs).let { !process.isAlive }
         val controller = processGroupController ?: return false
-        controller.signalGroup(group, OsConstants.SIGTERM)
+        controller.signalGroup(group, RuntimeSignals.SIGTERM)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
         while (System.nanoTime() < deadline && controller.isGroupAlive(group)) Thread.sleep(20)
-        if (controller.isGroupAlive(group)) controller.signalGroup(group, OsConstants.SIGKILL)
+        if (controller.isGroupAlive(group)) controller.signalGroup(group, RuntimeSignals.SIGKILL)
         process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         closeStreamsAndJoinReaders()
         return !controller.isGroupAlive(group)
@@ -1599,12 +1595,12 @@ class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xi
             }
             val group = processGroupId ?: pid
             if (!controller.assign(pid, group)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to assign PID $pid to process group $group.")
             }
-            if (!controller.signalProcess(pid, OsConstants.SIGCONT)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+            if (!controller.signalProcess(pid, RuntimeSignals.SIGCONT)) {
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to resume process-group child PID $pid.")
             }
@@ -1643,10 +1639,10 @@ data class ProcessResult(
     fun terminateProcessGroup(gracePeriodMs: Long = 500): Boolean {
         val group = processGroupId ?: return !process.isAlive || stop(gracePeriodMs).let { !process.isAlive }
         val controller = processGroupController ?: return false
-        controller.signalGroup(group, OsConstants.SIGTERM)
+        controller.signalGroup(group, RuntimeSignals.SIGTERM)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
         while (System.nanoTime() < deadline && controller.isGroupAlive(group)) Thread.sleep(20)
-        if (controller.isGroupAlive(group)) controller.signalGroup(group, OsConstants.SIGKILL)
+        if (controller.isGroupAlive(group)) controller.signalGroup(group, RuntimeSignals.SIGKILL)
         process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         closeStreamsAndJoinReaders()
         return !controller.isGroupAlive(group)
@@ -1750,12 +1746,12 @@ class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xi
             }
             val group = processGroupId ?: pid
             if (!controller.assign(pid, group)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to assign PID $pid to process group $group.")
             }
-            if (!controller.signalProcess(pid, OsConstants.SIGCONT)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+            if (!controller.signalProcess(pid, RuntimeSignals.SIGCONT)) {
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to resume process-group child PID $pid.")
             }
@@ -1794,10 +1790,10 @@ data class ProcessResult(
     fun terminateProcessGroup(gracePeriodMs: Long = 500): Boolean {
         val group = processGroupId ?: return !process.isAlive || stop(gracePeriodMs).let { !process.isAlive }
         val controller = processGroupController ?: return false
-        controller.signalGroup(group, OsConstants.SIGTERM)
+        controller.signalGroup(group, RuntimeSignals.SIGTERM)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
         while (System.nanoTime() < deadline && controller.isGroupAlive(group)) Thread.sleep(20)
-        if (controller.isGroupAlive(group)) controller.signalGroup(group, OsConstants.SIGKILL)
+        if (controller.isGroupAlive(group)) controller.signalGroup(group, RuntimeSignals.SIGKILL)
         process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         closeStreamsAndJoinReaders()
         return !controller.isGroupAlive(group)
@@ -1902,12 +1898,12 @@ class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xi
             }
             val group = processGroupId ?: pid
             if (!controller.assign(pid, group)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to assign PID $pid to process group $group.")
             }
-            if (!controller.signalProcess(pid, OsConstants.SIGCONT)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+            if (!controller.signalProcess(pid, RuntimeSignals.SIGCONT)) {
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to resume process-group child PID $pid.")
             }
@@ -1946,10 +1942,10 @@ data class ProcessResult(
     fun terminateProcessGroup(gracePeriodMs: Long = 500): Boolean {
         val group = processGroupId ?: return !process.isAlive || stop(gracePeriodMs).let { !process.isAlive }
         val controller = processGroupController ?: return false
-        controller.signalGroup(group, OsConstants.SIGTERM)
+        controller.signalGroup(group, RuntimeSignals.SIGTERM)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
         while (System.nanoTime() < deadline && controller.isGroupAlive(group)) Thread.sleep(20)
-        if (controller.isGroupAlive(group)) controller.signalGroup(group, OsConstants.SIGKILL)
+        if (controller.isGroupAlive(group)) controller.signalGroup(group, RuntimeSignals.SIGKILL)
         process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         closeStreamsAndJoinReaders()
         return !controller.isGroupAlive(group)
@@ -2053,12 +2049,12 @@ class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xi
             }
             val group = processGroupId ?: pid
             if (!controller.assign(pid, group)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to assign PID $pid to process group $group.")
             }
-            if (!controller.signalProcess(pid, OsConstants.SIGCONT)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+            if (!controller.signalProcess(pid, RuntimeSignals.SIGCONT)) {
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to resume process-group child PID $pid.")
             }
@@ -2097,10 +2093,10 @@ data class ProcessResult(
     fun terminateProcessGroup(gracePeriodMs: Long = 500): Boolean {
         val group = processGroupId ?: return !process.isAlive || stop(gracePeriodMs).let { !process.isAlive }
         val controller = processGroupController ?: return false
-        controller.signalGroup(group, OsConstants.SIGTERM)
+        controller.signalGroup(group, RuntimeSignals.SIGTERM)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
         while (System.nanoTime() < deadline && controller.isGroupAlive(group)) Thread.sleep(20)
-        if (controller.isGroupAlive(group)) controller.signalGroup(group, OsConstants.SIGKILL)
+        if (controller.isGroupAlive(group)) controller.signalGroup(group, RuntimeSignals.SIGKILL)
         process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         closeStreamsAndJoinReaders()
         return !controller.isGroupAlive(group)
@@ -2204,12 +2200,12 @@ class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xi
             }
             val group = processGroupId ?: pid
             if (!controller.assign(pid, group)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to assign PID $pid to process group $group.")
             }
-            if (!controller.signalProcess(pid, OsConstants.SIGCONT)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+            if (!controller.signalProcess(pid, RuntimeSignals.SIGCONT)) {
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to resume process-group child PID $pid.")
             }
@@ -2248,10 +2244,10 @@ data class ProcessResult(
     fun terminateProcessGroup(gracePeriodMs: Long = 500): Boolean {
         val group = processGroupId ?: return !process.isAlive || stop(gracePeriodMs).let { !process.isAlive }
         val controller = processGroupController ?: return false
-        controller.signalGroup(group, OsConstants.SIGTERM)
+        controller.signalGroup(group, RuntimeSignals.SIGTERM)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
         while (System.nanoTime() < deadline && controller.isGroupAlive(group)) Thread.sleep(20)
-        if (controller.isGroupAlive(group)) controller.signalGroup(group, OsConstants.SIGKILL)
+        if (controller.isGroupAlive(group)) controller.signalGroup(group, RuntimeSignals.SIGKILL)
         process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         closeStreamsAndJoinReaders()
         return !controller.isGroupAlive(group)
@@ -2355,12 +2351,12 @@ class RuntimeProcess(private val diagnostics: RuntimeDiagnostics, private val xi
             }
             val group = processGroupId ?: pid
             if (!controller.assign(pid, group)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to assign PID $pid to process group $group.")
             }
-            if (!controller.signalProcess(pid, OsConstants.SIGCONT)) {
-                controller.signalProcess(pid, OsConstants.SIGKILL)
+            if (!controller.signalProcess(pid, RuntimeSignals.SIGCONT)) {
+                controller.signalProcess(pid, RuntimeSignals.SIGKILL)
                 child.destroyForcibly()
                 throw IllegalStateException("Unable to resume process-group child PID $pid.")
             }
@@ -2399,10 +2395,10 @@ data class ProcessResult(
     fun terminateProcessGroup(gracePeriodMs: Long = 500): Boolean {
         val group = processGroupId ?: return !process.isAlive || stop(gracePeriodMs).let { !process.isAlive }
         val controller = processGroupController ?: return false
-        controller.signalGroup(group, OsConstants.SIGTERM)
+        controller.signalGroup(group, RuntimeSignals.SIGTERM)
         val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
         while (System.nanoTime() < deadline && controller.isGroupAlive(group)) Thread.sleep(20)
-        if (controller.isGroupAlive(group)) controller.signalGroup(group, OsConstants.SIGKILL)
+        if (controller.isGroupAlive(group)) controller.signalGroup(group, RuntimeSignals.SIGKILL)
         process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         closeStreamsAndJoinReaders()
         return !controller.isGroupAlive(group)
