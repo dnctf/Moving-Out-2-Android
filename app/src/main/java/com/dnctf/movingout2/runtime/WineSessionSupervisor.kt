@@ -97,7 +97,7 @@ class DefaultSessionProcessRunner(
         stdoutThread.start()
         stderrThread.start()
 
-        recordStructured(RuntimeDiagnostic.Severity.INFO, tag, "Started ${executable.name}; PID=${pid ?: "unknown"}")
+        recordStructured(RuntimeDiagnostic.Severity.INFO, tag, "Started ${executable.name}; PID=${pid ?: "unknown"}; PGID=${spawned.processGroupId ?: "none"}")
         return ProcessResult(process, pid, stdoutThread, stderrThread, started, spawned.processGroupId, processGroups)
     }
 
