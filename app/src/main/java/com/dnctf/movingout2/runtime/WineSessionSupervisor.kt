@@ -448,9 +448,13 @@ class WineSessionSupervisor(
                         "wineboot exited successfully but system.reg/user.reg were not created."))
                     false
                 } else {
-                    diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor",
-                        "wineboot --init completed with exitCode=0; system.reg and user.reg are present."))
-                    true
+                    val bootstrapGroupCleaned = proc.terminateProcessGroup(gracePeriodMs = 300)
+                    diagnostics.record(RuntimeDiagnostic(
+                        if (bootstrapGroupCleaned) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.ERROR,
+                        "supervisor",
+                        "wineboot --init completed; temporary bootstrap process group cleanup success=$bootstrapGroupCleaned."
+                    ))
+                    bootstrapGroupCleaned
                 }
             }
         } catch (e: Exception) {
