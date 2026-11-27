@@ -20,7 +20,7 @@ class WineRuntimeLauncherTest {
         assertEquals("/prefix", env["WINEPREFIX"])
         assertEquals("d3d11,dxgi=n,b;xinput1_3,xinput1_4,xinput9_1_0=n,b;steam_api64=b", env["WINEDLLOVERRIDES"])
         assertEquals("Z:\\xinput_shm.bin", env["MO2_XINPUT_SHM_PATH"])
-        assertEquals(File("/bundle/lib").absolutePath, env["WINEDLLPATH"])
+        assertEquals(File("/bundle/lib").absolutePath, env["LD_LIBRARY_PATH"])
         assertEquals("1", env["BOX64_DYNAREC_STRONGMEM"])
         assertEquals("45", env["DXVK_FRAME_RATE"])
         assertEquals("/turnip/icd.json", env["VK_ICD_FILENAMES"])
