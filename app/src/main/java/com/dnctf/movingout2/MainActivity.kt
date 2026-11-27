@@ -355,10 +355,12 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        VulkanNativeProbe.detachSessionSurface()
         activeWineSession?.let { session ->
-            Thread({ session.shutdownAll() }, "wine-session-destroy").apply { isDaemon = true; start() }
-        }
+            Thread({
+                session.shutdownAll()
+                VulkanNativeProbe.detachSessionSurface()
+            }, "wine-session-destroy").apply { isDaemon = true; start() }
+        } ?: VulkanNativeProbe.detachSessionSurface()
         if (::inputCoordinator.isInitialized) inputCoordinator.destroy()
         super.onDestroy()
     }
@@ -813,20 +815,23 @@ class MainActivity : Activity() {
                 }
 
                 override fun onSurfaceDestroyed() {
-                    VulkanNativeProbe.detachSessionSurface()
                     val decision = gameLaunchSurfaceCoordinator.onSurfaceDestroyed()
                     surfaceLaunchGeneration += 1
                     pendingGameExecutable = null
                     pendingGameLaunchOptions = null
-                    if (decision.stopSession) {
-                        val session = activeWineSession
-                        if (session != null) {
-                            Thread({
-                                session.shutdownAll()
-                                activeWineSession = null
-                                runOnUiThread { finishGameSurface("Game surface destroyed; Wine session stopped safely.") }
-                            }, "wine-surface-destroyed").apply { isDaemon = true; start() }
-                        } else {
+                    val session = activeWineSession
+                    if (decision.stopSession && session != null) {
+                        // Keep the retained ANativeWindow reference alive until the runtime is stopped.
+                        Thread({
+                            session.shutdownAll()
+                            activeWineSession = null
+                            VulkanNativeProbe.detachSessionSurface()
+                            runOnUiThread { finishGameSurface("Game surface destroyed; Wine session stopped before releasing ANativeWindow.") }
+                        }, "wine-surface-destroyed").apply { isDaemon = true; start() }
+                    } else {
+                        // No guest session owns the target; release the launcher-held reference now.
+                        VulkanNativeProbe.detachSessionSurface()
+                        if (decision.stopSession) {
                             runOnUiThread { finishGameSurface("Surface disappeared before runtime launch; launch cancelled.") }
                         }
                     }
