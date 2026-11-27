@@ -184,6 +184,7 @@ class WineSessionSupervisor(
     @Volatile private var activeBox64Executable: File? = null
     @Volatile private var activeSessionEnvironment: Map<String, String>? = null
     private val execProbe = AndroidExecCapabilityProbe(context, diagnostics)
+    private val stageLog = RuntimeStageDiagnostics(context)
 
     @Volatile var wineserverProcess: ProcessResult? = null
         private set
@@ -202,6 +203,10 @@ class WineSessionSupervisor(
             return false
         }
 
+        stageLog.event("STAGE_2_RUNTIME_EXTRACT", "VERIFY_NATIVE_LIB_DIR", mapOf(
+            "nativeLibraryDir" to context.applicationInfo.nativeLibraryDir,
+            "processGroupLauncher" to File(context.applicationInfo.nativeLibraryDir ?: "", "libmo2_process_group.so").let { "exists=${it.isFile},executable=${it.canExecute()}" }
+        ))
         // 1. VALIDATING_PREFLIGHT
         transitionTo(WineSessionState.VALIDATING_PREFLIGHT)
         val report = validator.validate(bundleRoot)
@@ -285,6 +290,18 @@ class WineSessionSupervisor(
         ).toMutableMap()
         env.putAll(options.environmentOverrides)
         activeSessionEnvironment = env.toMap()
+        val overrides = env["WINEDLLOVERRIDES"].orEmpty()
+        val shmLayout = runCatching { sharedInput.length() }.getOrDefault(-1L)
+        val envOk = env["WINEPREFIX"] == prefix.absolutePath && env["WINEDLLOVERRIDES"]?.contains("steam_api64=b") == true &&
+            listOf("xinput1_3", "xinput1_4", "xinput9_1_0").all { overrides.contains(it) } &&
+            !env["BOX64_LD_LIBRARY_PATH"].isNullOrBlank() && shmLayout == 128L
+        stageLog.event("STAGE_3_ENV_CONTRACT", if (envOk) "PASS" else "FAIL", mapOf(
+            "WINEPREFIX" to env["WINEPREFIX"], "WINEDLLPATH" to env["WINEDLLPATH"],
+            "BOX64_LD_LIBRARY_PATH" to env["BOX64_LD_LIBRARY_PATH"], "WINEDLLOVERRIDES" to overrides,
+            "steam_api64_b" to overrides.contains("steam_api64=b"), "xinputOverrides" to listOf("xinput1_3","xinput1_4","xinput9_1_0").all { overrides.contains(it) },
+            "mo2xBytes" to shmLayout, "contractValid" to envOk
+        ))
+        if (!envOk) { transitionTo(WineSessionState.FAILED); return false }
 
         // 3. STARTING_WINESERVER
         transitionTo(WineSessionState.STARTING_WINESERVER)
@@ -299,7 +316,10 @@ class WineSessionSupervisor(
         wineserverProcess = serverProc
 
         // Readiness probe
+        val probeStarted = System.nanoTime()
         val isReady = runner.probeWineserverReady(activeBox64, wineserverCandidate, prefix, env, timeoutMs = 8000)
+        val probeLatencyMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - probeStarted)
+        stageLog.event("STAGE_4_WINE_BOOTSTRAP", if (isReady && serverProc.process.isAlive) "WINESERVER_READY" else "WINESERVER_FAILED", mapOf("probeLatencyMs" to probeLatencyMs, "ready" to isReady, "serverAlive" to serverProc.process.isAlive, "pid" to serverProc.pid, "pgid" to "not-exposed-by-current-launcher"))
         if (!isReady || !serverProc.process.isAlive) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Wineserver readiness probe timed out or server died"))
             reapWineserver(activeBox64, wineserverCandidate, env)
@@ -338,6 +358,7 @@ class WineSessionSupervisor(
         }
 
         diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor", "Initializing new WINEPREFIX at ${prefix.absolutePath}"))
+        stageLog.event("STAGE_4_WINE_BOOTSTRAP", "WINEBOOT_START", mapOf("prefix" to prefix.absolutePath, "wine" to wine.absolutePath, "ntdllPath" to File(wine.parentFile?.parentFile, "lib/wine/x86_64-unix/ntdll.so").absolutePath))
         val bootArgs = WineLaunchCommand.winebootArguments(wine.absolutePath)
         val env = buildMap {
             put("WINEPREFIX", prefix.absolutePath)
@@ -353,6 +374,7 @@ class WineSessionSupervisor(
         return try {
             val proc = runner.start(box64, bootArgs, env, prefix, "BOX64-WINE")
             val exit = proc.waitFor(20000)
+            stageLog.event("STAGE_4_WINE_BOOTSTRAP", if (!exit.timedOut && exit.exitCode == 0) "WINEBOOT_PASS" else "WINEBOOT_FAIL", mapOf("pid" to exit.pid, "exitCode" to exit.exitCode, "timedOut" to exit.timedOut, "durationMs" to exit.durationMs, "ntdllLoad" to "inspect native-runtime.log for ntdll.so load diagnostics"))
             if (exit.timedOut || (exit.exitCode != null && exit.exitCode != 0)) {
                 diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "wineboot initialization failed: exit=${exit.exitCode}, timedOut=${exit.timedOut}"))
                 false
