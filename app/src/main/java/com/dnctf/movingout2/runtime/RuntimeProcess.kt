@@ -6,6 +6,7 @@ import java.util.concurrent.TimeUnit
 data class ExitResult(val exitCode: Int?, val pid: Long?, val timedOut: Boolean, val terminatedByUser: Boolean, val durationMs: Long)
 
 interface ProcessGroupController {
+    fun isAvailable(): Boolean
     fun signalGroup(processGroupId: Long, signal: Int): Boolean
     fun isGroupAlive(processGroupId: Long): Boolean
 }
@@ -21,11 +22,13 @@ internal object NativeProcessGroup {
     private external fun isGroupAliveNative(processGroupId: Long): Boolean
     fun signalGroup(processGroupId: Long, signal: Int): Boolean =
         loaded && runCatching { signalGroupNative(processGroupId, signal) }.getOrDefault(false)
+    fun isAvailable(): Boolean = loaded
     fun isGroupAlive(processGroupId: Long): Boolean =
-        loaded && runCatching { isGroupAliveNative(processGroupId) }.getOrDefault(false)
+        if (!loaded) true else runCatching { isGroupAliveNative(processGroupId) }.getOrDefault(true)
 }
 
 class AndroidProcessGroupController : ProcessGroupController {
+    override fun isAvailable(): Boolean = NativeProcessGroup.isAvailable()
     override fun signalGroup(processGroupId: Long, signal: Int): Boolean =
         NativeProcessGroup.signalGroup(processGroupId, signal)
     override fun isGroupAlive(processGroupId: Long): Boolean =
@@ -56,11 +59,13 @@ object ProcessGroupSpawner {
         workingDirectory: File?,
         processGroupId: Long?,
         createProcessGroup: Boolean,
+        controller: ProcessGroupController,
         processGroupLauncher: File?
     ): SpawnedRuntimeProcess {
         require(command.isNotEmpty())
         val grouped = createProcessGroup || processGroupId != null
         val builder = if (grouped) {
+            check(controller.isAvailable()) { "Native process-group signal bridge is unavailable; refusing an unmanageable Box64 session." }
             val launcher = processGroupLauncher
                 ?: throw IllegalStateException("Native process-group launcher is unavailable in nativeLibraryDir.")
             require(launcher.isFile && launcher.canExecute()) {
@@ -196,7 +201,7 @@ class RuntimeProcess(
         val effectiveEnvironment = xinputConfig?.environment(environment) ?: environment
         val spawned = ProcessGroupSpawner.start(
             listOf(executable.absolutePath) + args, effectiveEnvironment, workingDirectory,
-            processGroupId, createProcessGroup, processGroupLauncher
+            processGroupId, createProcessGroup, processGroups, processGroupLauncher
         )
         val started = System.nanoTime()
         val stdout = reader(spawned.process.inputStream, "runtime-stdout", RuntimeDiagnostic.Severity.INFO, "stdout")
