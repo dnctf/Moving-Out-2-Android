@@ -28,10 +28,61 @@ jobs:
           name: moving-out-2-runtime-${{ github.event.workflow_run.run_number }}
           path: dist
 
-      - name: Verify release payload
+      - name: Normalize and verify release payload
         shell: bash
         run: |
           set -euo pipefail
+          # download-artifact may preserve the upload root depending on the
+          # common path selected by upload-artifact. Locate files recursively
+          # instead of assuming they are directly under dist/.
+          find dist -maxdepth 4 -type f -printf '%P\\n' | sort
+          stage="$RUNNER_TEMP/release-payload"
+          mkdir -p "$stage"
+          copy_one() {
+            local name="$1"
+            local found
+            found="$(find dist -maxdepth 4 -type f -name "$name" -print -quit)"
+            if [[ -z "$found" || ! -s "$found" ]]; then
+              echo "::error::Required release asset not found in downloaded artifact: $name"
+              exit 1
+            fi
+            cp "$found" "$stage/$name"
+            echo "Staged $name from $found"
+          }
+          copy_one Moving-Out-2-Android-debug-matched.apk
+          copy_one moving-out-2-runtime-arm64-v8a.zip
+          copy_one moving-out-2-runtime-arm64-v8a.zip.sha256
+          copy_one box64-provenance.txt
+          (cd "$stage" && sha256sum --check moving-out-2-runtime-arm64-v8a.zip.sha256)
+          grep -Eq '^MATCHED_BOX64_SHA256=[a-f0-9]{64}          test -s dist/Moving-Out-2-Android-debug-matched.apk
+          test -s dist/moving-out-2-runtime-arm64-v8a.zip
+          test -s dist/moving-out-2-runtime-arm64-v8a.zip.sha256
+          test -s dist/box64-provenance.txt
+          (cd dist && sha256sum --check moving-out-2-runtime-arm64-v8a.zip.sha256)
+          grep -Eq '^MATCHED_BOX64_SHA256=[a-f0-9]{64}$' dist/box64-provenance.txt
+
+      - name: Publish matched pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-v0.2.0-alpha.6
+          target_commitish: ${{ github.event.workflow_run.head_sha }}
+          name: Moving Out 2 Android 0.2.0-alpha.6 — Matched Runtime
+          prerelease: true
+          make_latest: false
+          body: |
+            APK and runtime bundle built in the same GitHub Actions job from the exact same Box64 binary.
+
+            The workflow extracts the APK's lib/arm64-v8a/libbox64.so and verifies its SHA-256 against runtime-manifest.json before publishing.
+            Device execution and game rendering still require physical-device verification.
+          files: |
+            ${{ runner.temp }}/release-payload/Moving-Out-2-Android-debug-matched.apk
+            ${{ runner.temp }}/release-payload/moving-out-2-runtime-arm64-v8a.zip
+            ${{ runner.temp }}/release-payload/moving-out-2-runtime-arm64-v8a.zip.sha256
+            ${{ runner.temp }}/release-payload/box64-provenance.txt
+ "$stage/box64-provenance.txt"
+          unzip -p "$stage/moving-out-2-runtime-arm64-v8a.zip" runtime-manifest.json | python3 -m json.tool >/dev/null
+          echo "Release payload validated:"
+          ls -lh "$stage"
           test -s dist/Moving-Out-2-Android-debug-matched.apk
           test -s dist/moving-out-2-runtime-arm64-v8a.zip
           test -s dist/moving-out-2-runtime-arm64-v8a.zip.sha256
