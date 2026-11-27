@@ -59,22 +59,20 @@ android {
 // Stage the standalone process-group launcher as an extracted native-library payload.
 // The executable is not loaded with System.loadLibrary; ProcessBuilder executes it directly.
 val processGroupLauncherJniDir = layout.buildDirectory.dir("generated/processGroupLauncher/jniLibs")
-android.sourceSets.getByName("main").jniLibs.srcDir(processGroupLauncherJniDir)
+android.sourceSets.getByName("debug").jniLibs.srcDir(processGroupLauncherJniDir)
 
 val stageProcessGroupLauncherDebug = tasks.register<Copy>("stageProcessGroupLauncherDebug") {
     dependsOn("externalNativeBuildDebug")
-    val nativeBuildOutput = layout.buildDirectory.dir("intermediates/cxx/Debug").get().asFile
-    from(fileTree(nativeBuildOutput) { include("**/mo2_process_group_launcher") })
+    val helperFiles = fileTree(projectDir).matching {
+        include(".cxx/Debug/**/mo2_process_group_launcher")
+        include("build/intermediates/cxx/Debug/**/mo2_process_group_launcher")
+    }.files
+    if (helperFiles.size != 1) {
+        throw GradleException("Expected one ARM64 process-group launcher executable, found ${helperFiles.size}: ${helperFiles.joinToString()}")
+    }
+    from(helperFiles.single())
     into(processGroupLauncherJniDir.get().dir("arm64-v8a").asFile)
     rename { "libmo2_process_group.so" }
-    doFirst {
-        val helperFiles = fileTree(nativeBuildOutput).matching {
-            include("**/mo2_process_group_launcher")
-        }.files
-        if (helperFiles.size != 1) {
-            throw GradleException("Expected one ARM64 process-group launcher executable, found ${helperFiles.size} under ${nativeBuildOutput.absolutePath}")
-        }
-    }
 }
 
 tasks.matching { it.name == "mergeDebugNativeLibs" }.configureEach {
