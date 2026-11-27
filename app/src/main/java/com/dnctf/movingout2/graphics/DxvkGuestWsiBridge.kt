@@ -11,4 +11,6 @@ object DxvkGuestWsiBridge {
     const val BLOCKER = "DXVK_GUEST_WSI_BRIDGE_NOT_IMPLEMENTED"
 
     fun isAvailable(): Boolean = false
+
+    fun canLaunchWineSession(surfaceReady: Boolean): Boolean = surfaceReady && isAvailable()
 }
