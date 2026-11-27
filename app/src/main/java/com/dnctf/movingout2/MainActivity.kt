@@ -736,13 +736,40 @@ class MainActivity : Activity() {
                     }
                 }, "runtime-zip-importer").apply { isDaemon = false; start() }
             }
-            pickRuntimeBundle -> try {
-                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                val imported = RuntimeBundleImporter(this).importTree(uri)
-                val graphics = RuntimeGraphicsComponents.assess(File(filesDir, "native_runtime/bundle"))
-                runtimeStatus.text = "Runtime bundle: STRUCTURE_VALIDATED\nCopied ${imported.copiedFiles} files (${imported.copiedBytes} bytes).\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${graphics.notes.joinToString("\n")}\nExecution/driver loading not verified; launch remains blocked."
-                refreshRuntimeStatus()
-            } catch (e: Exception) { runtimeStatus.text = "Runtime bundle import failed: ${e.message ?: e.javaClass.simpleName}\nExisting bundle is preserved when possible." }
+            pickRuntimeBundle -> {
+                val permission = runCatching {
+                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                if (permission.isFailure) {
+                    val error = permission.exceptionOrNull()!!
+                    runtimeStatus.text = "Runtime folder permission could not be retained: ${error.message ?: error.javaClass.simpleName}"
+                    return
+                }
+                if (!runtimeInstallInProgress.compareAndSet(false, true)) {
+                    runtimeStatus.text = "Another runtime operation is already running."
+                    return
+                }
+                runtimeStatus.text = "Importing runtime folder into private app storage…"
+                Thread({
+                    val result = runCatching { RuntimeBundleImporter(this).importTree(uri) }
+                    runtimeInstallInProgress.set(false)
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) return@runOnUiThread
+                        result.onSuccess { imported ->
+                            val graphics = RuntimeGraphicsComponents.assess(File(filesDir, "native_runtime/bundle"))
+                            runtimeStatus.text = "Runtime bundle: STRUCTURE_VALIDATED\\nCopied ${imported.copiedFiles} files (${imported.copiedBytes} bytes).\\nDXVK: ${graphics.dxvk}\\nTurnip: ${graphics.turnip}\\n${graphics.notes.joinToString("\\n")}\\nExecution/driver loading not verified; launch remains blocked."
+                            refreshRuntimeStatus()
+                            Toast.makeText(this, "Runtime folder imported and structurally validated.", Toast.LENGTH_LONG).show()
+                        }.onFailure { error ->
+                            val trace = java.io.StringWriter().also { error.printStackTrace(java.io.PrintWriter(it)) }.toString()
+                            diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "runtime-folder-import",
+                                "${error.javaClass.name}: ${error.message ?: "no message"}\\n$trace"))
+                            runtimeStatus.text = "Runtime folder import failed safely: ${error.message ?: error.javaClass.simpleName}\\nExisting bundle is preserved when possible."
+                            Toast.makeText(this, "Runtime folder import failed: ${error.message}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }, "runtime-folder-importer").apply { isDaemon = false; start() }
+            }
             pickGameZip -> {
                 val cancelled = AtomicBoolean(false)
                 val progressDialog = ProgressDialog(this).apply {
