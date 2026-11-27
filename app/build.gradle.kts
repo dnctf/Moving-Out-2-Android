@@ -52,7 +52,11 @@ android {
         jvmTarget = "17"
     }
     externalNativeBuild {
-        cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" }
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+            targets += listOf("vulkan_probe", "mo2_input_bridge", "mo2_process_group_launcher")
+        }
     }
 }
 
