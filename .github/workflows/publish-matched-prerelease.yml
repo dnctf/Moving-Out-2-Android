@@ -51,9 +51,19 @@ jobs:
           copy_one moving-out-2-runtime-arm64-v8a.zip.sha256
           copy_one box64-provenance.txt
 
-          # The checksum file may contain the artifact's original dist/ path.
-          # Rewrite only the filename field to match the normalized staging directory.
-          sed -i -E 's#([ *])([^ ]*/)+#\\1#' "$stage/moving-out-2-runtime-arm64-v8a.zip.sha256"
+          # Keep the digest but normalize the filename after copying the ZIP into stage/.
+          checksum_file="$stage/moving-out-2-runtime-arm64-v8a.zip.sha256"
+          mapfile -t checksum_lines < "$checksum_file"
+          if [[ ${#checksum_lines[@]} -ne 1 ]]; then
+            echo "::error::Runtime checksum file must contain exactly one SHA-256 entry."
+            exit 1
+          fi
+          read -r digest _ <<< "${checksum_lines[0]}"
+          if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Runtime checksum entry does not start with a valid SHA-256 digest."
+            exit 1
+          fi
+          printf '%s  %s\\n' "$digest" "moving-out-2-runtime-arm64-v8a.zip" > "$checksum_file"
           (cd "$stage" && sha256sum --check moving-out-2-runtime-arm64-v8a.zip.sha256)
           grep -Eq '^MATCHED_BOX64_SHA256=[a-f0-9]{64}$' "$stage/box64-provenance.txt"
           unzip -p "$stage/moving-out-2-runtime-arm64-v8a.zip" runtime-manifest.json | python3 -m json.tool >/dev/null

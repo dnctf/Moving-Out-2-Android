@@ -97,15 +97,18 @@ class VirtualControllerView(
         buttonRects[ControllerButton.A] = rect(faceCenter.first, faceCenter.second + fOffset, fr)
         buttonRects[ControllerButton.X] = rect(faceCenter.first - fOffset, faceCenter.second, fr)
         buttonRects[ControllerButton.B] = rect(faceCenter.first + fOffset, faceCenter.second, fr)
-        buttonRects[ControllerButton.LB] = rect(w * .18f + ox, h * .10f + oy, u * .55f, u * .30f)
-        buttonRects[ControllerButton.RB] = rect(w * .82f + ox, h * .10f + oy, u * .55f, u * .30f)
-        buttonRects[ControllerButton.BACK] = rect(w * .45f + ox, h * .12f + oy, u * .50f, u * .22f)
-        buttonRects[ControllerButton.START] = rect(w * .55f + ox, h * .12f + oy, u * .50f, u * .22f)
-        triggerRects[false] = rect(w * .30f + ox, h * .10f + oy, u * .25f, u * .30f)
-        triggerRects[true] = rect(w * .70f + ox, h * .10f + oy, u * .25f, u * .30f)
+        val top = VirtualControllerTopLayout.calculate(w, h, u)
+        buttonRects[ControllerButton.LB] = top.leftBumper.toRectF()
+        buttonRects[ControllerButton.BACK] = top.back.toRectF()
+        buttonRects[ControllerButton.START] = top.start.toRectF()
+        buttonRects[ControllerButton.RB] = top.rightBumper.toRectF()
+        triggerRects[false] = top.leftTrigger.toRectF()
+        triggerRects[true] = top.rightTrigger.toRectF()
     }
     private fun rect(cx: Float, cy: Float, radius: Float): RectF = RectF(cx-radius, cy-radius, cx+radius, cy+radius)
     private fun rect(cx: Float, cy: Float, halfWidth: Float, halfHeight: Float): RectF = RectF(cx-halfWidth, cy-halfHeight, cx+halfWidth, cy+halfHeight)
+    private fun VirtualControllerTopLayout.Bounds.toRectF(): RectF =
+        RectF(left, top, right, bottom)
 
     private fun drawDpad(canvas: Canvas, alpha: Int, unit: Float) {
         val state = engine.snapshot()
@@ -153,7 +156,7 @@ class VirtualControllerView(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (!overlayVisible) return false
+        if (!overlayVisible || width <= 0 || height <= 0) return false
         // Recompute before hit testing so the first event after a resize uses current bounds.
         calculateGeometry()
         when (event.actionMasked) {
