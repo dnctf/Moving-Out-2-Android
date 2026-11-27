@@ -33,7 +33,9 @@ class GameSurfaceHost @JvmOverloads constructor(
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         val surface = holder.surface
-        if (surface != null && surface.isValid) {
+        // SurfaceHolder may report creation before a non-zero buffer size is negotiated.
+        // Do not advertise readiness or hand a zero-sized target to Vulkan/DXVK.
+        if (surface != null && surface.isValid && surfaceWidth > 0 && surfaceHeight > 0) {
             isSurfaceAvailable = true
             lifecycleListener?.onSurfaceCreated(surface, surfaceWidth, surfaceHeight)
         }
@@ -43,16 +45,24 @@ class GameSurfaceHost @JvmOverloads constructor(
         surfaceWidth = width
         surfaceHeight = height
         val surface = holder.surface
-        if (surface != null && surface.isValid) {
+        val ready = surface != null && surface.isValid && width > 0 && height > 0
+        if (ready) {
+            val wasAvailable = isSurfaceAvailable
             isSurfaceAvailable = true
-            lifecycleListener?.onSurfaceChanged(surface, width, height)
+            if (wasAvailable) lifecycleListener?.onSurfaceChanged(surface!!, width, height)
+            else lifecycleListener?.onSurfaceCreated(surface!!, width, height)
+        } else {
+            isSurfaceAvailable = false
+            lifecycleListener?.onSurfaceDestroyed()
         }
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
+        // Listener must detach its Vulkan surface/swapchain before Android releases it.
         isSurfaceAvailable = false
-        // Safely notify listener to detach renderer/swapchain BEFORE native surface is destroyed
         lifecycleListener?.onSurfaceDestroyed()
+        surfaceWidth = 0
+        surfaceHeight = 0
     }
 
     fun probeCurrentSwapchain(): SwapchainProbeResult {
