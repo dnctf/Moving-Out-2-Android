@@ -623,16 +623,7 @@ class WineSessionSupervisor(
         // 1. Neutralize input
         inputBridge.neutralizeAllPlayers()
 
-        // 2. Stop target process
-        targetProcess?.let { p ->
-            p.stop(gracePeriodMs = 500)
-            if (p.process.isAlive) {
-                p.process.destroyForcibly()
-            }
-        }
-        targetProcess = null
-
-        // 3. Stop wineserver process via wineserver -k + destroyForcibly fallback
+        // 2. Ask Wine to terminate all prefix-owned guest processes before killing Box64 hosts.
         val b64 = box64Override ?: activeBox64Executable
         val ws = wineserverOverride ?: WineServerResolver.resolve(bundleRoot)
         val env = envOverride ?: activeSessionEnvironment ?: mapOf("WINEPREFIX" to prefix.absolutePath)
@@ -641,6 +632,13 @@ class WineSessionSupervisor(
         } else {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "supervisor", "Skipping wineserver cleanup: no validated nativeLibraryDir Box64 executable is retained."))
         }
+
+        // 3. Reap Box64 target and wineserver host processes after wineserver -k.
+        targetProcess?.let { p ->
+            p.stop(gracePeriodMs = 500)
+            if (p.process.isAlive) p.process.destroyForcibly()
+        }
+        targetProcess = null
         wineserverProcess?.let { sp ->
             if (sp.process.isAlive) {
                 sp.stop(gracePeriodMs = 300)
