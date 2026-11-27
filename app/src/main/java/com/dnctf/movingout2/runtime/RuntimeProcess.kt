@@ -57,7 +57,7 @@ object ProcessGroupSpawner {
         if (!createProcessGroup && processGroupId == null) {
             val process = ProcessBuilder(command).apply {
                 if (workingDirectory != null) directory(workingDirectory)
-                environment().putAll(environment)
+                this.environment().putAll(environment)
             }.start()
             return SpawnedRuntimeProcess(process, RuntimeProcess.parsePidSafely(process.toString()), null)
         }
@@ -67,7 +67,7 @@ object ProcessGroupSpawner {
         val shellCommand = listOf(shell().absolutePath, "-c", stopScript, "mo2-process-group") + command
         val child = ProcessBuilder(shellCommand).apply {
             if (workingDirectory != null) directory(workingDirectory)
-            environment().putAll(environment)
+            this.environment().putAll(environment)
         }.start()
         val pid = RuntimeProcess.parsePidSafely(child.toString())
             ?: run { child.destroyForcibly(); throw IllegalStateException("Unable to determine process PID for process-group setup.") }
