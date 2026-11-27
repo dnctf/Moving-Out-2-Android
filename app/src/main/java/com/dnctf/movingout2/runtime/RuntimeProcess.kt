@@ -56,7 +56,6 @@ object ProcessGroupSpawner {
         workingDirectory: File?,
         processGroupId: Long?,
         createProcessGroup: Boolean,
-        controller: ProcessGroupController,
         processGroupLauncher: File?
     ): SpawnedRuntimeProcess {
         require(command.isNotEmpty())
@@ -197,7 +196,7 @@ class RuntimeProcess(
         val effectiveEnvironment = xinputConfig?.environment(environment) ?: environment
         val spawned = ProcessGroupSpawner.start(
             listOf(executable.absolutePath) + args, effectiveEnvironment, workingDirectory,
-            processGroupId, createProcessGroup, processGroups, processGroupLauncher
+            processGroupId, createProcessGroup, processGroupLauncher
         )
         val started = System.nanoTime()
         val stdout = reader(spawned.process.inputStream, "runtime-stdout", RuntimeDiagnostic.Severity.INFO, "stdout")
