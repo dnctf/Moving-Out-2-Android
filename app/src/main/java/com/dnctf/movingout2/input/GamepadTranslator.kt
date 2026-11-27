@@ -35,7 +35,8 @@ class GamepadTranslator(private val deadzone: Float = 0f) {
         val leftTrigger = normalizeTrigger(event.getAxisValue(axisLayout.leftTrigger), device?.getMotionRange(axisLayout.leftTrigger))
         val rightTrigger = normalizeTrigger(event.getAxisValue(axisLayout.rightTrigger), device?.getMotionRange(axisLayout.rightTrigger))
         val hat = PhysicalGamepadNormalizer.hatButtons(
-            event.getAxisValue(MotionEvent.AXIS_HAT_X), event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+            axisValue(event, device, MotionEvent.AXIS_HAT_X),
+            axisValue(event, device, MotionEvent.AXIS_HAT_Y)
         )
         return updateNormalizedMotion(left, right, leftTrigger, rightTrigger, hat)
     }

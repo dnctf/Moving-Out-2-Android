@@ -77,6 +77,14 @@ class PhysicalGamepadNormalizerTest {
         assertEquals(MotionEvent.AXIS_Z, legacyPair.rightX)
         assertEquals(MotionEvent.AXIS_RZ, legacyPair.rightY)
     }
+    @Test fun vendorHatRangesAreNormalizedBeforeDirectionMapping() {
+        val normalizedRight = PhysicalGamepadNormalizer.normalizeAxisInRange(1f, 0f, 1f)
+        val normalizedUp = PhysicalGamepadNormalizer.normalizeAxisInRange(0f, 0f, 1f)
+        assertEquals(
+            setOf(ControllerButton.RIGHT, ControllerButton.UP),
+            PhysicalGamepadNormalizer.hatButtons(normalizedRight, normalizedUp)
+        )
+    }
     @Test fun standardAndroidButtonsMapToCanonicalButtons() {
         assertEquals(ControllerButton.A, GamepadKeyMapping.mapKeyCode(KeyEvent.KEYCODE_BUTTON_A))
         assertEquals(ControllerButton.RB, GamepadKeyMapping.mapKeyCode(KeyEvent.KEYCODE_BUTTON_R1))

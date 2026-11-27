@@ -44,6 +44,25 @@ class VirtualControllerTopLayoutTest {
     }
 
     @Test
+    fun extremeGlobalOffsetsStayInsideAndDoNotReintroduceOverlap() {
+        listOf(320f to 720f, 720f to 320f).forEach { (width, height) ->
+            listOf(-.15f, .15f).forEach { offset ->
+                val unit = minOf(width, height) * .12f * 1.5f
+                val controls = VirtualControllerTopLayout.calculate(width, height, unit, offset, offset).all()
+                controls.forEachIndexed { index, bounds ->
+                    assertTrue(bounds.left >= -0.001f)
+                    assertTrue(bounds.right <= width + 0.001f)
+                    assertTrue(bounds.top >= -0.001f)
+                    assertTrue(bounds.bottom <= height + 0.001f)
+                    for (other in index + 1 until controls.size) {
+                        assertFalse(bounds.overlaps(controls[other]))
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     fun invalidGeometryIsRejectedBeforeHitTesting() {
         org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
             VirtualControllerTopLayout.calculate(Float.NaN, 800f, 48f)

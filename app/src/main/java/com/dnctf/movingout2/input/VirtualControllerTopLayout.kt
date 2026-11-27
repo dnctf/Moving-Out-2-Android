@@ -36,7 +36,7 @@ object VirtualControllerTopLayout {
         fun all(): List<Bounds> = listOf(leftBumper, leftTrigger, back, start, rightTrigger, rightBumper)
     }
 
-    fun calculate(width: Float, height: Float, unit: Float): Layout {
+    fun calculate(width: Float, height: Float, unit: Float, offsetX: Float = 0f, offsetY: Float = 0f): Layout {
         require(width.isFinite() && width > 0f) { "Controller width must be finite and positive." }
         require(height.isFinite() && height > 0f) { "Controller height must be finite and positive." }
         require(unit.isFinite() && unit > 0f) { "Controller unit must be finite and positive." }
@@ -65,13 +65,34 @@ object VirtualControllerTopLayout {
             )
         }
 
-        return Layout(
+        val base = Layout(
             leftBumper = control(0, .10f),
             leftTrigger = control(1, .10f),
             back = control(2, .12f),
             start = control(3, .12f),
             rightTrigger = control(4, .10f),
             rightBumper = control(5, .10f)
+        )
+        val controls = base.all()
+        val minLeft = controls.minOf { it.left }
+        val maxRight = controls.maxOf { it.right }
+        val minTop = controls.minOf { it.top }
+        val maxBottom = controls.maxOf { it.bottom }
+        val requestedX = if (offsetX.isFinite()) offsetX * width else 0f
+        val requestedY = if (offsetY.isFinite()) offsetY * height else 0f
+        val shiftX = requestedX.coerceIn(-minLeft, width - maxRight)
+        val shiftY = requestedY.coerceIn(-minTop, height - maxBottom)
+        fun shifted(bounds: Bounds) = bounds.copy(
+            centerX = bounds.centerX + shiftX,
+            centerY = bounds.centerY + shiftY
+        )
+        return Layout(
+            leftBumper = shifted(base.leftBumper),
+            leftTrigger = shifted(base.leftTrigger),
+            back = shifted(base.back),
+            start = shifted(base.start),
+            rightTrigger = shifted(base.rightTrigger),
+            rightBumper = shifted(base.rightBumper)
         )
     }
 }

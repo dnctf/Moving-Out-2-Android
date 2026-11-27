@@ -97,7 +97,7 @@ class VirtualControllerView(
         buttonRects[ControllerButton.A] = rect(faceCenter.first, faceCenter.second + fOffset, fr)
         buttonRects[ControllerButton.X] = rect(faceCenter.first - fOffset, faceCenter.second, fr)
         buttonRects[ControllerButton.B] = rect(faceCenter.first + fOffset, faceCenter.second, fr)
-        val top = VirtualControllerTopLayout.calculate(w, h, u)
+        val top = VirtualControllerTopLayout.calculate(w, h, u, offsetX, offsetY)
         buttonRects[ControllerButton.LB] = top.leftBumper.toRectF()
         buttonRects[ControllerButton.BACK] = top.back.toRectF()
         buttonRects[ControllerButton.START] = top.start.toRectF()
