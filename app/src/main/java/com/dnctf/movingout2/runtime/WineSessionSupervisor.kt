@@ -129,6 +129,13 @@ class DefaultSessionProcessRunner(
                 if (exited && probeProc.exitValue() == 0) {
                     return true
                 }
+                if (!exited) {
+                    probeProc.destroy()
+                    if (!probeProc.waitFor(100, TimeUnit.MILLISECONDS)) {
+                        probeProc.destroyForcibly()
+                        probeProc.waitFor(250, TimeUnit.MILLISECONDS)
+                    }
+                }
             } catch (_: Exception) {
                 // Ignore transient probe errors during startup
             }
