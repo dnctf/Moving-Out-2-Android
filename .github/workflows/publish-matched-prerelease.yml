@@ -1,0 +1,59 @@
+name: Publish Matched APK and Runtime Pre-release
+
+on:
+  workflow_run:
+    workflows: ["Build Runtime Bundle"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: publish-matched-runtime-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download matched APK and runtime bundle
+        uses: actions/download-artifact@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+          name: moving-out-2-runtime-${{ github.event.workflow_run.run_number }}
+          path: dist
+
+      - name: Verify release payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/Moving-Out-2-Android-debug-matched.apk
+          test -s dist/moving-out-2-runtime-arm64-v8a.zip
+          test -s dist/moving-out-2-runtime-arm64-v8a.zip.sha256
+          test -s dist/box64-provenance.txt
+          (cd dist && sha256sum --check moving-out-2-runtime-arm64-v8a.zip.sha256)
+          grep -Eq '^MATCHED_BOX64_SHA256=[a-f0-9]{64}$' dist/box64-provenance.txt
+
+      - name: Publish matched pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-v0.2.0-alpha.6
+          target_commitish: ${{ github.event.workflow_run.head_sha }}
+          name: Moving Out 2 Android 0.2.0-alpha.6 — Matched Runtime
+          prerelease: true
+          make_latest: false
+          body: |
+            APK and runtime bundle built in the same GitHub Actions job from the exact same Box64 binary.
+
+            The workflow extracts the APK's lib/arm64-v8a/libbox64.so and verifies its SHA-256 against runtime-manifest.json before publishing.
+            Device execution and game rendering still require physical-device verification.
+          files: |
+            dist/Moving-Out-2-Android-debug-matched.apk
+            dist/moving-out-2-runtime-arm64-v8a.zip
+            dist/moving-out-2-runtime-arm64-v8a.zip.sha256
+            dist/box64-provenance.txt
