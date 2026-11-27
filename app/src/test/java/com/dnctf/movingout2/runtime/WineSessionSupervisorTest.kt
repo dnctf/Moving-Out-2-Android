@@ -11,6 +11,30 @@ import java.util.concurrent.atomic.AtomicBoolean
 class WineSessionSupervisorTest {
 
     @Test
+    fun sessionTerminationRunsWineserverThenGroupThenStateCleanup() {
+        val events = mutableListOf<String>()
+        val success = runSessionTerminationSequence(
+            stopWineserver = { events += "wineserver -k"; true },
+            terminateProcessGroup = { events += "process-group TERM/KILL"; true },
+            cleanupState = { events += "cleanup state"; true }
+        )
+        assertTrue(success)
+        assertEquals(listOf("wineserver -k", "process-group TERM/KILL", "cleanup state"), events)
+    }
+
+    @Test
+    fun sessionTerminationContinuesCleanupWhenWineserverKillFails() {
+        val events = mutableListOf<String>()
+        val success = runSessionTerminationSequence(
+            stopWineserver = { events += "wineserver -k"; false },
+            terminateProcessGroup = { events += "process-group TERM/KILL"; true },
+            cleanupState = { events += "cleanup state"; true }
+        )
+        assertFalse(success)
+        assertEquals(listOf("wineserver -k", "process-group TERM/KILL", "cleanup state"), events)
+    }
+
+    @Test
     fun validatesAllowedStateTransitions() {
         assertTrue(WineSessionStateTransitions.canTransition(WineSessionState.IDLE, WineSessionState.VALIDATING_PREFLIGHT))
         assertFalse(WineSessionStateTransitions.canTransition(WineSessionState.IDLE, WineSessionState.RUNNING))
