@@ -75,6 +75,7 @@ class RuntimeBundleImporter(
             stageLog.event("STAGE_2_RUNTIME_EXTRACT", "TREE_IMPORT_PASS", mapOf("files" to counter.files, "bytes" to counter.bytes, "manifestValid" to true))
             return RuntimeImportResult(active, counter.files, counter.bytes)
         } catch (error: Exception) {
+            stageLog.event("STAGE_2_RUNTIME_EXTRACT", "TREE_IMPORT_FAIL", error = error)
             val rollback = runCatching { rollbackImport(staging, backup, target, activated, error) }
             journal.checkpoint("RUNTIME_BUNDLE", archiveName, entryCount=counter.entries, extractedBytes=counter.bytes, availableBytesBefore=availableBefore, availableBytesAfter=runCatching { StatFs(parent.absolutePath).availableBytes }.getOrNull(), stage="IMPORT_FAILED", activationStatus="FAILED", rollbackStatus=if (rollback.isSuccess) "ROLLBACK_COMPLETED" else "ROLLBACK_FAILED", error=rollback.exceptionOrNull() ?: error)
             if (rollback.isFailure) throw IOException("Runtime import failed and rollback failed.", rollback.exceptionOrNull())
@@ -175,6 +176,7 @@ class RuntimeBundleImporter(
             stageLog.event("STAGE_2_RUNTIME_EXTRACT", "ZIP_IMPORT_PASS", mapOf("files" to counter.files, "bytes" to counter.bytes, "manifestValid" to true))
             return RuntimeImportResult(active, counter.files, counter.bytes)
         } catch (error: Exception) {
+            stageLog.event("STAGE_2_RUNTIME_EXTRACT", "ZIP_IMPORT_FAIL", error = error)
             val rollback = runCatching { rollbackImport(staging, backup, target, activated, error) }
             journal.checkpoint("RUNTIME_BUNDLE_ZIP", displayName, entryCount=counter.entries, extractedBytes=counter.bytes,
                 availableBytesBefore=availableBefore, availableBytesAfter=runCatching { StatFs(parent.absolutePath).availableBytes }.getOrNull(),
