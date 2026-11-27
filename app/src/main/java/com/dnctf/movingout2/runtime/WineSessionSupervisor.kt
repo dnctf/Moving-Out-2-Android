@@ -50,7 +50,9 @@ interface SessionProcessRunner {
         args: List<String>,
         environment: Map<String, String>,
         workingDirectory: File?,
-        tag: String
+        tag: String,
+        processGroupId: Long? = null,
+        createProcessGroup: Boolean = false
     ): ProcessResult
 
     fun probeWineserverReady(
@@ -65,7 +67,8 @@ interface SessionProcessRunner {
 class DefaultSessionProcessRunner(
     private val diagnostics: RuntimeDiagnostics,
     private val logFile: File? = null,
-    private val runtimeProcessLogFile: File? = null
+    private val runtimeProcessLogFile: File? = null,
+    private val processGroups: ProcessGroupController = AndroidProcessGroupController()
 ) : SessionProcessRunner {
     private val fileLock = Any()
 
@@ -74,17 +77,20 @@ class DefaultSessionProcessRunner(
         args: List<String>,
         environment: Map<String, String>,
         workingDirectory: File?,
-        tag: String
+        tag: String,
+        processGroupId: Long?,
+        createProcessGroup: Boolean
     ): ProcessResult {
         require(executable.exists() && executable.isFile && executable.canExecute()) {
             "Executable missing or not executable: $executable"
         }
-        val builder = ProcessBuilder(listOf(executable.absolutePath) + args)
-        workingDirectory?.let { builder.directory(it) }
-        builder.environment().putAll(environment)
-        val process = builder.start()
-        val pid = RuntimeProcess.parsePidSafely(process.toString())
         val started = System.nanoTime()
+        val spawned = ProcessGroupSpawner.start(
+            listOf(executable.absolutePath) + args, environment, workingDirectory,
+            processGroupId, createProcessGroup, processGroups
+        )
+        val process = spawned.process
+        val pid = spawned.pid
 
         val stdoutThread = pipeReader(process.inputStream, "$tag-stdout", RuntimeDiagnostic.Severity.INFO, tag)
         val stderrThread = pipeReader(process.errorStream, "$tag-stderr", RuntimeDiagnostic.Severity.ERROR, tag)
@@ -92,7 +98,7 @@ class DefaultSessionProcessRunner(
         stderrThread.start()
 
         recordStructured(RuntimeDiagnostic.Severity.INFO, tag, "Started ${executable.name}; PID=${pid ?: "unknown"}")
-        return ProcessResult(process, pid, stdoutThread, stderrThread, started)
+        return ProcessResult(process, pid, stdoutThread, stderrThread, started, spawned.processGroupId, processGroups)
     }
 
     override fun probeWineserverReady(
@@ -184,6 +190,7 @@ class WineSessionSupervisor(
     private val inputBridge = RuntimeInputBridge()
     @Volatile private var activeBox64Executable: File? = null
     @Volatile private var activeSessionEnvironment: Map<String, String>? = null
+    @Volatile private var sessionProcessGroupId: Long? = null
     private val execProbe = AndroidExecCapabilityProbe(context, diagnostics)
 
     @Volatile var wineserverProcess: ProcessResult? = null
@@ -303,13 +310,20 @@ class WineSessionSupervisor(
         transitionTo(WineSessionState.STARTING_WINESERVER)
         val wineserverArgs = WineLaunchCommand.wineserverArguments(wineserverCandidate.absolutePath)
         val serverProc = try {
-            runner.start(activeBox64, wineserverArgs, env, prefix, "WINESERVER")
+            runner.start(activeBox64, wineserverArgs, env, prefix, "WINESERVER", createProcessGroup = true)
         } catch (e: Exception) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Failed to start wineserver: ${e.message}"))
             transitionTo(WineSessionState.FAILED)
             return false
         }
         wineserverProcess = serverProc
+        sessionProcessGroupId = serverProc.processGroupId
+        if (sessionProcessGroupId == null) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Unable to establish a dedicated Box64 process group."))
+            reapWineserver(activeBox64, wineserverCandidate, env)
+            transitionTo(WineSessionState.FAILED)
+            return false
+        }
 
         // Readiness probe
         val isReady = runner.probeWineserverReady(activeBox64, wineserverCandidate, prefix, env, timeoutMs = 8000)
@@ -328,7 +342,7 @@ class WineSessionSupervisor(
             wineCandidate.absolutePath, zPath, options.width, options.height, playerLog
         )
         val targetProc = try {
-            runner.start(activeBox64, targetArgs, env, gameExe.parentFile ?: prefix, "BOX64-WINE")
+            runner.start(activeBox64, targetArgs, env, gameExe.parentFile ?: prefix, "BOX64-WINE", processGroupId = sessionProcessGroupId)
         } catch (e: Exception) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Failed to launch target game: ${e.message}"))
             reapWineserver(activeBox64, wineserverCandidate, env)
@@ -410,7 +424,7 @@ class WineSessionSupervisor(
         }
 
         return try {
-            val proc = runner.start(box64, bootArgs, env, prefix, "WINEBOOT")
+            val proc = runner.start(box64, bootArgs, env, prefix, "WINEBOOT", createProcessGroup = true)
             val exit = proc.waitFor(30000)
             if (exit.timedOut || exit.exitCode != 0) {
                 diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
@@ -633,34 +647,40 @@ class WineSessionSupervisor(
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "supervisor", "Skipping wineserver cleanup: no validated nativeLibraryDir Box64 executable is retained."))
         }
 
-        // 3. Reap Box64 target and wineserver host processes after wineserver -k.
-        targetProcess?.let { p ->
-            p.stop(gracePeriodMs = 500)
-            if (p.process.isAlive) p.process.destroyForcibly()
-        }
-        targetProcess = null
-        wineserverProcess?.let { sp ->
-            if (sp.process.isAlive) {
-                sp.stop(gracePeriodMs = 300)
-                if (sp.process.isAlive) sp.process.destroyForcibly()
-            }
-        }
-        wineserverProcess = null
+        // 3. Required order: wineserver -k, process-group SIGTERM/SIGKILL, then state cleanup.
+        val groupOwner = targetProcess ?: wineserverProcess
+        val cleanupSucceeded = runSessionTerminationSequence(
+            stopWineserver = { b64 != null && ws != null && reapWineserver(b64, ws, env) },
+            terminateProcessGroup = {
+                val terminated = groupOwner?.terminateProcessGroup(gracePeriodMs = 500) ?: true
+                targetProcess?.let { it.stop(100) }
+                wineserverProcess?.let { it.stop(100) }
+                targetProcess = null
+                wineserverProcess = null
+                sessionProcessGroupId = null
+                terminated
+            },
+            cleanupState = { runCatching { inputBridge.destroy(); true }.getOrDefault(false) }
+        )
 
-        // 4. Destroy input bridge
-        inputBridge.destroy()
-
-        // 5. Final state
-        transitionTo(if (markFailed) WineSessionState.FAILED else WineSessionState.STOPPED)
-        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor", "Session shutdown completed successfully."))
-        return true
+        transitionTo(if (markFailed || !cleanupSucceeded) WineSessionState.FAILED else WineSessionState.STOPPED)
+        diagnostics.record(RuntimeDiagnostic(
+            if (cleanupSucceeded) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.ERROR,
+            "supervisor",
+            "Session shutdown completed; process-group cleanup success=$cleanupSucceeded."
+        ))
+        return cleanupSucceeded
     }
 
-    private fun reapWineserver(box64: File, wineserver: File, env: Map<String, String>) {
-        runCatching {
+    private fun reapWineserver(box64: File, wineserver: File, env: Map<String, String>): Boolean {
+        return runCatching {
             val killArgs = WineLaunchCommand.wineserverKillArguments(wineserver.absolutePath)
             val proc = runner.start(box64, killArgs, env, prefix, "WINESERVER")
-            proc.waitFor(2000)
+            val result = proc.waitFor(2000)
+            !result.timedOut && result.exitCode == 0
+        }.getOrElse {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "supervisor", "wineserver -k failed: ${it.message}"))
+            false
         }
     }
 
@@ -675,6 +695,18 @@ class WineSessionSupervisor(
     }
 }
 
+
+internal fun runSessionTerminationSequence(
+    stopWineserver: () -> Boolean,
+    terminateProcessGroup: () -> Boolean,
+    cleanupState: () -> Boolean
+): Boolean {
+    var success = true
+    for (step in listOf(stopWineserver, terminateProcessGroup, cleanupState)) {
+        if (!runCatching { step() }.getOrDefault(false)) success = false
+    }
+    return success
+}
 
 /** Strictly validates the guest x86-64 glibc closure and Wine loader modules before wineboot. */
 object WineRuntimeModuleValidator {
