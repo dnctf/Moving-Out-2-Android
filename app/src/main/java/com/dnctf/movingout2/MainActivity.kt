@@ -42,6 +42,7 @@ import com.dnctf.movingout2.runtime.RuntimeBundleImporter
 import com.dnctf.movingout2.runtime.RuntimeLaunchConfig
 import com.dnctf.movingout2.graphics.VulkanCapabilities
 import com.dnctf.movingout2.graphics.GameSurfaceHost
+import com.dnctf.movingout2.graphics.DxvkGuestWsiBridge
 import com.dnctf.movingout2.graphics.SurfaceLifecycleListener
 import com.dnctf.movingout2.graphics.VulkanNativeProbe
 import com.dnctf.movingout2.runtime.RuntimeBundleValidator
@@ -865,7 +866,13 @@ class MainActivity : Activity() {
                 val executable = pendingGameExecutable ?: return@runOnUiThread
                 val options = pendingGameLaunchOptions?.copy(width = width, height = height) ?: return@runOnUiThread
                 diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "surface",
-                    "Surface is valid (${width}x${height}); Android Vulkan swapchain acquire/present probe passed. This probe is not the DXVK guest WSI path."))
+                    "Surface is valid (${width}x${height}); Android Vulkan swapchain acquire/present probe passed."))
+                if (!DxvkGuestWsiBridge.canLaunchWineSession(decision.launchAllowed)) {
+                    diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "dxvk-wsi",
+                        "${DxvkGuestWsiBridge.BLOCKER}: launcher-process ANativeWindow cannot be consumed by the separate Box64/DXVK process; no cross-process Android WSI transport exists in this runtime."))
+                    finishGameSurface("Android SurfaceView and Vulkan swapchain preflight passed, but Wine launch is blocked: DXVK guest WSI bridge is not implemented. This prevents a known black-screen launch.")
+                    return@runOnUiThread
+                }
                 launchWineSessionOnSurface(executable, options, generation)
             }
         }, "game-surface-preflight").apply { isDaemon = true; start() }
