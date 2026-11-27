@@ -367,7 +367,7 @@ class WineSessionSupervisor(
         val bootArgs = WineLaunchCommand.winebootArguments(wine.absolutePath)
         val env = buildMap {
             put("WINEPREFIX", prefix.absolutePath)
-            put("WINEDLLOVERRIDES", "xinput1_3,xinput1_4,xinput9_1_0=n,b")
+            put("WINEDLLOVERRIDES", "xinput1_3,xinput1_4,xinput9_1_0=n,b;steam_api64=b")
             put("LD_LIBRARY_PATH", context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
             put("BOX64_PATH", wine.parentFile?.absolutePath.orEmpty())
             put("BOX64_DYNAREC", "1")
