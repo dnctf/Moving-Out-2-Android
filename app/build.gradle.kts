@@ -68,12 +68,14 @@ android.sourceSets.getByName("debug").jniLibs.srcDir(processGroupLauncherJniDir)
 val stageProcessGroupLauncherDebug = tasks.register<Copy>("stageProcessGroupLauncherDebug") {
     dependsOn("externalNativeBuildDebug")
     val processGroupLauncherSource = providers.provider {
-        val candidates = sequenceOf(
-            fileTree(projectDir.resolve(".cxx/Debug")).matching { include("**/mo2_process_group_launcher") }.files,
+        val primary = fileTree(projectDir.resolve(".cxx/Debug")).matching {
+            include("**/mo2_process_group_launcher")
+        }.files
+        val candidates = if (primary.isNotEmpty()) primary else {
             fileTree(layout.buildDirectory.dir("intermediates/cxx/Debug").get().asFile).matching {
                 include("**/mo2_process_group_launcher")
             }.files
-        ).flatten().distinct().toList()
+        }
         if (candidates.size != 1) {
             throw GradleException("Expected one ARM64 process-group launcher executable, found ${candidates.size}: ${candidates.joinToString()}")
         }
