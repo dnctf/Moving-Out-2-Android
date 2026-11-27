@@ -65,6 +65,8 @@ class MainActivity : Activity() {
     private val graphicsProbeInProgress = AtomicBoolean(false)
     @Volatile private var lastLaunchReady = false
     private val diagnosticLog = RuntimeDiagnostics()
+    private lateinit var stageDiagnostics: com.dnctf.movingout2.runtime.RuntimeStageDiagnostics
+    private var diagnosticBootstrapRequested = false
     private var pendingDiagnosticZip: File? = null
     private val pickDiagnosticDestination = 1004
     private lateinit var inputCoordinator: ControllerInputCoordinator
@@ -93,6 +95,9 @@ class MainActivity : Activity() {
         graphicsStatus = views.graphicsStatus
         playButton = views.playButton
         setContentView(views.root)
+        stageDiagnostics = com.dnctf.movingout2.runtime.RuntimeStageDiagnostics(this)
+        diagnosticBootstrapRequested = intent.getBooleanExtra("mo2.diagnostic.bootstrap", false)
+        stageDiagnostics.event("STAGE_2_RUNTIME_EXTRACT", "LAUNCHER_DIAGNOSTICS_READY", mapOf("diagnosticBootstrapRequested" to diagnosticBootstrapRequested, "nativeLibraryDir" to applicationInfo.nativeLibraryDir))
         status.text = "Starting launcher…"
         runtimeStatus.text = "Checking runtime installation…"
         graphicsStatus.text = "Device diagnostics are starting…"
@@ -576,7 +581,9 @@ class MainActivity : Activity() {
                     else -> "Game: ${active.validationStatus}"
                 }
                 runtimeStatus.text = "Runtime bundle: READY\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\nBox64 execution: ${if (snapshot.execProbeAllowed) "ALLOWED" else "BLOCKED"}\n${execText}\n${gameText}\nVulkan: ${if (vulkanAvailable) "AVAILABLE" else if (graphicsProbeComplete) "UNAVAILABLE" else "CHECKING"}\nLaunch readiness: ${decision.readiness}\n${graphics.notes.joinToString("\n")}"
-                if (decision.shouldAutoLaunch && !running) {
+                if ((decision.shouldAutoLaunch || diagnosticBootstrapRequested) && decision.playEnabled && !running) {
+                    diagnosticBootstrapRequested = false
+                    stageDiagnostics.event("STAGE_2_RUNTIME_EXTRACT", "LAUNCH_READINESS_PASS", mapOf("playEnabled" to decision.playEnabled, "gamePresent" to gamePresent, "runtimeReady" to report.isReady))
                     diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "auto-launch", "All game/runtime/exec/Vulkan checks passed; triggering one automatic launch for this Activity session."))
                     playButton.post { if (!isFinishing && !isDestroyed) startGameSession() }
                 }
