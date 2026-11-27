@@ -68,7 +68,8 @@ class DefaultSessionProcessRunner(
     private val diagnostics: RuntimeDiagnostics,
     private val logFile: File? = null,
     private val runtimeProcessLogFile: File? = null,
-    private val processGroups: ProcessGroupController = AndroidProcessGroupController()
+    private val processGroups: ProcessGroupController = AndroidProcessGroupController(),
+    private val processGroupLauncher: File? = null
 ) : SessionProcessRunner {
     private val fileLock = Any()
 
@@ -87,7 +88,7 @@ class DefaultSessionProcessRunner(
         val started = System.nanoTime()
         val spawned = ProcessGroupSpawner.start(
             listOf(executable.absolutePath) + args, environment, workingDirectory,
-            processGroupId, createProcessGroup, processGroups
+            processGroupId, createProcessGroup, processGroups, processGroupLauncher
         )
         val process = spawned.process
         val pid = spawned.pid
@@ -179,7 +180,8 @@ class WineSessionSupervisor(
     private val runner: SessionProcessRunner = DefaultSessionProcessRunner(
         diagnostics,
         File(context.filesDir, "diagnostics/wine_session.log"),
-        File(context.filesDir, "diagnostics/runtime-process.log")
+        File(context.filesDir, "diagnostics/runtime-process.log"),
+        processGroupLauncher = File(context.applicationInfo.nativeLibraryDir ?: "", "libmo2_process_group.so")
     ),
     private val onSessionFinished: (() -> Unit)? = null
 ) {
