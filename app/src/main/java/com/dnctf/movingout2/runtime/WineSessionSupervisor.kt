@@ -297,11 +297,11 @@ class WineSessionSupervisor(
         activeSessionEnvironment = env.toMap()
         val overrides = env["WINEDLLOVERRIDES"].orEmpty()
         val shmLayout = runCatching { sharedInput.length() }.getOrDefault(-1L)
-        val envOk = env["WINEPREFIX"] == prefix.absolutePath && env["WINEDLLOVERRIDES"]?.contains("steam_api64=b") == true &&
+        val envOk = env["WINEPREFIX"] == prefix.absolutePath && !env["WINEDLLPATH"].isNullOrBlank() && env["WINEDLLOVERRIDES"]?.contains("steam_api64=b") == true &&
             listOf("xinput1_3", "xinput1_4", "xinput9_1_0").all { overrides.contains(it) } &&
             !env["BOX64_LD_LIBRARY_PATH"].isNullOrBlank() && shmLayout == 128L
         stageLog.event("STAGE_3_ENV_CONTRACT", if (envOk) "PASS" else "FAIL", mapOf(
-            "WINEPREFIX" to env["WINEPREFIX"], "WINEDLLPATH" to env["WINEDLLPATH"],
+            "WINEPREFIX" to env["WINEPREFIX"], "WINEDLLPATH" to env["WINEDLLPATH"], "WINEDLLPATHConfigured" to !env["WINEDLLPATH"].isNullOrBlank(),
             "BOX64_LD_LIBRARY_PATH" to env["BOX64_LD_LIBRARY_PATH"], "WINEDLLOVERRIDES" to overrides,
             "steam_api64_b" to overrides.contains("steam_api64=b"), "xinputOverrides" to listOf("xinput1_3","xinput1_4","xinput9_1_0").all { overrides.contains(it) },
             "mo2xBytes" to shmLayout, "contractValid" to envOk
@@ -367,6 +367,7 @@ class WineSessionSupervisor(
         val bootArgs = WineLaunchCommand.winebootArguments(wine.absolutePath)
         val env = buildMap {
             put("WINEPREFIX", prefix.absolutePath)
+            guestLibraryDirectory?.takeIf { it.isDirectory && it.canRead() }?.let { put("WINEDLLPATH", it.absolutePath) }
             put("WINEDLLOVERRIDES", "xinput1_3,xinput1_4,xinput9_1_0=n,b;steam_api64=b")
             put("LD_LIBRARY_PATH", context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
             put("BOX64_PATH", wine.parentFile?.absolutePath.orEmpty())
