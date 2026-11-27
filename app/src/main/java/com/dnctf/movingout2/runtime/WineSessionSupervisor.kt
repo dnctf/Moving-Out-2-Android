@@ -204,6 +204,7 @@ class WineSessionSupervisor(
 
     @Synchronized
     fun startSession(gameExe: File, options: WineLaunchOptions = WineLaunchOptions()): Boolean {
+        sessionProcessGroupId = null
         val current = stateRef.get()
         if (current != WineSessionState.IDLE && current != WineSessionState.STOPPED && current != WineSessionState.FAILED) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "supervisor", "Cannot start from state $current"))
@@ -330,6 +331,8 @@ class WineSessionSupervisor(
         if (!isReady || !serverProc.process.isAlive) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Wineserver readiness probe timed out or server died"))
             reapWineserver(activeBox64, wineserverCandidate, env)
+            serverProc.terminateProcessGroup(300)
+            sessionProcessGroupId = null
             transitionTo(WineSessionState.FAILED)
             return false
         }
@@ -346,6 +349,8 @@ class WineSessionSupervisor(
         } catch (e: Exception) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Failed to launch target game: ${e.message}"))
             reapWineserver(activeBox64, wineserverCandidate, env)
+            serverProc.terminateProcessGroup(300)
+            sessionProcessGroupId = null
             transitionTo(WineSessionState.FAILED)
             return false
         }
@@ -641,10 +646,8 @@ class WineSessionSupervisor(
         val b64 = box64Override ?: activeBox64Executable
         val ws = wineserverOverride ?: WineServerResolver.resolve(bundleRoot)
         val env = envOverride ?: activeSessionEnvironment ?: mapOf("WINEPREFIX" to prefix.absolutePath)
-        if (b64 != null && ws != null) {
-            reapWineserver(b64, ws, env)
-        } else {
-            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "supervisor", "Skipping wineserver cleanup: no validated nativeLibraryDir Box64 executable is retained."))
+        if (b64 == null || ws == null) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "supervisor", "wineserver -k unavailable; process-group termination will still be attempted."))
         }
 
         // 3. Required order: wineserver -k, process-group SIGTERM/SIGKILL, then state cleanup.
