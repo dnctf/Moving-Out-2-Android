@@ -88,7 +88,7 @@ class DefaultSessionProcessRunner(
         val started = System.nanoTime()
         val spawned = ProcessGroupSpawner.start(
             listOf(executable.absolutePath) + args, environment, workingDirectory,
-            processGroupId, createProcessGroup, processGroups, processGroupLauncher
+            processGroupId, createProcessGroup, processGroupLauncher
         )
         val process = spawned.process
         val pid = spawned.pid
