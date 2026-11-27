@@ -6,44 +6,49 @@ import java.util.concurrent.TimeUnit
 data class ExitResult(val exitCode: Int?, val pid: Long?, val timedOut: Boolean, val terminatedByUser: Boolean, val durationMs: Long)
 
 interface ProcessGroupController {
-    fun assign(pid: Long, processGroupId: Long): Boolean
-    fun signalProcess(pid: Long, signal: Int): Boolean
     fun signalGroup(processGroupId: Long, signal: Int): Boolean
     fun isGroupAlive(processGroupId: Long): Boolean
 }
 
 object RuntimeSignals {
     const val SIGKILL = 9
-    const val SIGCONT = 18
     const val SIGTERM = 15
 }
 
 internal object NativeProcessGroup {
     private val loaded = runCatching { System.loadLibrary("vulkan_probe"); true }.getOrDefault(false)
-    private external fun assignNative(pid: Long, processGroupId: Long): Boolean
-    private external fun signalProcessNative(pid: Long, signal: Int): Boolean
     private external fun signalGroupNative(processGroupId: Long, signal: Int): Boolean
     private external fun isGroupAliveNative(processGroupId: Long): Boolean
-    fun assign(pid: Long, processGroupId: Long): Boolean = loaded && runCatching { assignNative(pid, processGroupId) }.getOrDefault(false)
-    fun signalProcess(pid: Long, signal: Int): Boolean = loaded && runCatching { signalProcessNative(pid, signal) }.getOrDefault(false)
-    fun signalGroup(processGroupId: Long, signal: Int): Boolean = loaded && runCatching { signalGroupNative(processGroupId, signal) }.getOrDefault(false)
-    fun isGroupAlive(processGroupId: Long): Boolean = loaded && runCatching { isGroupAliveNative(processGroupId) }.getOrDefault(false)
+    fun signalGroup(processGroupId: Long, signal: Int): Boolean =
+        loaded && runCatching { signalGroupNative(processGroupId, signal) }.getOrDefault(false)
+    fun isGroupAlive(processGroupId: Long): Boolean =
+        loaded && runCatching { isGroupAliveNative(processGroupId) }.getOrDefault(false)
 }
 
 class AndroidProcessGroupController : ProcessGroupController {
-    override fun assign(pid: Long, processGroupId: Long): Boolean = NativeProcessGroup.assign(pid, processGroupId)
-    override fun signalProcess(pid: Long, signal: Int): Boolean = NativeProcessGroup.signalProcess(pid, signal)
-    override fun signalGroup(processGroupId: Long, signal: Int): Boolean = NativeProcessGroup.signalGroup(processGroupId, signal)
-    override fun isGroupAlive(processGroupId: Long): Boolean = NativeProcessGroup.isGroupAlive(processGroupId)
+    override fun signalGroup(processGroupId: Long, signal: Int): Boolean =
+        NativeProcessGroup.signalGroup(processGroupId, signal)
+    override fun isGroupAlive(processGroupId: Long): Boolean =
+        NativeProcessGroup.isGroupAlive(processGroupId)
 }
 
 data class SpawnedRuntimeProcess(val process: Process, val pid: Long?, val processGroupId: Long?)
 
 object ProcessGroupSpawner {
-    private const val STOP_TIMEOUT_MS = 1500L
-    private fun shell(): File = listOf(File("/system/bin/sh"), File("/bin/sh"), File("/usr/bin/sh"))
-        .firstOrNull { it.isFile && it.canExecute() }
-        ?: throw IllegalStateException("No executable shell is available for process-group bootstrap.")
+    fun launcherCommand(
+        launcher: File,
+        command: List<String>,
+        processGroupId: Long?,
+        createProcessGroup: Boolean
+    ): List<String> {
+        require(command.isNotEmpty())
+        require(!(createProcessGroup && processGroupId != null)) {
+            "A new process group cannot also specify an existing PGID."
+        }
+        val pgid = if (createProcessGroup) 0L else processGroupId
+            ?: throw IllegalArgumentException("A PGID is required when joining an existing process group.")
+        return listOf(launcher.absolutePath, "--pgid", pgid.toString(), "--") + command
+    }
 
     fun start(
         command: List<String>,
@@ -51,58 +56,35 @@ object ProcessGroupSpawner {
         workingDirectory: File?,
         processGroupId: Long?,
         createProcessGroup: Boolean,
-        controller: ProcessGroupController
+        controller: ProcessGroupController,
+        processGroupLauncher: File?
     ): SpawnedRuntimeProcess {
         require(command.isNotEmpty())
-        if (!createProcessGroup && processGroupId == null) {
-            val process = ProcessBuilder(command).apply {
-                if (workingDirectory != null) directory(workingDirectory)
-                this.environment().putAll(environment)
-            }.start()
-            return SpawnedRuntimeProcess(process, RuntimeProcess.parsePidSafely(process.toString()), null)
+        val grouped = createProcessGroup || processGroupId != null
+        val builder = if (grouped) {
+            val launcher = processGroupLauncher
+                ?: throw IllegalStateException("Native process-group launcher is unavailable in nativeLibraryDir.")
+            require(launcher.isFile && launcher.canExecute()) {
+                "Native process-group launcher is missing or not executable: $launcher"
+            }
+            ProcessBuilder(launcherCommand(launcher, command, processGroupId, createProcessGroup))
+        } else {
+            ProcessBuilder(command)
         }
-        // The child stops before exec so setpgid runs before the exec race window.
-        val dollar = 36.toChar()
-        val stopScript = "kill -STOP " + dollar + dollar + "; exec \"" + dollar + "@\""
-        val shellCommand = listOf(shell().absolutePath, "-c", stopScript, "mo2-process-group") + command
-        val child = ProcessBuilder(shellCommand).apply {
-            if (workingDirectory != null) directory(workingDirectory)
-            this.environment().putAll(environment)
-        }.start()
-        val pid = RuntimeProcess.parsePidSafely(child.toString())
-            ?: run { child.destroyForcibly(); throw IllegalStateException("Unable to determine process PID for process-group setup.") }
-        if (!waitUntilStopped(pid)) {
-            child.destroyForcibly()
-            throw IllegalStateException("Child process did not enter the process-group bootstrap stop state.")
+        if (workingDirectory != null) builder.directory(workingDirectory)
+        builder.environment().putAll(environment)
+        val process = builder.start()
+        val pid = RuntimeProcess.parsePidSafely(process.toString())
+        val group = when {
+            createProcessGroup -> pid
+            processGroupId != null -> processGroupId
+            else -> null
         }
-        val group = processGroupId ?: pid
-        if (!controller.assign(pid, group)) {
-            controller.signalProcess(pid, RuntimeSignals.SIGKILL)
-            child.destroyForcibly()
-            throw IllegalStateException("Unable to assign PID $pid to process group $group.")
+        if (grouped && group == null) {
+            process.destroyForcibly()
+            throw IllegalStateException("Unable to determine PID/PGID for native process-group launcher.")
         }
-        if (!controller.signalProcess(pid, RuntimeSignals.SIGCONT)) {
-            controller.signalProcess(pid, RuntimeSignals.SIGKILL)
-            child.destroyForcibly()
-            throw IllegalStateException("Unable to resume process-group child PID $pid.")
-        }
-        return SpawnedRuntimeProcess(child, pid, group)
-    }
-
-    private fun waitUntilStopped(pid: Long): Boolean {
-        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(STOP_TIMEOUT_MS)
-        val status = File("/proc/$pid/status")
-        while (System.nanoTime() < deadline) {
-            val state = runCatching {
-                status.useLines { lines ->
-                    lines.firstOrNull { it.startsWith("State:") }?.substringAfter("State:")?.trim()?.firstOrNull()
-                }
-            }.getOrNull()
-            if (state == 'T' || state == 't') return true
-            if (!status.exists()) return false
-            Thread.sleep(5)
-        }
-        return false
+        return SpawnedRuntimeProcess(process, pid, group)
     }
 }
 
@@ -197,7 +179,8 @@ data class ProcessResult(
 class RuntimeProcess(
     private val diagnostics: RuntimeDiagnostics,
     private val xinputConfig: RuntimeLaunchConfig? = null,
-    private val processGroups: ProcessGroupController = AndroidProcessGroupController()
+    private val processGroups: ProcessGroupController = AndroidProcessGroupController(),
+    private val processGroupLauncher: File? = null
 ) {
     fun start(
         executable: File,
@@ -214,7 +197,7 @@ class RuntimeProcess(
         val effectiveEnvironment = xinputConfig?.environment(environment) ?: environment
         val spawned = ProcessGroupSpawner.start(
             listOf(executable.absolutePath) + args, effectiveEnvironment, workingDirectory,
-            processGroupId, createProcessGroup, processGroups
+            processGroupId, createProcessGroup, processGroups, processGroupLauncher
         )
         val started = System.nanoTime()
         val stdout = reader(spawned.process.inputStream, "runtime-stdout", RuntimeDiagnostic.Severity.INFO, "stdout")
