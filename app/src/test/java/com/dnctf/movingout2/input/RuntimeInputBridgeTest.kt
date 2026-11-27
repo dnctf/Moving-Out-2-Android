@@ -125,6 +125,25 @@ class RuntimeInputBridgeTest {
         assertEquals(InputBridgeStatus.BRIDGE_CONNECTED, bridge.status)
     }
 
+    @Test fun reinitializationClearsPreviousConnectionAndRequiresANewHeartbeat() {
+        val fake = FakeTransport().apply { readerHeartbeat = 5L }
+        val bridge = RuntimeInputBridge(fake)
+        assertTrue(bridge.initialize("/tmp/input.shm"))
+        fake.readerHeartbeat = 6L
+        assertTrue(bridge.refreshRuntimeConnectionFromReader())
+        assertEquals(InputBridgeStatus.BRIDGE_CONNECTED, bridge.status)
+
+        // A new mapping/session must not inherit the old session's connected state or counter.
+        assertTrue(bridge.initialize("/tmp/input.shm"))
+        assertEquals(InputBridgeStatus.BRIDGE_READY_WAITING_RUNTIME, bridge.status)
+        assertFalse(bridge.capabilities.runtimeConnectionConfirmed)
+        assertFalse(bridge.refreshRuntimeConnectionFromReader())
+
+        fake.readerHeartbeat = 7L
+        assertTrue(bridge.refreshRuntimeConnectionFromReader())
+        assertEquals(InputBridgeStatus.BRIDGE_CONNECTED, bridge.status)
+    }
+
     @Test fun unavailableReaderHeartbeatCannotPromoteBridgeToConnected() {
         val fake = FakeTransport().apply { readerHeartbeat = null }
         val bridge = RuntimeInputBridge(fake)

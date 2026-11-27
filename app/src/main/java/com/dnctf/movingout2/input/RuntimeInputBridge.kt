@@ -39,16 +39,19 @@ class RuntimeInputBridge(private val transport: XInputTransport = NativeXInputTr
     )
 
     fun initialize(shmFilePath: String): Boolean {
+        // Reinitialization starts disconnected even if this bridge represented an older session.
+        runtimeSessionActive = false
+        lastReaderHeartbeat = 0L
         val initialized = transport.init(shmFilePath)
-        if (initialized) lastReaderHeartbeat = 0L
+        if (initialized) lastReaderHeartbeat = transport.readReaderHeartbeat() ?: 0L
         updateStatus()
         return initialized
     }
 
-    /** Explicit session signal; callers must use process/reader evidence, never APK or file presence. */
     /**
      * Starts a fresh supervised runtime session. Snapshot the current counter so an old Wine
      * process heartbeat cannot make a newly launched session appear connected.
+     * Callers must use process/reader evidence, never APK or shared-file presence.
      */
     fun beginRuntimeSession() {
         runtimeSessionActive = false
