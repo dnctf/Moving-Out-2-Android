@@ -1,5 +1,7 @@
 package com.dnctf.movingout2
 
+import com.dnctf.movingout2.installation.InstallationReport
+import com.dnctf.movingout2.installation.StageResult
 import com.dnctf.movingout2.installation.InstallationStatus
 import com.dnctf.movingout2.installation.InstallationValidator
 import com.dnctf.movingout2.installation.ValidationStage
@@ -53,6 +55,32 @@ class InstallationValidatorTest {
         assertFalse(report.isReadyForRuntime)
         assertFalse(report.stages.first { it.stage == ValidationStage.LAUNCH_READINESS }.passed)
         root.deleteRecursively()
+    }
+
+    @Test fun runtimeReadinessRequiresEveryGameAndRuntimeStage() {
+        val completeStages = listOf(
+            ValidationStage.FOLDER_ACCESS, ValidationStage.CORE_FILES, ValidationStage.STRUCTURE,
+            ValidationStage.VERSION_ARCH, ValidationStage.LAUNCH_READINESS
+        ).map { StageResult(it, true) }
+        val ready = InstallationReport(
+            status = InstallationStatus.VALID,
+            stages = completeStages,
+            missingFiles = emptyList(),
+            accessErrors = emptyList(),
+            detectedArchitecture = "x86_64",
+            detectedUnityVersion = "2021.3.16f1",
+            metadataVersion = 29,
+            hardwareBlockers = emptyList(),
+            runtimeStatus = "READY"
+        )
+        assertTrue(ready.isReadyForRuntime)
+        assertFalse(ready.copy(runtimeStatus = "RUNTIME_NOT_INSTALLED").isReadyForRuntime)
+        assertFalse(ready.copy(stages = completeStages.map {
+            if (it.stage == ValidationStage.LAUNCH_READINESS) it.copy(passed = false) else it
+        }).isReadyForRuntime)
+        assertFalse(ready.copy(stages = completeStages.map {
+            if (it.stage == ValidationStage.STRUCTURE) it.copy(passed = false) else it
+        }).isReadyForRuntime)
     }
 
     @Test fun missingRequiredFilesAreReported() {
