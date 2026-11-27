@@ -15,6 +15,14 @@ android {
         versionCode = 4
         versionName = "0.2.0-alpha.4"
         ndk { abiFilters += listOf("arm64-v8a") }
+
+        // Select which CMake targets are built. `targets` must live in
+        // `defaultConfig.externalNativeBuild.cmake`, not `android.externalNativeBuild.cmake`.
+        externalNativeBuild {
+            cmake {
+                targets += listOf("vulkan_probe", "mo2_input_bridge", "mo2_process_group_launcher")
+            }
+        }
     }
 
     packaging {
@@ -55,7 +63,6 @@ android {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
-            targets += listOf("vulkan_probe", "mo2_input_bridge", "mo2_process_group_launcher")
         }
     }
 }
@@ -68,12 +75,15 @@ android.sourceSets.getByName("debug").jniLibs.srcDir(processGroupLauncherJniDir)
 val stageProcessGroupLauncherDebug = tasks.register<Copy>("stageProcessGroupLauncherDebug") {
     dependsOn("externalNativeBuildDebug")
     val processGroupLauncherSource = providers.provider {
+        // CMake emits PIE executable `libmo2_process_group.so` (PREFIX lib + SUFFIX .so,
+        // OUTPUT_NAME mo2_process_group); the target name itself is `mo2_process_group_launcher`.
+        val includePatterns = listOf("**/libmo2_process_group.so")
         val primary = fileTree(projectDir.resolve(".cxx/Debug")).matching {
-            include("**/mo2_process_group_launcher")
+            includePatterns.forEach { include(it) }
         }.files
         val candidates = if (primary.isNotEmpty()) primary else {
             fileTree(layout.buildDirectory.dir("intermediates/cxx/Debug").get().asFile).matching {
-                include("**/mo2_process_group_launcher")
+                includePatterns.forEach { include(it) }
             }.files
         }
         if (candidates.size != 1) {
