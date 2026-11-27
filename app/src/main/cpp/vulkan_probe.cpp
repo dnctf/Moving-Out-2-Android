@@ -9,6 +9,9 @@
 #include <string>
 #include <vector>
 #include <mutex>
+#include <unistd.h>
+#include <signal.h>
+#include <cerrno>
 
 static std::string clean(const char* value) {
     std::string out = value ? value : "";
@@ -20,6 +23,31 @@ static std::string version(uint32_t v) {
 }
 static std::string join(const std::vector<std::string>& values) {
     std::ostringstream s; for (size_t i=0;i<values.size();i++){ if(i) s << ","; s << values[i]; } return s.str();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_dnctf_movingout2_runtime_NativeProcessGroup_assignNative(
+    JNIEnv*, jobject, jlong pid, jlong processGroupId) {
+    return setpgid(static_cast<pid_t>(pid), static_cast<pid_t>(processGroupId)) == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_dnctf_movingout2_runtime_NativeProcessGroup_signalProcessNative(
+    JNIEnv*, jobject, jlong pid, jint signal) {
+    return kill(static_cast<pid_t>(pid), signal) == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_dnctf_movingout2_runtime_NativeProcessGroup_signalGroupNative(
+    JNIEnv*, jobject, jlong processGroupId, jint signal) {
+    return kill(-static_cast<pid_t>(processGroupId), signal) == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_dnctf_movingout2_runtime_NativeProcessGroup_isGroupAliveNative(
+    JNIEnv*, jobject, jlong processGroupId) {
+    if (kill(-static_cast<pid_t>(processGroupId), 0) == 0) return JNI_TRUE;
+    return errno == ESRCH ? JNI_FALSE : JNI_TRUE;
 }
 
 // App-process Surface lease. This owns an ANativeWindow reference only inside this process;
