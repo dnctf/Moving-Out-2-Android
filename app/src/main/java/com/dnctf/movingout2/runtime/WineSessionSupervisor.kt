@@ -235,6 +235,7 @@ class WineSessionSupervisor(
         }
         val activeBox64 = capability.executable ?: box64Candidate
         activeBox64Executable = activeBox64
+        stageLog.event("STAGE_2_RUNTIME_EXTRACT", "BOX64_RESOLVED", mapOf("path" to activeBox64.absolutePath, "exists" to activeBox64.isFile, "executable" to activeBox64.canExecute(), "execCapability" to capability.capability))
 
         val wineCandidate = report.wine64 ?: run {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Wine64 binary unavailable"))
@@ -380,7 +381,10 @@ class WineSessionSupervisor(
         return try {
             val proc = runner.start(box64, bootArgs, env, prefix, "BOX64-WINE")
             val exit = proc.waitFor(20000)
-            stageLog.event("STAGE_4_WINE_BOOTSTRAP", if (!exit.timedOut && exit.exitCode == 0) "WINEBOOT_PASS" else "WINEBOOT_FAIL", mapOf("pid" to exit.pid, "exitCode" to exit.exitCode, "timedOut" to exit.timedOut, "durationMs" to exit.durationMs, "ntdllLoad" to "inspect native-runtime.log for ntdll.so load diagnostics"))
+            val nativeLog = File(context.filesDir, "diagnostics/native-runtime.log")
+            val ntdllErrorReported = runCatching { nativeLog.readText().contains("could not load ntdll.so", ignoreCase = true) || nativeLog.readText().contains("Cannot dlopen", ignoreCase = true) }.getOrDefault(false)
+            val ntdllStatus = if (ntdllErrorReported) "FAILED_ERROR_REPORTED" else if (!exit.timedOut && exit.exitCode == 0) "NO_NTDLL_LOAD_ERROR_REPORTED" else "UNKNOWN"
+            stageLog.event("STAGE_4_WINE_BOOTSTRAP", if (!exit.timedOut && exit.exitCode == 0 && !ntdllErrorReported) "WINEBOOT_PASS" else "WINEBOOT_FAIL", mapOf("pid" to exit.pid, "exitCode" to exit.exitCode, "timedOut" to exit.timedOut, "durationMs" to exit.durationMs, "ntdllLoadStatus" to ntdllStatus))
             if (exit.timedOut || (exit.exitCode != null && exit.exitCode != 0)) {
                 diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "wineboot initialization failed: exit=${exit.exitCode}, timedOut=${exit.timedOut}"))
                 false
