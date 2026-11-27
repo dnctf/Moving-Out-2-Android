@@ -52,8 +52,8 @@ class SafGameImporter(
             throw IOException("SAF import safety limits are invalid.")
         }
 
-        val totalBytes = measureBytes(source)
-        if (totalBytes <= 0L) throw IOException("SAF directory contains no readable game files.")
+        val (totalBytes, hasUnknownSourceLengths) = measureBytes(source)
+        if (totalBytes == 0L && !hasUnknownSourceLengths) throw IOException("SAF directory contains no readable game files.")
         val requiredSpace = try {
             safGameImportRequiredSpace(totalBytes, storageReserveBytes)
         } catch (error: ArithmeticException) {
@@ -84,6 +84,10 @@ class SafGameImporter(
         try {
             copyDirectory(source, staging, 0, counters, totalBytes, onProgress, cancelled, visitedDirectories)
             if (cancelled()) throw IOException("Game import cancelled.")
+            if (!safGameImportByteCountMatches(totalBytes, counters[0], hasUnknownSourceLengths)) {
+                throw IOException("SAF source changed or reported inconsistent file sizes during copy: expected $totalBytes bytes, copied ${counters[0]} bytes.")
+            }
+            if (counters[0] <= 0L) throw IOException("SAF import copied no game data.")
             val availableAfterCopy = StatFs(context.filesDir.absolutePath).availableBytes
             if (!safGameImportStorageSatisfied(availableAfterCopy, storageReserveBytes)) {
                 throw IOException("SAF game import aborted: free storage fell below the configured reserve.")
@@ -125,8 +129,9 @@ class SafGameImporter(
         }
     }
 
-    private fun measureBytes(directory: DocumentFile): Long {
+    private fun measureBytes(directory: DocumentFile): Pair<Long, Boolean> {
         var total = 0L
+        var hasUnknownSizes = false
         var entries = 0
         val pending = ArrayDeque<Pair<DocumentFile, Int>>()
         val visitedDirectories = mutableSetOf(directory.uri.toString())
@@ -151,17 +156,23 @@ class SafGameImporter(
                     }
                     child.isFile -> {
                         val length = child.length()
-                        if (length < 0L) throw IOException("SAF file reports an invalid size.")
-                        total = try { Math.addExact(total, length) } catch (error: ArithmeticException) {
-                            throw IOException("SAF expanded size overflowed.", error)
+                        // DocumentProviders commonly report 0 for unknown lengths. Treat
+                        // non-positive values as unknown and enforce the expansion limit
+                        // against actual streamed bytes during copy instead.
+                        if (length <= 0L) {
+                            hasUnknownSizes = true
+                        } else {
+                            total = try { Math.addExact(total, length) } catch (error: ArithmeticException) {
+                                throw IOException("SAF expanded size overflowed.", error)
+                            }
+                            if (total > maxExpandedBytes) throw IOException("SAF game directory exceeds the $maxExpandedBytes byte expansion limit.")
                         }
-                        if (total > maxExpandedBytes) throw IOException("SAF game directory exceeds the $maxExpandedBytes byte expansion limit.")
                     }
                     else -> throw IOException("Unsupported SAF entry: ${child.name ?: "(unnamed)"}")
                 }
             }
         }
-        return total
+        return total to hasUnknownSizes
     }
 
     private fun copyDirectory(
@@ -274,3 +285,9 @@ internal fun safGameImportRequiredSpace(expandedBytes: Long, reserveBytes: Long)
 
 internal fun safGameImportStorageSatisfied(availableBytes: Long, requiredBytes: Long): Boolean =
     requiredBytes >= 0L && availableBytes >= requiredBytes
+
+/** Known-size providers must match the preflight byte count; unknown-size providers are
+ * validated using streamed expansion limits, free-space checks, and game structure checks.
+ */
+internal fun safGameImportByteCountMatches(expectedBytes: Long, copiedBytes: Long, hasUnknownSizes: Boolean): Boolean =
+    if (hasUnknownSizes) copiedBytes > 0L else expectedBytes == copiedBytes

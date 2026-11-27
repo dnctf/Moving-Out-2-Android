@@ -40,10 +40,18 @@ class CrashDiagnosticExporter(private val outputDirectory: File) {
             put("runtime-bundle-report.json", runtimeBundleReportJson)
             put("runtime-process.log", log)
             importDiagnosticDirectory?.let { directory ->
-                listOf("import-diagnostic-journal.json", "last-import-errors.log").forEach { name ->
-                    val source = File(directory, name)
+                listOf(
+                    "import-diagnostic-journal.json" to "import-diagnostic-journal.json",
+                    "last-import-errors.log" to "last-import-errors.log",
+                    "wine_session.log" to "wine_session.log",
+                    "mo2_player.log" to "mo2_player.log",
+                    "mo2_d3d11.log" to "mo2_d3d11.log",
+                    "dxvk.log" to "dxvk.log",
+                    "runtime-process.log" to "runtime-process-raw.log"
+                ).forEach { (sourceName, entryName) ->
+                    val source = File(directory, sourceName)
                     if (source.isFile) {
-                        zip.putNextEntry(ZipEntry(name))
+                        zip.putNextEntry(ZipEntry(entryName))
                         source.inputStream().use { it.copyTo(zip) }
                         zip.closeEntry()
                     }

@@ -5,6 +5,7 @@ import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Properties
+import org.json.JSONObject
 import java.security.MessageDigest
 
 enum class RuntimeBundleStatus { NOT_FOUND, INVALID_MANIFEST, INCOMPLETE, READY }
@@ -57,8 +58,18 @@ class RuntimeBundleValidator {
    requireFormat("msvcp140", map["msvcp140"], RuntimeBinaryInspector.PE32_PLUS_X86_64, executable = false)
    map["turnipSo"]?.let { requireFormat("turnipSo", it, RuntimeBinaryInspector.ELF64_AARCH64_SHARED, executable = false) }
    if (glibc != null) {
-    val libc = File(glibc, "libc.so.6")
-    if (!libc.isFile || libc.length() <= 0L) blockers += "Guest glibc libc.so.6 is missing or empty."
+    val requiredGlibcObjects = listOf(
+     "ld-linux-x86-64.so.2", "libc.so.6", "libm.so.6",
+     "libpthread.so.0", "libdl.so.2", "librt.so.1"
+    )
+    requiredGlibcObjects.forEach { name ->
+     val library = File(glibc, name)
+     if (!library.isFile || library.length() <= 0L) {
+      blockers += "Required guest glibc object missing/empty: $name"
+     } else if (!RuntimeBinaryInspector.matches(library, RuntimeBinaryInspector.ELF64_X86_64_SHARED)) {
+      blockers += "Required guest glibc object is not ELF64 x86-64 shared: $name"
+     }
+    }
     val guestGlibcObjects = glibc.walkTopDown().filter {
      it.isFile && (it.name.endsWith(".so", true) || it.name.contains(".so.", true))
     }.toList()
@@ -77,6 +88,36 @@ class RuntimeBundleValidator {
       blockers += "Guest Wine library is not ELF64 x86-64: ${library.relativeTo(canonical).invariantSeparatorsPath}"
      }
     }
+    val requiredUnixModules = listOf("x86_64-unix/ntdll.so", "x86_64-unix/win32u.so")
+    requiredUnixModules.forEach { relative ->
+     val module = File(libs, relative)
+     if (!module.isFile || module.length() <= 0L) {
+      blockers += "Required Wine Unix module missing/empty: $relative"
+     } else if (!RuntimeBinaryInspector.matches(module, RuntimeBinaryInspector.ELF64_X86_64_SHARED)) {
+      blockers += "Required Wine Unix module is not ELF64 x86-64 shared: $relative"
+     }
+    }
+    val requiredWindowsModules = listOf("x86_64-windows/kernel32.dll", "x86_64-windows/user32.dll")
+    requiredWindowsModules.forEach { relative ->
+     val module = File(libs, relative)
+     if (!module.isFile || module.length() <= 0L) {
+      blockers += "Required Wine Windows module missing/empty: $relative"
+     } else if (!RuntimeBinaryInspector.matches(module, RuntimeBinaryInspector.PE32_PLUS_X86_64)) {
+      blockers += "Required Wine Windows module is not PE32+ x86-64: $relative"
+     }
+    }
+   }
+   val turnipIcd = map["turnipIcd"]
+   if (turnipIcd != null) {
+    val icdLibraryPath = runCatching {
+     JSONObject(turnipIcd.readText(Charsets.UTF_8)).optJSONObject("ICD")
+      ?.optString("library_path").orEmpty()
+    }.getOrElse {
+     blockers += "Turnip ICD JSON parse failed: ${it.message}"
+     ""
+    }
+    if (icdLibraryPath.isBlank()) blockers += "Turnip ICD JSON is missing ICD.library_path."
+    if (map["turnipSo"] == null) blockers += "Turnip ICD is present without libvulkan_freedreno.so."
    }
    if (wine?.parentFile?.isDirectory == true) {
     wine.parentFile.listFiles()?.filter { it.isFile && it.canExecute() }?.forEach { guestBinary ->

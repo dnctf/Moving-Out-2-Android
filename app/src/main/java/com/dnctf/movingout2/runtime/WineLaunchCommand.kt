@@ -12,9 +12,21 @@ object WineLaunchCommand {
 
     fun toWineZPath(path: String): String = "Z:" + path.replace('/', '\\')
 
-    fun arguments(winePath: String, windowsGamePath: String, width: Int, height: Int): List<String> =
-        listOf(winePath, windowsGamePath, "-force-d3d11", "-screen-width", width.toString(),
-            "-screen-height", height.toString(), "-screen-fullscreen", "1")
+    fun arguments(
+        winePath: String,
+        windowsGamePath: String,
+        width: Int,
+        height: Int,
+        playerLogFile: File? = null
+    ): List<String> = buildList {
+        add(winePath)
+        add(windowsGamePath)
+        add("-force-d3d11")
+        add("-screen-width"); add(width.toString())
+        add("-screen-height"); add(height.toString())
+        add("-screen-fullscreen"); add("1")
+        playerLogFile?.let { add("-logFile"); add(toWineZPath(it.absolutePath)) }
+    }
 
     /**
      * LD_LIBRARY_PATH is exclusively for ARM64 host-side libraries.
@@ -31,13 +43,28 @@ object WineLaunchCommand {
         guestGlibcDirectory: File? = null,
         guestBinaryDirectory: File? = null,
         useDxvk: Boolean = true,
-        diagnosticHud: Boolean = false
+        diagnosticHud: Boolean = false,
+        additionalHostLibraryDirectory: File? = null,
+        diagnosticsDirectory: File? = null
     ): Map<String, String> {
+        // Prefer DXVK's native D3D implementation and force the in-runtime XInput
+        // bridge. Steam API DLL selection is deliberately not forced to native: the
+        // supplied game inventory contained a modified Steam API wrapper.
         val overrides = buildList {
-            if (useDxvk) add("d3d11,dxgi=n,b") else add("d3d11,dxgi=b")
-            add("xinput1_3,xinput1_4,xinput9_1_0=n,b")
+            if (useDxvk) {
+                add("d3d11=n,b")
+                add("dxgi=n,b")
+            } else {
+                add("d3d11=b")
+                add("dxgi=b")
+            }
+            add("steam_api64=b")
+            add("xinput1_3,xinput1_4=n,b")
+            add("xinput9_1_0=n,b")
+            add("UnityCrashHandler64.exe=d")
         }.joinToString(";")
         val result = linkedMapOf(
+            "WINEARCH" to "win64",
             "WINEPREFIX" to prefix.absolutePath,
             "WINEDLLOVERRIDES" to overrides,
             "MO2_XINPUT_SHM_PATH" to toWineZPath(sharedInput.absolutePath),
@@ -45,20 +72,57 @@ object WineLaunchCommand {
             "BOX64_DYNAREC_BIGBLOCK" to "1",
             "BOX64_DYNAREC_STRONGMEM" to "1",
             "BOX64_DYNAREC_SAFEFLAGS" to "1",
+            "BOX64_DYNAREC_CALLRET" to "1",
+            "BOX64_AVX" to "0",
+            "PULSE_LATENCY_MSEC" to "60",
             "DXVK_STATE_CACHE" to "1",
             "DXVK_FRAME_RATE" to fpsCap.coerceIn(15, 240).toString(),
-            "LD_LIBRARY_PATH" to hostLibraryDirectory.absolutePath
+            "DXVK_CONFIG_FILE" to File(prefix, "dxvk.conf").absolutePath,
+            "DXVK_SHADER_CACHE_PATH" to File(prefix.parentFile ?: prefix, "dxvk-cache").absolutePath,
+            "LD_LIBRARY_PATH" to listOfNotNull(
+                hostLibraryDirectory.takeIf { it.isDirectory },
+                additionalHostLibraryDirectory?.takeIf { it.isDirectory }
+            ).joinToString(":").ifBlank { hostLibraryDirectory.absolutePath }
         )
         guestLibrarySearchPath(guestGlibcDirectory, guestLibraryDirectory)?.let {
             result["BOX64_LD_LIBRARY_PATH"] = it
+        }
+        guestLibraryDirectory?.takeIf { it.isDirectory && it.canRead() }?.let {
+            result["WINEDLLPATH"] = it.absolutePath
         }
         guestBinaryDirectory?.takeIf { it.isDirectory && it.canRead() }?.let {
             result["BOX64_PATH"] = it.absolutePath
         }
         if (turnipIcd != null) result["VK_ICD_FILENAMES"] = turnipIcd.absolutePath
-        if (useDxvk && dxvkDirectory != null) result["DXVK_DLL_PATH"] = dxvkDirectory.absolutePath
+        if (useDxvk && dxvkDirectory != null) {
+            result["DXVK_DLL_PATH"] = dxvkDirectory.absolutePath
+            result["DXVK_LOG_LEVEL"] = "info"
+            diagnosticsDirectory?.let { result["DXVK_LOG_PATH"] = it.absolutePath }
+        }
         if (diagnosticHud && useDxvk) result["DXVK_HUD"] = "fps,devinfo"
         return result
+    }
+
+    /** Creates the DXVK configuration atomically; shader cache remains app-private. */
+    fun writeDxvkConfig(prefix: File, cacheDirectory: File): File {
+        if (!prefix.exists() && !prefix.mkdirs()) throw java.io.IOException("Unable to create Wine prefix.")
+        if (!cacheDirectory.exists() && !cacheDirectory.mkdirs()) throw java.io.IOException("Unable to create DXVK cache directory.")
+        val config = File(prefix, "dxvk.conf")
+        val content = listOf(
+            "d3d11.maxFeatureLevel = 11_1",
+            "dxvk.enableAsync = False",
+            "dxvk.useStateCache = True",
+            "dxvk.logLevel = info",
+            "dxvk.shaderCache = True"
+        ).joinToString("\n", postfix = "\n")
+        val temporary = File(prefix, "dxvk.conf.tmp")
+        temporary.writeText(content, Charsets.UTF_8)
+        if (config.exists() && !config.delete()) throw java.io.IOException("Unable to replace dxvk.conf.")
+        if (!temporary.renameTo(config)) {
+            temporary.delete()
+            throw java.io.IOException("Unable to activate dxvk.conf.")
+        }
+        return config
     }
 
     fun winebootArguments(winePath: String): List<String> =

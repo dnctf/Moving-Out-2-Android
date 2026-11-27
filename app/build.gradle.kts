@@ -15,6 +15,14 @@ android {
         versionCode = 4
         versionName = "0.2.0-alpha.4"
         ndk { abiFilters += listOf("arm64-v8a") }
+
+        // Select which CMake targets are built. `targets` must live in
+        // `defaultConfig.externalNativeBuild.cmake`, not `android.externalNativeBuild.cmake`.
+        externalNativeBuild {
+            cmake {
+                targets += listOf("vulkan_probe", "mo2_input_bridge", "mo2_process_group_launcher")
+            }
+        }
     }
 
     packaging {
@@ -23,6 +31,13 @@ android {
             // Keep executable ELF payloads as extracted native files under nativeLibraryDir.
             keepDebugSymbols += "**/libbox64.so"
         }
+    }
+
+    // Preserve opaque Windows/runtime payload bytes if a developer stages optional
+    // user-supplied assets here. The game itself remains SAF-imported (not embedded
+    // in the APK) to avoid a 1.4 GiB APK and redistribution of proprietary game data.
+    androidResources {
+        noCompress += listOf("exe", "dll", "bundle", "bank", "tar", "xz", "zst")
     }
 
     buildTypes {
@@ -45,8 +60,44 @@ android {
         jvmTarget = "17"
     }
     externalNativeBuild {
-        cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" }
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
+}
+
+// Stage the standalone process-group launcher as an extracted native-library payload.
+// The executable is not loaded with System.loadLibrary; ProcessBuilder executes it directly.
+val processGroupLauncherJniDir = layout.buildDirectory.dir("generated/processGroupLauncher/jniLibs")
+android.sourceSets.getByName("debug").jniLibs.srcDir(processGroupLauncherJniDir)
+
+val stageProcessGroupLauncherDebug = tasks.register<Copy>("stageProcessGroupLauncherDebug") {
+    dependsOn("externalNativeBuildDebug")
+    val processGroupLauncherSource = providers.provider {
+        // CMake emits PIE executable `libmo2_process_group.so` (PREFIX lib + SUFFIX .so,
+        // OUTPUT_NAME mo2_process_group); the target name itself is `mo2_process_group_launcher`.
+        val includePatterns = listOf("**/libmo2_process_group.so")
+        val primary = fileTree(projectDir.resolve(".cxx/Debug")).matching {
+            includePatterns.forEach { include(it) }
+        }.files
+        val candidates = if (primary.isNotEmpty()) primary else {
+            fileTree(layout.buildDirectory.dir("intermediates/cxx/Debug").get().asFile).matching {
+                includePatterns.forEach { include(it) }
+            }.files
+        }
+        if (candidates.size != 1) {
+            throw GradleException("Expected one ARM64 process-group launcher executable, found ${candidates.size}: ${candidates.joinToString()}")
+        }
+        candidates.single()
+    }
+    from(processGroupLauncherSource)
+    into(processGroupLauncherJniDir.get().dir("arm64-v8a").asFile)
+    rename { "libmo2_process_group.so" }
+}
+
+tasks.matching { it.name == "mergeDebugNativeLibs" }.configureEach {
+    dependsOn(stageProcessGroupLauncherDebug)
 }
 
 dependencies {

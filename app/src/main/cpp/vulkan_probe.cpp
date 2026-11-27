@@ -8,6 +8,10 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <mutex>
+#include <unistd.h>
+#include <signal.h>
+#include <cerrno>
 
 static std::string clean(const char* value) {
     std::string out = value ? value : "";
@@ -19,6 +23,77 @@ static std::string version(uint32_t v) {
 }
 static std::string join(const std::vector<std::string>& values) {
     std::ostringstream s; for (size_t i=0;i<values.size();i++){ if(i) s << ","; s << values[i]; } return s.str();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_dnctf_movingout2_runtime_NativeProcessGroup_signalGroupNative(
+    JNIEnv*, jobject, jlong processGroupId, jint signal) {
+    return kill(-static_cast<pid_t>(processGroupId), signal) == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_dnctf_movingout2_runtime_NativeProcessGroup_isGroupAliveNative(
+    JNIEnv*, jobject, jlong processGroupId) {
+    if (kill(-static_cast<pid_t>(processGroupId), 0) == 0) return JNI_TRUE;
+    return errno == ESRCH ? JNI_FALSE : JNI_TRUE;
+}
+
+// App-process Surface lease. This owns an ANativeWindow reference only inside this process;
+// it is deliberately not described as a DXVK WSI bridge (Box64 is a separate process).
+static std::mutex g_sessionWindowMutex;
+static ANativeWindow* g_sessionWindow = nullptr;
+static int g_sessionWidth = 0;
+static int g_sessionHeight = 0;
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_dnctf_movingout2_graphics_VulkanNativeProbe_attachSessionSurfaceNative(
+    JNIEnv* env, jobject, jobject surface, jint width, jint height) {
+    if (!surface || width <= 0 || height <= 0) return JNI_FALSE;
+    ANativeWindow* next = ANativeWindow_fromSurface(env, surface);
+    if (!next) return JNI_FALSE;
+    if (ANativeWindow_setBuffersGeometry(next, width, height, 0) != 0) {
+        ANativeWindow_release(next);
+        return JNI_FALSE;
+    }
+    ANativeWindow* previous = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_sessionWindowMutex);
+        previous = g_sessionWindow;
+        g_sessionWindow = next;
+        g_sessionWidth = width;
+        g_sessionHeight = height;
+    }
+    if (previous) ANativeWindow_release(previous);
+    return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_dnctf_movingout2_graphics_VulkanNativeProbe_resizeSessionSurfaceNative(
+    JNIEnv* env, jobject, jobject surface, jint width, jint height) {
+    if (!surface || width <= 0 || height <= 0) return JNI_FALSE;
+    ANativeWindow* current = ANativeWindow_fromSurface(env, surface);
+    if (!current) return JNI_FALSE;
+    const int result = ANativeWindow_setBuffersGeometry(current, width, height, 0);
+    ANativeWindow_release(current);
+    if (result != 0) return JNI_FALSE;
+    std::lock_guard<std::mutex> lock(g_sessionWindowMutex);
+    if (!g_sessionWindow) return JNI_FALSE;
+    g_sessionWidth = width;
+    g_sessionHeight = height;
+    return JNI_TRUE;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_dnctf_movingout2_graphics_VulkanNativeProbe_detachSessionSurfaceNative(JNIEnv*, jobject) {
+    ANativeWindow* previous = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_sessionWindowMutex);
+        previous = g_sessionWindow;
+        g_sessionWindow = nullptr;
+        g_sessionWidth = 0;
+        g_sessionHeight = 0;
+    }
+    if (previous) ANativeWindow_release(previous);
 }
 
 extern "C" JNIEXPORT jstring JNICALL

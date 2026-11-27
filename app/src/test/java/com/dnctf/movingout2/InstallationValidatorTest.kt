@@ -1,9 +1,12 @@
 package com.dnctf.movingout2
 
+import com.dnctf.movingout2.installation.InstallationReport
+import com.dnctf.movingout2.installation.StageResult
 import com.dnctf.movingout2.installation.InstallationStatus
 import com.dnctf.movingout2.installation.InstallationValidator
 import com.dnctf.movingout2.installation.ValidationStage
 import com.dnctf.movingout2.installation.InstallationStagePolicy
+import com.dnctf.movingout2.installation.GameZipRootLocator
 import java.io.File
 import java.nio.file.Files
 import org.junit.Assert.*
@@ -52,6 +55,32 @@ class InstallationValidatorTest {
         assertFalse(report.isReadyForRuntime)
         assertFalse(report.stages.first { it.stage == ValidationStage.LAUNCH_READINESS }.passed)
         root.deleteRecursively()
+    }
+
+    @Test fun runtimeReadinessRequiresEveryGameAndRuntimeStage() {
+        val completeStages = listOf(
+            ValidationStage.FOLDER_ACCESS, ValidationStage.CORE_FILES, ValidationStage.STRUCTURE,
+            ValidationStage.VERSION_ARCH, ValidationStage.LAUNCH_READINESS
+        ).map { StageResult(it, true) }
+        val ready = InstallationReport(
+            status = InstallationStatus.VALID,
+            stages = completeStages,
+            missingFiles = emptyList(),
+            accessErrors = emptyList(),
+            detectedArchitecture = "x86_64",
+            detectedUnityVersion = "2021.3.16f1",
+            metadataVersion = 29,
+            hardwareBlockers = emptyList(),
+            runtimeStatus = "READY"
+        )
+        assertTrue(ready.isReadyForRuntime)
+        assertFalse(ready.copy(runtimeStatus = "RUNTIME_NOT_INSTALLED").isReadyForRuntime)
+        assertFalse(ready.copy(stages = completeStages.map {
+            if (it.stage == ValidationStage.LAUNCH_READINESS) it.copy(passed = false) else it
+        }).isReadyForRuntime)
+        assertFalse(ready.copy(stages = completeStages.map {
+            if (it.stage == ValidationStage.STRUCTURE) it.copy(passed = false) else it
+        }).isReadyForRuntime)
     }
 
     @Test fun missingRequiredFilesAreReported() {
@@ -126,6 +155,29 @@ class InstallationValidatorTest {
         assertEquals(29, report.metadataVersion)
         assertTrue(report.missingFiles.isEmpty())
         root.deleteRecursively()
+    }
+
+    @Test fun detectsArbitraryUnityExecutableAndMatchingDataDirectory() {
+        val root = fixture()
+        assertTrue(File(root, "mo2.exe").renameTo(File(root, "MovingOut2-Win64.exe")))
+        assertTrue(File(root, "mo2_Data").renameTo(File(root, "MovingOut2-Win64_Data")))
+        val report = InstallationValidator().validate(root)
+        assertEquals(InstallationStatus.VALID, report.status)
+        assertEquals("x86_64", report.detectedArchitecture)
+        assertEquals(29, report.metadataVersion)
+        assertTrue(report.missingFiles.isEmpty())
+        root.deleteRecursively()
+    }
+
+    @Test fun zipRootLocatorPairsArbitraryUnityExeWithMatchingDataDirectory() {
+        val names = listOf(
+            "payload/MovingOut2-Win64.exe",
+            "payload/GameAssembly.dll",
+            "payload/UnityPlayer.dll",
+            "payload/baselib.dll",
+            "payload/MovingOut2-Win64_Data/il2cpp_data/Metadata/global-metadata.dat"
+        )
+        assertEquals("payload/", GameZipRootLocator.findRootPrefix(names))
     }
 
     @Test fun caseInsensitiveLookupSupportsUnityMetadataPath() {

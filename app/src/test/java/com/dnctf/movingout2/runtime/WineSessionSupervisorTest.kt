@@ -11,6 +11,30 @@ import java.util.concurrent.atomic.AtomicBoolean
 class WineSessionSupervisorTest {
 
     @Test
+    fun sessionTerminationRunsWineserverThenGroupThenStateCleanup() {
+        val events = mutableListOf<String>()
+        val success = runSessionTerminationSequence(
+            stopWineserver = { events += "wineserver -k"; true },
+            terminateProcessGroup = { events += "process-group TERM/KILL"; true },
+            cleanupState = { events += "cleanup state"; true }
+        )
+        assertTrue(success)
+        assertEquals(listOf("wineserver -k", "process-group TERM/KILL", "cleanup state"), events)
+    }
+
+    @Test
+    fun sessionTerminationContinuesCleanupWhenWineserverKillFails() {
+        val events = mutableListOf<String>()
+        val success = runSessionTerminationSequence(
+            stopWineserver = { events += "wineserver -k"; false },
+            terminateProcessGroup = { events += "process-group TERM/KILL"; true },
+            cleanupState = { events += "cleanup state"; true }
+        )
+        assertFalse(success)
+        assertEquals(listOf("wineserver -k", "process-group TERM/KILL", "cleanup state"), events)
+    }
+
+    @Test
     fun validatesAllowedStateTransitions() {
         assertTrue(WineSessionStateTransitions.canTransition(WineSessionState.IDLE, WineSessionState.VALIDATING_PREFLIGHT))
         assertFalse(WineSessionStateTransitions.canTransition(WineSessionState.IDLE, WineSessionState.RUNNING))
@@ -82,6 +106,31 @@ class WineSessionSupervisorTest {
         } finally {
             tempLog.delete()
         }
+    }
+
+
+    @Test
+    fun validatesRequiredGuestGlibcAndWineModules() {
+        val root = java.nio.file.Files.createTempDirectory("wine-module-validation").toFile()
+        val glibc = File(root, "glibc").apply { mkdirs() }
+        val wine = File(root, "wine/lib/wine").apply {
+            File(this, "x86_64-unix").mkdirs()
+            File(this, "x86_64-windows").mkdirs()
+        }
+        listOf("ld-linux-x86-64.so.2", "libc.so.6", "libm.so.6", "libpthread.so.0", "libdl.so.2", "librt.so.1")
+            .forEach { File(glibc, it).writeText("ELF fixture") }
+        listOf("x86_64-unix/ntdll.so", "x86_64-unix/win32u.so",
+            "x86_64-windows/kernel32.dll", "x86_64-windows/user32.dll")
+            .forEach { File(wine, it).writeText("Wine fixture") }
+
+        assertTrue(WineRuntimeModuleValidator.missingGuestGlibcFiles(glibc).isEmpty())
+        assertTrue(WineRuntimeModuleValidator.missingWineModules(wine).isEmpty())
+
+        File(glibc, "libpthread.so.0").delete()
+        File(wine, "x86_64-unix/ntdll.so").delete()
+        assertEquals(listOf("libpthread.so.0"), WineRuntimeModuleValidator.missingGuestGlibcFiles(glibc).map { it.name })
+        assertEquals(listOf("ntdll.so"), WineRuntimeModuleValidator.missingWineModules(wine).map { it.name })
+        root.deleteRecursively()
     }
 
     private class MockProcess(private val aliveState: AtomicBoolean, private val exitVal: Int = 0) : Process() {

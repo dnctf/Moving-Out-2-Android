@@ -3,6 +3,7 @@ package com.dnctf.movingout2.installation
 import java.io.File
 import java.io.InputStream
 import java.io.IOException
+import com.dnctf.movingout2.runtime.RuntimeBundleValidator
 
 enum class ValidationStage { FOLDER_ACCESS, CORE_FILES, STRUCTURE, VERSION_ARCH, COMPATIBILITY, LAUNCH_READINESS }
 enum class InstallationStatus { VALID, INCOMPLETE, ACCESS_ERROR, INVALID_STRUCTURE, INCOMPATIBLE, RUNTIME_NOT_INSTALLED }
@@ -17,13 +18,21 @@ data class InstallationReport(
     val status: InstallationStatus, val stages: List<StageResult>, val missingFiles: List<String>,
     val accessErrors: List<String>, val detectedArchitecture: String?, val detectedUnityVersion: String?,
     val metadataVersion: Int?, val hardwareBlockers: List<String>, val runtimeStatus: String = "RUNTIME_NOT_INSTALLED"
-) { val isReadyForRuntime: Boolean get() = false }
+) {
+    val isReadyForRuntime: Boolean
+        get() = status == InstallationStatus.VALID &&
+            runtimeStatus == "READY" &&
+            hardwareBlockers.isEmpty() &&
+            listOf(ValidationStage.FOLDER_ACCESS, ValidationStage.CORE_FILES, ValidationStage.STRUCTURE,
+                ValidationStage.VERSION_ARCH, ValidationStage.LAUNCH_READINESS)
+                .all { required -> stages.any { it.stage == required && it.passed } }
+}
 
 class InstallationValidator {
-    private val peFiles = listOf("mo2.exe", "GameAssembly.dll", "UnityPlayer.dll", "baselib.dll")
+    private val requiredGameLibraries = listOf("GameAssembly.dll", "UnityPlayer.dll", "baselib.dll")
     private val metadataMagic = byteArrayOf(0xaf.toByte(), 0x1b, 0xb1.toByte(), 0xfa.toByte())
 
-    fun validate(root: File, persistablePermission: Boolean = true, hardwareBlockers: List<String> = emptyList()): InstallationReport {
+    fun validate(root: File, persistablePermission: Boolean = true, hardwareBlockers: List<String> = emptyList(), runtimeBundleRoot: File? = null): InstallationReport {
         val missing = mutableListOf<String>()
         val errors = mutableListOf<String>()
         val stages = mutableListOf<StageResult>()
@@ -32,9 +41,10 @@ class InstallationValidator {
         if (!rootReadable) errors += "Selected folder is not readable."
         stages += StageResult(ValidationStage.FOLDER_ACCESS, persistablePermission && rootReadable, errors.toList())
 
-        val executable = findCaseInsensitive(root, "mo2.exe")
-        val metadataRelative = UnityDataDirectoryLocator.metadataFilePath(executable?.name ?: "mo2.exe")
-        val required = peFiles + metadataRelative
+        val executable = findUnityGameExecutable(root)
+        val executableName = executable?.name ?: "mo2.exe"
+        val metadataRelative = UnityDataDirectoryLocator.metadataFilePath(executableName)
+        val required = listOf(executableName) + requiredGameLibraries + metadataRelative
         val files = mutableMapOf<String, File>()
         for (path in required) {
             val file = try { findCaseInsensitive(root, path) } catch (e: IOException) {
@@ -60,9 +70,10 @@ class InstallationValidator {
         stages += StageResult(ValidationStage.STRUCTURE, metadataDirOk,
             if (metadataDirOk) emptyList() else listOf("Metadata directory missing, not a directory, unreadable, or outside selected root"))
 
-        val peChecks = peFiles.map { name -> name to files[name]?.let(::inspectPeArchitecture) }
-        val exeArch = peChecks.firstOrNull { it.first == "mo2.exe" }?.second
-        val peOk = peChecks.all { it.second == "x86_64" }
+        val peNames = listOf(executableName) + requiredGameLibraries
+        val peChecks = peNames.map { name -> name to files[name]?.let(::inspectPeArchitecture) }
+        val exeArch = peChecks.firstOrNull { it.first.equals(executableName, ignoreCase = true) }?.second
+        val peOk = executable != null && peChecks.all { it.second == "x86_64" }
         val metadataVersion = files[required.last()]?.let(::inspectMetadataVersion)
         val unityVersion = runCatching { findCaseInsensitive(root, UnityDataDirectoryLocator.globalManagersPath(executable?.name ?: "mo2.exe")) }
             .getOrNull()?.takeIf { it.isFile && it.canRead() && it.length() > 0 }
@@ -82,10 +93,34 @@ class InstallationValidator {
             hardwareBlockers.isNotEmpty() -> InstallationStatus.INCOMPATIBLE
             else -> InstallationStatus.VALID
         }
-        stages += StageResult(ValidationStage.LAUNCH_READINESS, false,
-            listOf("DEFERRED: native runtime, execProbe and Vulkan readiness are evaluated by the launcher coordinator."))
+        val runtimeReport = runtimeBundleRoot?.let { RuntimeBundleValidator().validate(it) }
+        val runtimeReady = runtimeReport?.isReady == true
+        stages += StageResult(ValidationStage.LAUNCH_READINESS, runtimeReady,
+            if (runtimeReady) emptyList() else runtimeReport?.blockers
+                ?: listOf("Runtime bundle was not supplied for integrity validation."))
+        val runtimeStatus = when {
+            runtimeReady -> "READY"
+            runtimeReport == null -> "RUNTIME_NOT_INSTALLED"
+            else -> "RUNTIME_INVALID: " + runtimeReport.blockers.joinToString("; ")
+        }
         return InstallationReport(status, stages, missing.distinct(), errors.distinct(), exeArch, unityVersion,
-            metadataVersion, hardwareBlockers.toList())
+            metadataVersion, hardwareBlockers.toList(), runtimeStatus)
+    }
+
+    /** Detect a Unity Windows player using the executable + matching *_Data directory pair. */
+    internal fun findUnityGameExecutable(root: File): File? {
+        val base = runCatching { root.canonicalFile }.getOrNull() ?: return null
+        val unityPlayer = runCatching { findCaseInsensitive(base, "UnityPlayer.dll") }.getOrNull()
+        val gameAssembly = runCatching { findCaseInsensitive(base, "GameAssembly.dll") }.getOrNull()
+        if (unityPlayer?.isFile != true || gameAssembly?.isFile != true) return null
+        return base.listFiles()?.asSequence()
+            ?.filter { it.isFile && it.extension.equals("exe", ignoreCase = true) }
+            ?.filterNot { it.name.equals("UnityCrashHandler64.exe", ignoreCase = true) }
+            ?.sortedBy { it.name }
+            ?.firstOrNull { candidate ->
+                runCatching { findCaseInsensitive(base, UnityDataDirectoryLocator.directoryName(candidate.name))?.isDirectory == true }
+                    .getOrDefault(false)
+            }
     }
 
     private fun findCaseInsensitive(root: File, relative: String): File? {

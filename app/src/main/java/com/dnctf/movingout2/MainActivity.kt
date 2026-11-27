@@ -19,6 +19,12 @@ import android.widget.Toast
 import android.widget.CheckBox
 import android.widget.Button
 import android.widget.ScrollView
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.graphics.Color
+import android.view.Surface
+import android.os.Handler
+import android.os.Looper
 import com.dnctf.movingout2.runtime.RuntimeDiagnostic
 import com.dnctf.movingout2.runtime.RuntimeDiagnostics
 import com.dnctf.movingout2.compatibility.DeviceDiagnosticsProvider
@@ -35,6 +41,10 @@ import com.dnctf.movingout2.installation.InstallationRepository
 import com.dnctf.movingout2.runtime.RuntimeBundleImporter
 import com.dnctf.movingout2.runtime.RuntimeLaunchConfig
 import com.dnctf.movingout2.graphics.VulkanCapabilities
+import com.dnctf.movingout2.graphics.GameSurfaceHost
+import com.dnctf.movingout2.graphics.DxvkGuestWsiBridge
+import com.dnctf.movingout2.graphics.SurfaceLifecycleListener
+import com.dnctf.movingout2.graphics.VulkanNativeProbe
 import com.dnctf.movingout2.runtime.RuntimeBundleValidator
 import com.dnctf.movingout2.runtime.RuntimeInstallationState
 import com.dnctf.movingout2.runtime.AndroidExecCapabilityProbe
@@ -60,14 +70,21 @@ class MainActivity : Activity() {
     private val runtimeInstallInProgress = AtomicBoolean(false)
     private val gameImportInProgress = AtomicBoolean(false)
     private val launchReadinessCoordinator = com.dnctf.movingout2.runtime.LaunchReadinessCoordinator()
+    private val gameLaunchSurfaceCoordinator = com.dnctf.movingout2.runtime.GameLaunchSurfaceCoordinator()
+    @Volatile private var gameSurfaceHost: GameSurfaceHost? = null
+    @Volatile private var pendingGameExecutable: File? = null
+    @Volatile private var pendingGameLaunchOptions: com.dnctf.movingout2.runtime.WineLaunchOptions? = null
+    @Volatile private var surfaceLaunchGeneration: Int = 0
     @Volatile private var vulkanAvailable = false
     @Volatile private var graphicsProbeComplete = false
     private val graphicsProbeInProgress = AtomicBoolean(false)
+    private val runtimeRefreshGeneration = java.util.concurrent.atomic.AtomicInteger(0)
     @Volatile private var lastLaunchReady = false
     private val diagnosticLog = RuntimeDiagnostics()
     private var pendingDiagnosticZip: File? = null
     private val pickDiagnosticDestination = 1004
     private lateinit var inputCoordinator: ControllerInputCoordinator
+    private var activeVirtualController: VirtualControllerView? = null
     private var controllerProfile = ControllerProfile.presets.first()
     private var controllerProfileGameKey = "moving-out-2"
     private var pendingProfileExport: String? = null
@@ -77,11 +94,16 @@ class MainActivity : Activity() {
     private val pickRuntimeZip = 1007
     private val pickControllerProfileImport = 1005
     private val pickControllerProfileExport = 1006
+    private val pickSaveDataImport = 1008
+    private val pickSaveDataExport = 1009
+    private var pendingSaveDataArchive: File? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState?.getBoolean("auto_launch_triggered") == true) launchReadinessCoordinator.markAutoLaunched()
-        // Render a usable launcher shell before touching native/JNI or persisted repositories.
+
+        // Inflate and display the launcher immediately. All repository reads, SAF metadata
+        // checks, JNI initialization and runtime hashing happen off the UI thread.
         val views = LauncherHomeView.create(
             this, ::openFolderPicker, ::revalidateSavedFolder,
             ::openRuntimeZipPicker, ::openRuntimeFolderPicker,
@@ -93,54 +115,71 @@ class MainActivity : Activity() {
         graphicsStatus = views.graphicsStatus
         playButton = views.playButton
         setContentView(views.root)
+        runtimeStatus.setOnLongClickListener { showLiveRuntimeLogs(); true }
         status.text = "Starting launcher…"
-        runtimeStatus.text = "Checking runtime installation…"
+        runtimeStatus.text = "Checking runtime installation in background…"
         graphicsStatus.text = "Device diagnostics are starting…"
-        try {
-            repository = InstallationRepository(this)
-            gameRegistry = com.dnctf.movingout2.installation.GameRegistry(this, repository)
-            val activeGame = gameRegistry.getActiveGame()
-            controllerProfileGameKey = controllerProfileStorageKey(activeGame?.id)
-            val storedProfile = ControllerProfileRepository.load(this, controllerProfileGameKey)
-            val legacyProfile = if (controllerProfileGameKey == "moving-out-2") null
-                else ControllerProfileRepository.load(this, "moving-out-2")
-            controllerProfile = storedProfile ?: legacyProfile ?: ControllerProfile.presets.first()
-            if (storedProfile == null && legacyProfile != null) ControllerProfileRepository.save(this, controllerProfileGameKey, legacyProfile)
-            runCatching { inputBridge.initialize(RuntimeLaunchConfig(filesDir).sharedMemoryFile.absolutePath) }
-                .onFailure { error -> diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "input-bridge-init", "${error.javaClass.name}: ${error.message ?: "no message"}")) }
-            inputCoordinator = ControllerInputCoordinator(inputBridge, controllerProfile)
-            physicalGamepadManager = PhysicalGamepadManager(
-                this,
-                onDeviceState = { deviceId, _, state, connected ->
-                    if (::inputCoordinator.isInitialized) inputCoordinator.updatePhysicalDevice(deviceId, state, connected)
-                },
-                onAggregateState = { /* Per-device routing owns XInput slots. */ }
-            )
-            val activeAtStartup = gameRegistry.getActiveGame()
-            status.text = if (activeAtStartup?.source == com.dnctf.movingout2.core.model.InstallationSource.SAF_DIRECTORY) {
-                "Saved SAF game folder found. Importing automatically into app storage…"
-            } else if (activeAtStartup != null) {
-                "Imported game installation found. Refreshing launch readiness…"
-            } else if (repository.savedUri() != null) {
-                "Saved game folder found. Checking access and importing automatically…"
-            } else "Import the game ZIP or select an existing game folder."
-            if (activeAtStartup?.source == com.dnctf.movingout2.core.model.InstallationSource.SAF_DIRECTORY) {
-                startSafGameImport(Uri.parse(activeAtStartup.location))
-            } else if (activeAtStartup == null) {
-                repository.savedUri()?.let(::startSafGameImport)
+
+        probeGraphicsAsync()
+        ensureRuntimeInstalledOnFirstLaunch()
+
+        Thread({
+            val initialized = runCatching {
+                repository = InstallationRepository(this)
+                gameRegistry = com.dnctf.movingout2.installation.GameRegistry(this, repository)
+                val activeAtStartup = gameRegistry.getActiveGame()
+                controllerProfileGameKey = controllerProfileStorageKey(activeAtStartup?.id)
+                val storedProfile = ControllerProfileRepository.load(this, controllerProfileGameKey)
+                val legacyProfile = if (controllerProfileGameKey == "moving-out-2") null
+                    else ControllerProfileRepository.load(this, "moving-out-2")
+                controllerProfile = storedProfile ?: legacyProfile ?: ControllerProfile.presets.first()
+                if (storedProfile == null && legacyProfile != null) {
+                    ControllerProfileRepository.save(this, controllerProfileGameKey, legacyProfile)
+                }
+                runCatching { inputBridge.initialize(RuntimeLaunchConfig(filesDir).sharedMemoryFile.absolutePath) }
+                    .onFailure { error ->
+                        diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "input-bridge-init",
+                            "${error.javaClass.name}: ${error.message ?: "no message"}"))
+                    }
+                inputCoordinator = ControllerInputCoordinator(inputBridge, controllerProfile)
+                physicalGamepadManager = PhysicalGamepadManager(
+                    this,
+                    onDeviceState = { deviceId, _, state, connected ->
+                        if (::inputCoordinator.isInitialized) inputCoordinator.updatePhysicalDevice(deviceId, state, connected)
+                    },
+                    onAggregateState = { /* Per-device routing owns XInput slots. */ }
+                )
+                activeAtStartup to repository.savedUri()
             }
-            refreshRuntimeStatus()
-            probeGraphicsAsync()
-            ensureRuntimeInstalledOnFirstLaunch()
-        } catch (error: Throwable) {
-            val trace = java.io.StringWriter().also { error.printStackTrace(java.io.PrintWriter(it)) }.toString()
-            diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "launcher-onCreate",
-                "${error.javaClass.name}: ${error.message ?: "no message"}\n$trace"))
-            status.text = "Launcher initialization failed safely. UI is available, but a subsystem could not start.\n${error.javaClass.simpleName}: ${error.message ?: "no message"}\nExport diagnostics and share the report."
-            runtimeStatus.text = "Runtime setup is paused until launcher initialization is repaired."
-            graphicsStatus.text = "Device probe was not started."
-            Toast.makeText(this, "Launcher initialization failed: ${error.message}", Toast.LENGTH_LONG).show()
-        }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                initialized.onSuccess { (activeAtStartup, savedUri) ->
+                    status.text = when {
+                        activeAtStartup?.source == com.dnctf.movingout2.core.model.InstallationSource.SAF_DIRECTORY ->
+                            "Saved SAF game folder found. Importing automatically into app storage…"
+                        activeAtStartup != null ->
+                            "Imported game installation found. Refreshing launch readiness…"
+                        savedUri != null ->
+                            "Saved game folder found. Checking access and importing automatically…"
+                        else -> "Import the game ZIP or select an existing game folder."
+                    }
+                    if (activeAtStartup?.source == com.dnctf.movingout2.core.model.InstallationSource.SAF_DIRECTORY) {
+                        startSafGameImport(Uri.parse(activeAtStartup.location))
+                    } else if (activeAtStartup == null) {
+                        savedUri?.let(::startSafGameImport)
+                    }
+                    if (::physicalGamepadManager.isInitialized) physicalGamepadManager.register()
+                    refreshRuntimeStatus()
+                }.onFailure { error ->
+                    val trace = java.io.StringWriter().also { error.printStackTrace(java.io.PrintWriter(it)) }.toString()
+                    diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "launcher-onCreate",
+                        "${error.javaClass.name}: ${error.message ?: "no message"}\n$trace"))
+                    status.text = "Launcher initialization failed safely. UI remains available.\n${error.javaClass.simpleName}: ${error.message ?: "no message"}\nExport diagnostics and share the report."
+                    runtimeStatus.text = "Runtime readiness is paused until launcher initialization is repaired."
+                    Toast.makeText(this, "Launcher initialization failed: ${error.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }, "launcher-state-init").apply { isDaemon = true; start() }
     }
 
     private fun activateControllerProfileForGame(game: com.dnctf.movingout2.installation.RegisteredGame?) {
@@ -154,6 +193,82 @@ class MainActivity : Activity() {
         controllerProfileGameKey = nextKey
         controllerProfile = nextProfile
         inputCoordinator.setProfile(nextProfile)
+    }
+
+    /** Long-press the Runtime status panel to inspect the live combined process/player log tail. */
+    private fun showLiveRuntimeLogs() {
+        val text = TextView(this).apply {
+            textSize = 11f
+            setTextIsSelectable(true)
+            setPadding(18, 12, 18, 12)
+        }
+        val scroll = ScrollView(this).apply { addView(text) }
+        val dialog = AlertDialog.Builder(this).setTitle("Live Runtime Logs")
+            .setView(scroll).setPositiveButton("Close", null).create()
+        val handler = Handler(Looper.getMainLooper())
+        val candidates = listOf(
+            File(filesDir, "diagnostics/runtime-process.log"),
+            File(filesDir, "diagnostics/wine_session.log"),
+            File(filesDir, "diagnostics/mo2_player.log")
+        )
+        // Discover Unity's default Player.log once per viewer session; never rescan the full game tree every second.
+        val playerLogs = listOf(
+            File(filesDir, "game_data"),
+            File(filesDir, "game_import"),
+            File(filesDir, "wine_prefixes/moving-out-2/drive_c/users/steamuser/AppData/LocalLow")
+        ).filter { it.isDirectory }.flatMap { root ->
+            root.walkTopDown().maxDepth(12).filter { it.isFile && it.name.equals("Player.log", true) }.toList()
+        }
+        val refresh = object : Runnable {
+            override fun run() {
+                val content = buildString {
+                    (candidates + playerLogs).distinct().forEach { file ->
+                        append("===== ").append(file.absolutePath).append(" =====\n")
+                        append(if (file.isFile) runCatching {
+                            java.io.RandomAccessFile(file, "r").use { raf ->
+                                val length = raf.length()
+                                val start = (length - 48L * 1024L).coerceAtLeast(0L)
+                                raf.seek(start)
+                                ByteArray((length - start).toInt()).also { raf.readFully(it) }.toString(Charsets.UTF_8)
+                            }
+                        }.getOrElse { "Read error: ${it.message}" } else "(not created yet)")
+                        append("\n\n")
+                    }
+                }
+                text.text = content.ifBlank { "No process or Player.log output has been captured yet." }
+                if (dialog.isShowing) handler.postDelayed(this, 1000L)
+            }
+        }
+        dialog.setOnDismissListener { handler.removeCallbacks(refresh) }
+        dialog.show()
+        handler.post(refresh)
+    }
+
+    private fun attachVirtualGamepad() {
+        if (!::inputCoordinator.isInitialized || activeVirtualController != null) return
+        val settings = LauncherSettings.load(this)
+        if (!settings.controllerEnabled) return
+        val pad = VirtualControllerView(this, controllerProfile.deadzone) { state ->
+            inputCoordinator.updateTouchState(state)
+        }.apply {
+            configure(settings.controllerScale / 100f, settings.controllerOpacity / 100f,
+                (settings.controllerOffsetX - 50) / 100f, (settings.controllerOffsetY - 50) / 100f)
+            setHapticsEnabled(settings.controllerHaptics)
+            setOverlayVisible(true)
+            elevation = 1000f
+        }
+        activeVirtualController = pad
+        addContentView(pad, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+    }
+
+    private fun removeVirtualGamepad() {
+        activeVirtualController?.let { pad ->
+            (pad.parent as? ViewGroup)?.removeView(pad)
+        }
+        activeVirtualController = null
+        if (::inputCoordinator.isInitialized) inputCoordinator.clearTouch()
     }
 
     private fun exportDiagnostics() {
@@ -241,10 +356,41 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         activeWineSession?.let { session ->
-            Thread({ session.shutdownAll() }, "wine-session-destroy").apply { isDaemon = true; start() }
-        }
+            Thread({
+                session.shutdownAll()
+                VulkanNativeProbe.detachSessionSurface()
+            }, "wine-session-destroy").apply { isDaemon = true; start() }
+        } ?: VulkanNativeProbe.detachSessionSurface()
         if (::inputCoordinator.isInitialized) inputCoordinator.destroy()
         super.onDestroy()
+    }
+
+    private fun wineLocalLowDirectory() =
+        File(filesDir, "wine_prefixes/moving-out-2/drive_c/users/steamuser/AppData/LocalLow")
+
+    private fun openSaveDataExport() {
+        Thread({
+            val archive = File(cacheDir, "wine-save-export.zip")
+            val result = runCatching {
+                com.dnctf.movingout2.runtime.WineSaveDataManager.export(wineLocalLowDirectory(), archive)
+                archive
+            }
+            runOnUiThread {
+                result.onSuccess { pendingSaveDataArchive = it
+                    startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE); type = "application/zip"
+                        putExtra(Intent.EXTRA_TITLE, "moving-out-2-wine-saves.zip")
+                    }, pickSaveDataExport)
+                }.onFailure { Toast.makeText(this, "Save export failed: ${it.message}", Toast.LENGTH_LONG).show() }
+            }
+        }, "wine-save-export").apply { isDaemon = true; start() }
+    }
+
+    private fun openSaveDataImport() {
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE); type = "application/zip"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }, pickSaveDataImport)
     }
 
     private fun openControllerProfileImport() {
@@ -327,14 +473,21 @@ class MainActivity : Activity() {
     }
 
     private fun ensureRuntimeInstalledOnFirstLaunch() {
-        val report = RuntimeBundleValidator().validate(File(filesDir, "native_runtime/bundle"))
-        if (report.isReady) return
-        if (android.os.Build.SUPPORTED_ABIS.none { it == "arm64-v8a" }) {
-            runtimeStatus.text = "Automatic setup stopped: this app requires an ARM64 (arm64-v8a) Android device."
-            return
-        }
-        runtimeStatus.text = "First-run setup: runtime missing. Preparing automatic download…"
-        startRuntimeRepositoryInstall(automatic = true)
+        Thread({
+            val report = runCatching {
+                RuntimeBundleValidator().validate(File(filesDir, "native_runtime/bundle"))
+            }
+            val supportedAbi = android.os.Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (!supportedAbi) {
+                    runtimeStatus.text = "Automatic setup stopped: this app requires an ARM64 (arm64-v8a) Android device."
+                } else if (report.getOrNull()?.isReady != true) {
+                    runtimeStatus.text = "First-run setup: runtime missing or invalid. Preparing automatic download…"
+                    startRuntimeRepositoryInstall(automatic = true)
+                }
+            }
+        }, "runtime-first-run-check").apply { isDaemon = true; start() }
     }
 
     private fun downloadRuntimeFromRepository() {
@@ -460,6 +613,8 @@ class MainActivity : Activity() {
         val profileImportButton = Button(this).apply { text = "Import profile JSON"; setOnClickListener { dialog?.dismiss(); openControllerProfileImport() } }
         val profileExportButton = Button(this).apply { text = "Export current profile JSON"; setOnClickListener { dialog?.dismiss(); openControllerProfileExport() } }
         panel.addView(profileImportButton); panel.addView(profileExportButton)
+        panel.addView(Button(this).apply { text = "Export Wine save data (LocalLow)"; setOnClickListener { dialog?.dismiss(); openSaveDataExport() } })
+        panel.addView(Button(this).apply { text = "Import Wine save data ZIP"; setOnClickListener { dialog?.dismiss(); openSaveDataImport() } })
 
         panel.addView(TextView(this).apply { text = "FPS cap target"; textSize = 16f })
         val fpsOptions = listOf("30 FPS (recommended minimum)", "45 FPS", "60 FPS")
@@ -529,21 +684,28 @@ class MainActivity : Activity() {
     }
 
     private fun refreshRuntimeStatus() {
-        val root = File(filesDir, "native_runtime/bundle")
-        val report = RuntimeBundleValidator().validate(root)
-        val graphics = RuntimeGraphicsComponents.assess(root)
-        if (!report.isReady || report.box64 == null) {
-            lastLaunchReady = false
-            playButton.isEnabled = false
-            playButton.alpha = 0.55f
-            runtimeStatus.text = "Runtime bundle: ${report.status}\nLaunch readiness: BLOCKED (runtime not validated)\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${report.blockers.joinToString("\n")}\n${graphics.notes.joinToString("\n")}"
-            return
-        }
+        if (!::gameRegistry.isInitialized) return
+        val generation = runtimeRefreshGeneration.incrementAndGet()
         lastLaunchReady = false
-        playButton.isEnabled = false
-        playButton.alpha = 0.55f
-        runtimeStatus.text = "Runtime bundle: READY (checking nativeLibraryDir exec capability and Vulkan)…"
+        playButton.isEnabled = activeWineSession?.state == WineSessionState.RUNNING
+        playButton.alpha = if (playButton.isEnabled) 1f else 0.55f
+        runtimeStatus.text = "Validating runtime files and checksums in background…"
+
         Thread({
+            val root = File(filesDir, "native_runtime/bundle")
+            val report = RuntimeBundleValidator().validate(root)
+            val graphics = RuntimeGraphicsComponents.assess(root)
+            if (!report.isReady || report.box64 == null) {
+                runOnUiThread {
+                    if (generation != runtimeRefreshGeneration.get() || isFinishing || isDestroyed) return@runOnUiThread
+                    lastLaunchReady = false
+                    playButton.isEnabled = activeWineSession?.state == WineSessionState.RUNNING
+                    playButton.alpha = if (playButton.isEnabled) 1f else 0.55f
+                    runtimeStatus.text = "Runtime bundle: ${report.status}\nLaunch readiness: BLOCKED (runtime not validated)\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\n${report.blockers.joinToString("\n")}\n${graphics.notes.joinToString("\n")}"
+                }
+                return@Thread
+            }
+
             val exec = runCatching { AndroidExecCapabilityProbe(this, diagnosticLog).probe(report.box64) }
             val active = runCatching { gameRegistry.getActiveGame() }.getOrNull()
             val gamePresent = active?.isReadyToLaunch == true &&
@@ -561,7 +723,7 @@ class MainActivity : Activity() {
             )
             val decision = launchReadinessCoordinator.evaluate(snapshot)
             runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (generation != runtimeRefreshGeneration.get() || isFinishing || isDestroyed) return@runOnUiThread
                 lastLaunchReady = decision.playEnabled
                 val running = activeWineSession?.state == WineSessionState.RUNNING
                 playButton.isEnabled = decision.playEnabled || running
@@ -577,7 +739,8 @@ class MainActivity : Activity() {
                 }
                 runtimeStatus.text = "Runtime bundle: READY\nDXVK: ${graphics.dxvk}\nTurnip: ${graphics.turnip}\nBox64 execution: ${if (snapshot.execProbeAllowed) "ALLOWED" else "BLOCKED"}\n${execText}\n${gameText}\nVulkan: ${if (vulkanAvailable) "AVAILABLE" else if (graphicsProbeComplete) "UNAVAILABLE" else "CHECKING"}\nLaunch readiness: ${decision.readiness}\n${graphics.notes.joinToString("\n")}"
                 if (decision.shouldAutoLaunch && !running) {
-                    diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "auto-launch", "All game/runtime/exec/Vulkan checks passed; triggering one automatic launch for this Activity session."))
+                    diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "auto-launch",
+                        "All game/runtime/exec/Vulkan checks passed; triggering one automatic launch for this Activity session."))
                     playButton.post { if (!isFinishing && !isDestroyed) startGameSession() }
                 }
             }
@@ -591,16 +754,18 @@ class MainActivity : Activity() {
             return
         }
         val existing = activeWineSession
-        if (existing != null && existing.state == WineSessionState.RUNNING) {
+        if (existing?.state == WineSessionState.RUNNING) {
             Thread({
                 existing.shutdownAll()
                 activeWineSession = null
-                runOnUiThread {
-                    playButton.text = "Play Moving Out 2"
-                    refreshRuntimeStatus()
-                    Toast.makeText(this, "Game session stopped.", Toast.LENGTH_LONG).show()
-                }
+                runOnUiThread { finishGameSurface("Game session stopped.") }
             }, "wine-session-stop").apply { isDaemon = true; start() }
+            return
+        }
+        if (gameSurfaceHost != null) {
+            runtimeStatus.text = if (gameSurfaceHost?.isSurfaceAvailable == true)
+                "Android game surface is ready; validating presentation target…"
+            else "Waiting for GameSurfaceHost surfaceCreated and a valid non-zero size…"
             return
         }
         val active = runCatching { gameRegistry.getActiveGame() }.getOrNull()
@@ -619,23 +784,6 @@ class MainActivity : Activity() {
             return
         }
         val root = File(filesDir, "native_runtime/bundle")
-        playButton.isEnabled = false
-        runtimeStatus.text = "Starting Box64 / Wine session…"
-        val supervisor = WineSessionSupervisor(
-            this, root, "moving-out-2", diagnosticLog,
-            onSessionFinished = {
-                runOnUiThread {
-                    if (!isFinishing && !isDestroyed) {
-                        activeWineSession = null
-                        playButton.text = "Play Moving Out 2"
-                        playButton.isEnabled = lastLaunchReady
-                        playButton.alpha = if (lastLaunchReady) 1f else 0.55f
-                        runtimeStatus.text = "Game process exited. Manual relaunch is available when readiness remains READY."
-                        refreshRuntimeStatus()
-                    }
-                }
-            }
-        )
         val displayWidth = maxOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
         val displayHeight = minOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
         val runtimeSettings = RuntimeSettingsConsumer().consume(
@@ -643,29 +791,172 @@ class MainActivity : Activity() {
             File(root, "turnip/freedreno_icd.aarch64.json").takeIf { it.isFile },
             File(root, "dxvk/x64").takeIf { it.isDirectory }
         )
+        pendingGameExecutable = gameExe
+        pendingGameLaunchOptions = runtimeSettings.launchOptions
+        surfaceLaunchGeneration += 1
+        gameLaunchSurfaceCoordinator.requestLaunch()
+
+        val host = GameSurfaceHost(this).apply {
+            setBackgroundColor(Color.BLACK)
+            lifecycleListener = object : SurfaceLifecycleListener {
+                override fun onSurfaceCreated(surface: Surface, width: Int, height: Int) {
+                    validateSurfaceAndLaunch(this@MainActivity.gameSurfaceHost, surface, width, height)
+                }
+
+                override fun onSurfaceChanged(surface: Surface, width: Int, height: Int) {
+                    if (width > 0 && height > 0) {
+                        val resized = VulkanNativeProbe.resizeSessionSurface(surface, width, height)
+                        diagnosticLog.record(RuntimeDiagnostic(
+                            if (resized) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.WARNING,
+                            "surface",
+                            "Surface size changed to ${width}x${height}; native window resize lease success=$resized."
+                        ))
+                    }
+                }
+
+                override fun onSurfaceDestroyed() {
+                    val decision = gameLaunchSurfaceCoordinator.onSurfaceDestroyed()
+                    surfaceLaunchGeneration += 1
+                    pendingGameExecutable = null
+                    pendingGameLaunchOptions = null
+                    val session = activeWineSession
+                    if (session != null && decision.state == com.dnctf.movingout2.runtime.GameLaunchSurfaceState.STOPPING) {
+                        // Keep the retained ANativeWindow reference alive until the runtime is stopped.
+                        Thread({
+                            session.shutdownAll()
+                            activeWineSession = null
+                            VulkanNativeProbe.detachSessionSurface()
+                            runOnUiThread { finishGameSurface("Game surface destroyed; Wine session stopped before releasing ANativeWindow.") }
+                        }, "wine-surface-destroyed").apply { isDaemon = true; start() }
+                    } else {
+                        // No guest session owns the target; release the launcher-held reference now.
+                        VulkanNativeProbe.detachSessionSurface()
+                        if (decision.stopSession) {
+                            runOnUiThread { finishGameSurface("Surface disappeared before runtime launch; launch cancelled.") }
+                        }
+                    }
+                }
+            }
+        }
+        gameSurfaceHost = host
+        playButton.isEnabled = false
+        runtimeStatus.text = "Waiting for Android SurfaceView before starting Box64 / Wine…"
+        addContentView(host, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+        ))
+        host.bringToFront()
+    }
+
+    private fun validateSurfaceAndLaunch(host: GameSurfaceHost?, surface: Surface, width: Int, height: Int) {
+        if (host == null || width <= 0 || height <= 0 || !surface.isValid) return
+        val generation = surfaceLaunchGeneration
         Thread({
-            val started = runCatching { supervisor.startSession(gameExe, runtimeSettings.launchOptions) }
+            val retained = VulkanNativeProbe.attachSessionSurface(surface, width, height)
+            val probe = if (retained) host.probeCurrentSwapchain() else null
             runOnUiThread {
-                if (isFinishing || isDestroyed) {
-                    supervisor.shutdownAll()
+                if (generation != surfaceLaunchGeneration || gameSurfaceHost !== host ||
+                    host.isSurfaceAvailable.not() || isFinishing || isDestroyed) {
+                    VulkanNativeProbe.detachSessionSurface()
                     return@runOnUiThread
                 }
-                if (started.getOrDefault(false) && supervisor.state == WineSessionState.RUNNING) {
-                    activeWineSession = supervisor
+                if (!retained || probe?.isReady != true) {
+                    diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "surface",
+                        "Android surface/Vulkan swapchain preflight failed: ${probe?.detail ?: "native ANativeWindow attach failed"}"))
+                    VulkanNativeProbe.detachSessionSurface()
+                    finishGameSurface("Surface presentation preflight failed. Wine was not launched.")
+                    return@runOnUiThread
+                }
+                val decision = gameLaunchSurfaceCoordinator.onSurfaceReady(width, height)
+                if (!decision.launchAllowed) return@runOnUiThread
+                val executable = pendingGameExecutable ?: return@runOnUiThread
+                val options = pendingGameLaunchOptions?.copy(width = width, height = height) ?: return@runOnUiThread
+                diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "surface",
+                    "Surface is valid (${width}x${height}); Android Vulkan swapchain acquire/present probe passed."))
+                if (!DxvkGuestWsiBridge.canLaunchWineSession(decision.launchAllowed)) {
+                    diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "dxvk-wsi",
+                        "${DxvkGuestWsiBridge.BLOCKER}: launcher-process ANativeWindow cannot be consumed by the separate Box64/DXVK process; no cross-process Android WSI transport exists in this runtime."))
+                    finishGameSurface("Android SurfaceView and Vulkan swapchain preflight passed, but Wine launch is blocked: DXVK guest WSI bridge is not implemented. This prevents a known black-screen launch.")
+                    return@runOnUiThread
+                }
+                launchWineSessionOnSurface(executable, options, generation)
+            }
+        }, "game-surface-preflight").apply { isDaemon = true; start() }
+    }
+
+    private fun launchWineSessionOnSurface(
+        gameExe: File,
+        launchOptions: com.dnctf.movingout2.runtime.WineLaunchOptions,
+        generation: Int
+    ) {
+        val root = File(filesDir, "native_runtime/bundle")
+        val supervisor = WineSessionSupervisor(
+            this, root, "moving-out-2", diagnosticLog,
+            onSessionFinished = {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        activeWineSession = null
+                        removeVirtualGamepad()
+                        gameLaunchSurfaceCoordinator.onSessionStopped()
+                        playButton.text = "Play Moving Out 2"
+                        playButton.isEnabled = lastLaunchReady
+                        playButton.alpha = if (lastLaunchReady) 1f else 0.55f
+                        runtimeStatus.text = "Game process exited. Android surface lease released after session cleanup."
+                        finishGameSurface("Game process exited.")
+                        refreshRuntimeStatus()
+                    }
+                }
+            }
+        )
+        activeWineSession = supervisor
+        playButton.isEnabled = false
+        runtimeStatus.text = "Android surface validated. Starting Box64 / Wine session…"
+        Thread({
+            val started = runCatching {
+                if (generation != surfaceLaunchGeneration || gameSurfaceHost?.isSurfaceAvailable != true) false
+                else supervisor.startSession(gameExe, launchOptions)
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed || generation != surfaceLaunchGeneration ||
+                    gameSurfaceHost?.isSurfaceAvailable != true) {
+                    supervisor.shutdownAll()
+                    if (activeWineSession === supervisor) activeWineSession = null
+                    return@runOnUiThread
+                }
+                if (started.getOrDefault(false) && supervisor.state == WineSessionState.RUNNING &&
+                    gameLaunchSurfaceCoordinator.onSessionStarted()) {
+                    attachVirtualGamepad()
                     playButton.text = "Stop Game Session"
                     playButton.isEnabled = true
                     playButton.alpha = 1f
-                    runtimeStatus.text = "Game session: RUNNING\nBox64 executable: ${File(applicationInfo.nativeLibraryDir, "libbox64.so").absolutePath}\nWine session logs: files/diagnostics/wine_session.log and runtime-process.log"
-                    Toast.makeText(this, "Box64 / Wine game session started.", Toast.LENGTH_LONG).show()
+                    runtimeStatus.text = "Game process: RUNNING\nAndroid surface preflight: PASS\nDXVK guest WSI: NOT YET VERIFIED"
+                    Toast.makeText(this, "Box64 / Wine process started; DXVK presentation still requires physical validation.", Toast.LENGTH_LONG).show()
                 } else {
-                    activeWineSession = null
+                    supervisor.shutdownAll()
+                    if (activeWineSession === supervisor) activeWineSession = null
+                    gameLaunchSurfaceCoordinator.onSessionStopped()
                     playButton.text = "Play Moving Out 2"
-                    runtimeStatus.text = "Game session failed during preflight/startup. Export diagnostics and inspect wine_session.log."
+                    runtimeStatus.text = "Game session failed or surface was lost during startup. Export diagnostics."
+                    finishGameSurface("Runtime startup failed.")
                     refreshRuntimeStatus()
-                    Toast.makeText(this, "Game session could not start. Export diagnostics.", Toast.LENGTH_LONG).show()
                 }
             }
         }, "wine-session-start").apply { isDaemon = true; start() }
+    }
+
+    private fun finishGameSurface(message: String) {
+        VulkanNativeProbe.detachSessionSurface()
+        gameSurfaceHost?.let { host ->
+            host.lifecycleListener = null
+            (host.parent as? ViewGroup)?.removeView(host)
+        }
+        gameSurfaceHost = null
+        pendingGameExecutable = null
+        pendingGameLaunchOptions = null
+        gameLaunchSurfaceCoordinator.onSessionStopped()
+        playButton.text = "Play Moving Out 2"
+        playButton.isEnabled = lastLaunchReady
+        playButton.alpha = if (lastLaunchReady) 1f else 0.55f
+        runtimeStatus.text = message
     }
 
     @Deprecated("Use Activity Result API in a later refactor")
@@ -684,6 +975,28 @@ class MainActivity : Activity() {
             return
         }
         when (requestCode) {
+            pickSaveDataExport -> runCatching {
+                val archive = pendingSaveDataArchive ?: error("Save archive was not prepared.")
+                contentResolver.openOutputStream(uri)?.use { output -> archive.inputStream().use { it.copyTo(output) } }
+                    ?: error("Save export destination is unavailable.")
+                Toast.makeText(this, "Wine save data exported.", Toast.LENGTH_LONG).show()
+            }.onFailure { Toast.makeText(this, "Save export failed: ${it.message}", Toast.LENGTH_LONG).show() }
+                .also { pendingSaveDataArchive?.delete(); pendingSaveDataArchive = null }
+            pickSaveDataImport -> {
+                Thread({
+                    val result = runCatching {
+                        val archive = File(cacheDir, "wine-save-import.zip")
+                        contentResolver.openInputStream(uri)?.use { input -> archive.outputStream().use { input.copyTo(it) } }
+                            ?: error("Save archive cannot be opened.")
+                        val localLow = File(filesDir, "wine_prefixes/moving-out-2/drive_c/users/steamuser/AppData/LocalLow")
+                        val bytes = com.dnctf.movingout2.runtime.WineSaveDataManager.importArchive(archive, localLow)
+                        archive.delete()
+                        bytes
+                    }
+                    runOnUiThread { result.onSuccess { Toast.makeText(this, "Save data imported: ${it / (1024 * 1024)} MiB", Toast.LENGTH_LONG).show() }
+                        .onFailure { Toast.makeText(this, "Save import failed: ${it.message}", Toast.LENGTH_LONG).show() } }
+                }, "wine-save-import").apply { isDaemon = true; start() }
+            }
             pickControllerProfileImport -> runCatching {
                 val raw = contentResolver.openInputStream(uri)?.use { stream ->
                     readBoundedUtf8Profile(stream)

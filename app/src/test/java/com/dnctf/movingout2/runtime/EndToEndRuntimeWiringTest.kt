@@ -71,7 +71,7 @@ class EndToEndRuntimeWiringTest {
         val expectedWinePath = WineLaunchCommand.toWineZPath(hostPath)
         assertEquals(expectedWinePath, wineEnv["MO2_XINPUT_SHM_PATH"])
         assertEquals("1", wineEnv["BOX64_DYNAREC"])
-        assertEquals("d3d11,dxgi=n,b;xinput1_3,xinput1_4,xinput9_1_0=n,b", wineEnv["WINEDLLOVERRIDES"])
+        assertEquals("d3d11=n,b;dxgi=n,b;steam_api64=b;xinput1_3,xinput1_4=n,b;xinput9_1_0=n,b;UnityCrashHandler64.exe=d", wineEnv["WINEDLLOVERRIDES"])
 
         // End-of-session/crash cleanup must disconnect every slot before mapping destruction.
         for (player in 0 until XInputTransport.MAX_PLAYERS) assertTrue(bridge.disconnectPlayer(player))

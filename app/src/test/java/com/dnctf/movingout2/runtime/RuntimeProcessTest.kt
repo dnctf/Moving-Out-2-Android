@@ -31,6 +31,34 @@ class RuntimeProcessTest {
             file.delete()
         }
     }
+    @Test fun processGroupLauncherBuildsLeaderCommandWithPgidZero() {
+        val helper = File("/data/app/example/lib/arm64/libmo2_process_group.so")
+        val command = listOf("/data/app/example/lib/arm64/libbox64.so", "wine64", "mo2.exe")
+        val actual = ProcessGroupSpawner.launcherCommand(helper, command, null, createProcessGroup = true)
+        assertEquals(
+            listOf(helper.absolutePath, "--pgid", "0", "--") + command,
+            actual
+        )
+    }
+
+    @Test fun processGroupLauncherBuildsJoinCommandWithExistingPgid() {
+        val helper = File("/data/app/example/lib/arm64/libmo2_process_group.so")
+        val command = listOf("/data/app/example/lib/arm64/libbox64.so", "wine64", "mo2.exe")
+        val actual = ProcessGroupSpawner.launcherCommand(helper, command, 12345L, createProcessGroup = false)
+        assertEquals(
+            listOf(helper.absolutePath, "--pgid", "12345", "--") + command,
+            actual
+        )
+    }
+
+    @Test fun processGroupLauncherRejectsConflictingLeaderAndJoinArguments() {
+        val helper = File("/data/app/example/lib/arm64/libmo2_process_group.so")
+        val rejected = runCatching {
+            ProcessGroupSpawner.launcherCommand(helper, listOf("/bin/true"), 12345L, createProcessGroup = true)
+        }.isFailure
+        assertTrue(rejected)
+    }
+
     @Test fun pidParserAcceptsOnlyValidPidPatterns() {
         assertEquals(4321L, RuntimeProcess.parsePidSafely("Process[pid=4321, exitValue=0]"))
         assertNull(RuntimeProcess.parsePidSafely("no process pid available"))

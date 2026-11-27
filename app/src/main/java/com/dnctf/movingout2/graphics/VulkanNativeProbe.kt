@@ -17,8 +17,24 @@ object VulkanNativeProbe {
     private val loaded: Boolean = runCatching { System.loadLibrary("vulkan_probe"); true }.getOrDefault(false)
     private external fun probeNative(): String
     private external fun probeSwapchainNative(surface: Any): String
+    private external fun attachSessionSurfaceNative(surface: Any, width: Int, height: Int): Boolean
+    private external fun resizeSessionSurfaceNative(surface: Any, width: Int, height: Int): Boolean
+    private external fun detachSessionSurfaceNative()
 
     fun runProbe(): String? = if (loaded) runCatching { probeNative() }.getOrNull() else null
+
+    /** Retains an ANativeWindow reference owned by the launcher process, not by Wine/DXVK. */
+    fun attachSessionSurface(surface: Any, width: Int, height: Int): Boolean =
+        loaded && width > 0 && height > 0 &&
+            runCatching { attachSessionSurfaceNative(surface, width, height) }.getOrDefault(false)
+
+    fun resizeSessionSurface(surface: Any, width: Int, height: Int): Boolean =
+        loaded && width > 0 && height > 0 &&
+            runCatching { resizeSessionSurfaceNative(surface, width, height) }.getOrDefault(false)
+
+    fun detachSessionSurface() {
+        if (loaded) runCatching { detachSessionSurfaceNative() }
+    }
 
     fun probeSwapchain(surface: Any): SwapchainProbeResult {
         if (!loaded) {

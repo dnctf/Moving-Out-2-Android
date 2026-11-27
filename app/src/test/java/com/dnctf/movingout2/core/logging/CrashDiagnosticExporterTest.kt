@@ -14,14 +14,22 @@ class CrashDiagnosticExporterTest {
    RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO,"wine","Wine started"),
    RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR,"box64","crash near startup")
   )
-  val zip=CrashDiagnosticExporter(temp).export("""{"gpu":"Adreno"}""","""{"game":"valid"}""","""{"bundle":"ready"}""",entries,exitCode=139,crashInfo="SIGSEGV")
+  val diagnosticDir=File(temp,"session-logs").apply { mkdirs() }
+  File(diagnosticDir,"wine_session.log").writeText("WINEBOOT-stdout: wineboot initialized\\nWINEBOOT-stderr: warning\\n")
+  File(diagnosticDir,"runtime-process.log").writeText("BOX64-WINE-stderr: target failed\\n")
+  File(diagnosticDir,"mo2_player.log").writeText("Unity Player started\\n")
+  File(diagnosticDir,"mo2_d3d11.log").writeText("DXVK D3D11 device created\\n")
+  File(diagnosticDir,"dxvk.log").writeText("DXVK info\\n")
+  val zip=CrashDiagnosticExporter(temp).export("""{"gpu":"Adreno"}""","""{"game":"valid"}""","""{"bundle":"ready"}""",entries,exitCode=139,crashInfo="SIGSEGV",importDiagnosticDirectory=diagnosticDir)
   assertTrue(zip.isFile&&zip.length()>0)
   ZipFile(zip).use { archive ->
-   val expected=setOf("device-vulkan-report.json","game-installation-report.json","runtime-bundle-report.json","runtime-process.log")
+   val expected=setOf("device-vulkan-report.json","game-installation-report.json","runtime-bundle-report.json","runtime-process.log","runtime-process-raw.log","wine_session.log","mo2_player.log","mo2_d3d11.log","dxvk.log")
    assertEquals(expected,archive.entries().asSequence().map{it.name}.toSet())
    assertEquals("""{"gpu":"Adreno"}""",archive.getInputStream(archive.getEntry("device-vulkan-report.json")).bufferedReader().readText())
    val log=archive.getInputStream(archive.getEntry("runtime-process.log")).bufferedReader().readText()
    assertTrue(log.contains("Wine started"));assertTrue(log.contains("crash near startup"));assertTrue(log.contains("139"));assertTrue(log.contains("SIGSEGV"))
+   assertTrue(archive.getInputStream(archive.getEntry("wine_session.log")).bufferedReader().readText().contains("WINEBOOT-stdout"))
+   assertTrue(archive.getInputStream(archive.getEntry("runtime-process-raw.log")).bufferedReader().readText().contains("BOX64-WINE-stderr"))
   }
   temp.deleteRecursively()
  }

@@ -2,6 +2,7 @@ package com.dnctf.movingout2.runtime
 
 import android.content.Context
 import com.dnctf.movingout2.input.RuntimeInputBridge
+import org.json.JSONObject
 import java.io.File
 import java.io.FileWriter
 import java.io.IOException
@@ -49,7 +50,9 @@ interface SessionProcessRunner {
         args: List<String>,
         environment: Map<String, String>,
         workingDirectory: File?,
-        tag: String
+        tag: String,
+        processGroupId: Long? = null,
+        createProcessGroup: Boolean = false
     ): ProcessResult
 
     fun probeWineserverReady(
@@ -64,7 +67,9 @@ interface SessionProcessRunner {
 class DefaultSessionProcessRunner(
     private val diagnostics: RuntimeDiagnostics,
     private val logFile: File? = null,
-    private val runtimeProcessLogFile: File? = null
+    private val runtimeProcessLogFile: File? = null,
+    private val processGroups: ProcessGroupController = AndroidProcessGroupController(),
+    private val processGroupLauncher: File? = null
 ) : SessionProcessRunner {
     private val fileLock = Any()
 
@@ -73,25 +78,28 @@ class DefaultSessionProcessRunner(
         args: List<String>,
         environment: Map<String, String>,
         workingDirectory: File?,
-        tag: String
+        tag: String,
+        processGroupId: Long?,
+        createProcessGroup: Boolean
     ): ProcessResult {
         require(executable.exists() && executable.isFile && executable.canExecute()) {
             "Executable missing or not executable: $executable"
         }
-        val builder = ProcessBuilder(listOf(executable.absolutePath) + args)
-        workingDirectory?.let { builder.directory(it) }
-        builder.environment().putAll(environment)
-        val process = builder.start()
-        val pid = RuntimeProcess.parsePidSafely(process.toString())
         val started = System.nanoTime()
+        val spawned = ProcessGroupSpawner.start(
+            listOf(executable.absolutePath) + args, environment, workingDirectory,
+            processGroupId, createProcessGroup, processGroups, processGroupLauncher
+        )
+        val process = spawned.process
+        val pid = spawned.pid
 
         val stdoutThread = pipeReader(process.inputStream, "$tag-stdout", RuntimeDiagnostic.Severity.INFO, tag)
         val stderrThread = pipeReader(process.errorStream, "$tag-stderr", RuntimeDiagnostic.Severity.ERROR, tag)
         stdoutThread.start()
         stderrThread.start()
 
-        recordStructured(RuntimeDiagnostic.Severity.INFO, tag, "Started ${executable.name}; PID=${pid ?: "unknown"}")
-        return ProcessResult(process, pid, stdoutThread, stderrThread, started)
+        recordStructured(RuntimeDiagnostic.Severity.INFO, tag, "Started ${executable.name}; PID=${pid ?: "unknown"}; PGID=${spawned.processGroupId ?: "none"}")
+        return ProcessResult(process, pid, stdoutThread, stderrThread, started, spawned.processGroupId, processGroups)
     }
 
     override fun probeWineserverReady(
@@ -120,6 +128,13 @@ class DefaultSessionProcessRunner(
                 val exited = probeProc.waitFor(200, TimeUnit.MILLISECONDS)
                 if (exited && probeProc.exitValue() == 0) {
                     return true
+                }
+                if (!exited) {
+                    probeProc.destroy()
+                    if (!probeProc.waitFor(100, TimeUnit.MILLISECONDS)) {
+                        probeProc.destroyForcibly()
+                        probeProc.waitFor(250, TimeUnit.MILLISECONDS)
+                    }
                 }
             } catch (_: Exception) {
                 // Ignore transient probe errors during startup
@@ -172,7 +187,8 @@ class WineSessionSupervisor(
     private val runner: SessionProcessRunner = DefaultSessionProcessRunner(
         diagnostics,
         File(context.filesDir, "diagnostics/wine_session.log"),
-        File(context.filesDir, "diagnostics/runtime-process.log")
+        File(context.filesDir, "diagnostics/runtime-process.log"),
+        processGroupLauncher = File(context.applicationInfo.nativeLibraryDir ?: "", "libmo2_process_group.so")
     ),
     private val onSessionFinished: (() -> Unit)? = null
 ) {
@@ -183,6 +199,7 @@ class WineSessionSupervisor(
     private val inputBridge = RuntimeInputBridge()
     @Volatile private var activeBox64Executable: File? = null
     @Volatile private var activeSessionEnvironment: Map<String, String>? = null
+    @Volatile private var sessionProcessGroupId: Long? = null
     private val execProbe = AndroidExecCapabilityProbe(context, diagnostics)
 
     @Volatile var wineserverProcess: ProcessResult? = null
@@ -196,6 +213,7 @@ class WineSessionSupervisor(
 
     @Synchronized
     fun startSession(gameExe: File, options: WineLaunchOptions = WineLaunchOptions()): Boolean {
+        sessionProcessGroupId = null
         val current = stateRef.get()
         if (current != WineSessionState.IDLE && current != WineSessionState.STOPPED && current != WineSessionState.FAILED) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "supervisor", "Cannot start from state $current"))
@@ -255,6 +273,7 @@ class WineSessionSupervisor(
         // Setup input IPC & DLLs
         try {
             deployXInputDlls()
+            deployDxvkDlls(options.useDxvk)
             configureWinePrefixRegistry()
         } catch (error: Exception) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Wine prefix DLL deployment failed: ${error.message}"))
@@ -272,17 +291,28 @@ class WineSessionSupervisor(
 
         // Build environment
         val hostLibDir = File(context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
+        val diagnosticsDirectory = File(context.filesDir, "diagnostics").apply { mkdirs() }
+        val turnipIcd = prepareTurnipIcd()
+        val turnipDirectory = turnipIcd?.let { File(bundleRoot, "turnip") }
+        val dxvkCacheDirectory = File(context.cacheDir, "dxvk-shader-cache").apply { mkdirs() }
+        val dxvkConfig = WineLaunchCommand.writeDxvkConfig(prefix, dxvkCacheDirectory)
         val env = WineLaunchCommand.environment(
             prefix = prefix,
             sharedInput = sharedInput,
             hostLibraryDirectory = hostLibDir,
             fpsCap = options.fpsCap,
+            turnipIcd = turnipIcd,
+            dxvkDirectory = File(bundleRoot, "dxvk/x64").takeIf { options.useDxvk && it.isDirectory },
             guestLibraryDirectory = report.libraryDirectory,
             guestGlibcDirectory = report.guestGlibcDirectory,
             guestBinaryDirectory = wineCandidate.parentFile,
-            dxvkDirectory = File(bundleRoot, "dxvk/x64").takeIf { options.useDxvk && it.isDirectory },
-            useDxvk = options.useDxvk
+            useDxvk = options.useDxvk,
+            additionalHostLibraryDirectory = turnipDirectory,
+            diagnosticsDirectory = diagnosticsDirectory
         ).toMutableMap()
+        env["DXVK_CONFIG_FILE"] = dxvkConfig.absolutePath
+        env["DXVK_SHADER_CACHE_PATH"] = dxvkCacheDirectory.absolutePath
+        env["USERPROFILE"] = "C:\\users\\steamuser"
         env.putAll(options.environmentOverrides)
         activeSessionEnvironment = env.toMap()
 
@@ -290,19 +320,28 @@ class WineSessionSupervisor(
         transitionTo(WineSessionState.STARTING_WINESERVER)
         val wineserverArgs = WineLaunchCommand.wineserverArguments(wineserverCandidate.absolutePath)
         val serverProc = try {
-            runner.start(activeBox64, wineserverArgs, env, prefix, "WINESERVER")
+            runner.start(activeBox64, wineserverArgs, env, prefix, "WINESERVER", createProcessGroup = true)
         } catch (e: Exception) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Failed to start wineserver: ${e.message}"))
             transitionTo(WineSessionState.FAILED)
             return false
         }
         wineserverProcess = serverProc
+        sessionProcessGroupId = serverProc.processGroupId
+        if (sessionProcessGroupId == null) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Unable to establish a dedicated Box64 process group."))
+            reapWineserver(activeBox64, wineserverCandidate, env)
+            transitionTo(WineSessionState.FAILED)
+            return false
+        }
 
         // Readiness probe
         val isReady = runner.probeWineserverReady(activeBox64, wineserverCandidate, prefix, env, timeoutMs = 8000)
         if (!isReady || !serverProc.process.isAlive) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Wineserver readiness probe timed out or server died"))
             reapWineserver(activeBox64, wineserverCandidate, env)
+            serverProc.terminateProcessGroup(300)
+            sessionProcessGroupId = null
             transitionTo(WineSessionState.FAILED)
             return false
         }
@@ -310,12 +349,17 @@ class WineSessionSupervisor(
         // 4. LAUNCHING_TARGET
         transitionTo(WineSessionState.LAUNCHING_TARGET)
         val zPath = WineLaunchCommand.toWineZPath(gameExe.absolutePath)
-        val targetArgs = WineLaunchCommand.arguments(wineCandidate.absolutePath, zPath, options.width, options.height)
+        val playerLog = File(context.filesDir, "diagnostics/mo2_player.log")
+        val targetArgs = WineLaunchCommand.arguments(
+            wineCandidate.absolutePath, zPath, options.width, options.height, playerLog
+        )
         val targetProc = try {
-            runner.start(activeBox64, targetArgs, env, gameExe.parentFile ?: prefix, "BOX64-WINE")
+            runner.start(activeBox64, targetArgs, env, gameExe.parentFile ?: prefix, "BOX64-WINE", processGroupId = sessionProcessGroupId)
         } catch (e: Exception) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Failed to launch target game: ${e.message}"))
             reapWineserver(activeBox64, wineserverCandidate, env)
+            serverProc.terminateProcessGroup(300)
+            sessionProcessGroupId = null
             transitionTo(WineSessionState.FAILED)
             return false
         }
@@ -323,47 +367,148 @@ class WineSessionSupervisor(
 
         // 5. RUNNING & Crash Coupling Watchdog
         transitionTo(WineSessionState.RUNNING)
+        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor",
+            "Game process entered RUNNING state. This confirms process launch only; DXVK D3D11 device creation and an actual SurfaceView frame are not yet verified."))
         startCrashCouplingWatchdog(activeBox64, wineserverCandidate, env)
         return true
     }
 
     private fun bootstrapPrefix(box64: File, wine: File, guestLibraryDirectory: File?, guestGlibcDirectory: File?): Boolean {
-        val systemReg = File(prefix, "system.reg")
-        val system32 = File(prefix, "drive_c/windows/system32")
-        system32.mkdirs()
+        // Migrate the previous per-game prefix without discarding user registry state.
+        val legacyPrefix = File(context.filesDir, "wineprefix")
+        if (!prefix.exists() && legacyPrefix.isDirectory) {
+            val prefixParent = prefix.parentFile
+            if (prefixParent != null && !prefixParent.isDirectory && !prefixParent.mkdirs()) return false
+            if (!legacyPrefix.renameTo(prefix)) {
+                diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
+                    "Unable to migrate legacy Wine prefix from ${legacyPrefix.absolutePath}."))
+                return false
+            }
+        }
 
-        if (systemReg.isFile) {
-            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor", "Existing WINEPREFIX validated at ${prefix.absolutePath}"))
+        val missingGlibcFiles = WineRuntimeModuleValidator.missingGuestGlibcFiles(guestGlibcDirectory)
+        if (missingGlibcFiles.isNotEmpty()) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
+                "Wine guest glibc closure is incomplete: " + missingGlibcFiles.joinToString { it.absolutePath }))
+            return false
+        }
+        val missingWineFiles = WineRuntimeModuleValidator.missingWineModules(guestLibraryDirectory)
+        if (missingWineFiles.isNotEmpty()) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
+                "Wine runtime is missing required Unix/Windows modules: " + missingWineFiles.joinToString { it.absolutePath }))
+            return false
+        }
+
+        val systemReg = File(prefix, "system.reg")
+        val userReg = File(prefix, "user.reg")
+        val system32 = File(prefix, "drive_c/windows/system32")
+        if (!system32.mkdirs() && !system32.isDirectory) return false
+        val localLow = File(prefix, "drive_c/users/steamuser/AppData/LocalLow")
+        val documents = File(prefix, "drive_c/users/steamuser/Documents")
+        if (!localLow.mkdirs() && !localLow.isDirectory) return false
+        if (!documents.mkdirs() && !documents.isDirectory) return false
+        if (!localLow.canWrite() || !documents.canWrite()) return false
+
+        if (systemReg.isFile && systemReg.length() > 0L && userReg.isFile && userReg.length() > 0L) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor",
+                "Existing WINEPREFIX registry files validated at ${prefix.absolutePath}"))
             return true
         }
 
-        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor", "Initializing new WINEPREFIX at ${prefix.absolutePath}"))
+        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor",
+            "Initializing win64 WINEPREFIX at ${prefix.absolutePath}"))
         val bootArgs = WineLaunchCommand.winebootArguments(wine.absolutePath)
+        val hostLibraryDir = context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir
         val env = buildMap {
+            put("WINEARCH", "win64")
             put("WINEPREFIX", prefix.absolutePath)
-            put("WINEDLLOVERRIDES", "xinput1_3,xinput1_4,xinput9_1_0=n,b")
-            put("LD_LIBRARY_PATH", context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
+            put("WINEDLLPATH", guestLibraryDirectory?.absolutePath.orEmpty())
+            put("WINEDLLOVERRIDES", "steam_api64=b;xinput1_3,xinput1_4=n,b;xinput9_1_0=n,b;UnityCrashHandler64.exe=d")
+            put("USERPROFILE", "C:\\users\\steamuser")
+            put("LD_LIBRARY_PATH", hostLibraryDir)
             put("BOX64_PATH", wine.parentFile?.absolutePath.orEmpty())
             put("BOX64_DYNAREC", "1")
+            put("BOX64_DYNAREC_BIGBLOCK", "1")
+            put("BOX64_DYNAREC_STRONGMEM", "1")
+            put("BOX64_DYNAREC_SAFEFLAGS", "1")
+            put("BOX64_DYNAREC_CALLRET", "1")
             WineLaunchCommand.guestLibrarySearchPath(guestGlibcDirectory, guestLibraryDirectory)?.let {
                 put("BOX64_LD_LIBRARY_PATH", it)
             }
         }
 
         return try {
-            val proc = runner.start(box64, bootArgs, env, prefix, "BOX64-WINE")
-            val exit = proc.waitFor(20000)
-            if (exit.timedOut || (exit.exitCode != null && exit.exitCode != 0)) {
-                diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "wineboot initialization failed: exit=${exit.exitCode}, timedOut=${exit.timedOut}"))
+            val proc = runner.start(box64, bootArgs, env, prefix, "WINEBOOT", createProcessGroup = true)
+            val exit = proc.waitFor(30000)
+            if (exit.timedOut || exit.exitCode != 0) {
+                proc.terminateProcessGroup(gracePeriodMs = 300)
+                diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
+                    "wineboot --init failed: exit=${exit.exitCode}, timedOut=${exit.timedOut}"))
                 false
             } else {
-                diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor", "wineboot prefix bootstrap completed successfully"))
-                true
+                val deadline = System.currentTimeMillis() + 10000L
+                while (System.currentTimeMillis() < deadline &&
+                    (!systemReg.isFile || systemReg.length() == 0L || !userReg.isFile || userReg.length() == 0L)) {
+                    Thread.sleep(100)
+                }
+                val registryReady = systemReg.isFile && systemReg.length() > 0L &&
+                    userReg.isFile && userReg.length() > 0L
+                if (!registryReady) {
+                    proc.terminateProcessGroup(gracePeriodMs = 300)
+                    diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
+                        "wineboot exited successfully but system.reg/user.reg were not created."))
+                    false
+                } else {
+                    val bootstrapGroupCleaned = proc.terminateProcessGroup(gracePeriodMs = 300)
+                    diagnostics.record(RuntimeDiagnostic(
+                        if (bootstrapGroupCleaned) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.ERROR,
+                        "supervisor",
+                        "wineboot --init completed; temporary bootstrap process group cleanup success=$bootstrapGroupCleaned."
+                    ))
+                    bootstrapGroupCleaned
+                }
             }
         } catch (e: Exception) {
-            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "wineboot invocation threw: ${e.message}"))
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor",
+                "wineboot invocation threw: ${e.message}"))
             false
         }
+    }
+
+    /**
+     * Rewrites the optional Turnip ICD into app-private session storage so its
+     * library_path is absolute and independent of the source archive's layout.
+     */
+    private fun prepareTurnipIcd(): File? {
+        val turnipDirectory = File(bundleRoot, "turnip")
+        val turnipLibrary = File(turnipDirectory, "libvulkan_freedreno.so")
+        val sourceIcd = File(turnipDirectory, "freedreno_icd.aarch64.json")
+        if (!turnipLibrary.exists() && !sourceIcd.exists()) return null
+        if (!turnipLibrary.isFile || turnipLibrary.length() <= 0L || !sourceIcd.isFile || sourceIcd.length() <= 0L) {
+            throw IOException("Turnip bundle is incomplete: both libvulkan_freedreno.so and freedreno_icd.aarch64.json are required.")
+        }
+        val manifest = try {
+            JSONObject(sourceIcd.readText(Charsets.UTF_8))
+        } catch (error: Exception) {
+            throw IOException("Turnip ICD JSON is invalid: ${error.message}", error)
+        }
+        val icd = manifest.optJSONObject("ICD")
+            ?: throw IOException("Turnip ICD JSON is missing the ICD object.")
+        icd.put("library_path", turnipLibrary.absolutePath)
+        val sessionDirectory = File(context.filesDir, "runtime-session")
+        if (!sessionDirectory.mkdirs() && !sessionDirectory.isDirectory) {
+            throw IOException("Unable to create runtime-session directory for Turnip ICD.")
+        }
+        val sessionIcd = File(sessionDirectory, "freedreno_icd.aarch64.json")
+        sessionIcd.writeText(manifest.toString(2), Charsets.UTF_8)
+        val verified = JSONObject(sessionIcd.readText(Charsets.UTF_8))
+            .optJSONObject("ICD")?.optString("library_path").orEmpty()
+        if (verified != turnipLibrary.absolutePath) {
+            throw IOException("Turnip ICD library_path did not persist as an absolute extracted path.")
+        }
+        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor",
+            "Turnip ICD configured with absolute library path: ${turnipLibrary.absolutePath}"))
+        return sessionIcd
     }
 
     private fun configureWinePrefixRegistry() {
@@ -374,14 +519,18 @@ class WineSessionSupervisor(
         }
         val current = runCatching { userReg.readText() }.getOrDefault("")
         val marker = "[Software\\Wine\\Direct3D]"
-        if (!current.contains(marker)) {
-            userReg.appendText(
-                "\n[Software\\Wine\\Direct3D]\n" +
-                    "\"csmt\"=\"enabled\"\n" +
-                    "\n[Software\\Wine\\WineDbg]\n" +
-                    "\"ShowCrashDialog\"=dword:00000000\n"
-            )
+        val additions = buildString {
+            if (!current.contains("\"Version\"=\"win10\"")) {
+                append("\n[Software\\Wine]\n\"Version\"=\"win10\"\n")
+            }
+            if (!current.contains(marker)) {
+                append("\n[Software\\Wine\\Direct3D]\n")
+                append("\"csmt\"=\"enabled\"\n")
+                append("\n[Software\\Wine\\WineDbg]\n")
+                append("\"ShowCrashDialog\"=dword:00000000\n")
+            }
         }
+        if (additions.isNotEmpty()) userReg.appendText(additions)
     }
 
     private fun deployXInputDlls() {
@@ -405,6 +554,34 @@ class WineSessionSupervisor(
                 throw IOException("Required Wine system32 DLL was not installed: $dll")
             }
         }
+    }
+
+    private fun deployDxvkDlls(enabled: Boolean) {
+        if (!enabled) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor",
+                "DXVK deployment skipped because the D3D11 backend is disabled."))
+            return
+        }
+        val sourceDirectory = File(bundleRoot, "dxvk/x64")
+        val system32 = File(prefix, "drive_c/windows/system32")
+        if (!system32.mkdirs() && !system32.isDirectory) {
+            throw IOException("Unable to create Wine system32 directory for DXVK.")
+        }
+        for (dll in listOf("d3d11.dll", "dxgi.dll")) {
+            val source = File(sourceDirectory, dll)
+            if (!source.isFile || source.length() <= 0L ||
+                !RuntimeBinaryInspector.matches(source, RuntimeBinaryInspector.PE32_PLUS_X86_64)) {
+                throw IOException("DXVK DLL is missing or not PE32+ x86-64: ${source.absolutePath}")
+            }
+            val destination = File(system32, dll)
+            source.copyTo(destination, overwrite = true)
+            if (!destination.isFile || destination.length() != source.length() ||
+                !RuntimeBinaryInspector.matches(destination, RuntimeBinaryInspector.PE32_PLUS_X86_64)) {
+                throw IOException("DXVK system32 deployment verification failed: ${destination.absolutePath}")
+            }
+        }
+        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor",
+            "DXVK d3d11.dll and dxgi.dll deployed to ${system32.absolutePath}."))
     }
 
     private fun startCrashCouplingWatchdog(
@@ -480,46 +657,48 @@ class WineSessionSupervisor(
         // 1. Neutralize input
         inputBridge.neutralizeAllPlayers()
 
-        // 2. Stop target process
-        targetProcess?.let { p ->
-            p.stop(gracePeriodMs = 500)
-            if (p.process.isAlive) {
-                p.process.destroyForcibly()
-            }
-        }
-        targetProcess = null
-
-        // 3. Stop wineserver process via wineserver -k + destroyForcibly fallback
+        // 2. Ask Wine to terminate all prefix-owned guest processes before killing Box64 hosts.
         val b64 = box64Override ?: activeBox64Executable
         val ws = wineserverOverride ?: WineServerResolver.resolve(bundleRoot)
         val env = envOverride ?: activeSessionEnvironment ?: mapOf("WINEPREFIX" to prefix.absolutePath)
-        if (b64 != null && ws != null) {
-            reapWineserver(b64, ws, env)
-        } else {
-            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "supervisor", "Skipping wineserver cleanup: no validated nativeLibraryDir Box64 executable is retained."))
+        if (b64 == null || ws == null) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "supervisor", "wineserver -k unavailable; process-group termination will still be attempted."))
         }
-        wineserverProcess?.let { sp ->
-            if (sp.process.isAlive) {
-                sp.stop(gracePeriodMs = 300)
-                if (sp.process.isAlive) sp.process.destroyForcibly()
-            }
-        }
-        wineserverProcess = null
 
-        // 4. Destroy input bridge
-        inputBridge.destroy()
+        // 3. Required order: wineserver -k, process-group SIGTERM/SIGKILL, then state cleanup.
+        val groupOwner = targetProcess ?: wineserverProcess
+        val cleanupSucceeded = runSessionTerminationSequence(
+            stopWineserver = { b64 != null && ws != null && reapWineserver(b64, ws, env) },
+            terminateProcessGroup = {
+                val terminated = groupOwner?.terminateProcessGroup(gracePeriodMs = 500) ?: true
+                targetProcess?.let { it.stop(100) }
+                wineserverProcess?.let { it.stop(100) }
+                targetProcess = null
+                wineserverProcess = null
+                sessionProcessGroupId = null
+                terminated
+            },
+            cleanupState = { runCatching { inputBridge.destroy(); true }.getOrDefault(false) }
+        )
 
-        // 5. Final state
-        transitionTo(if (markFailed) WineSessionState.FAILED else WineSessionState.STOPPED)
-        diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "supervisor", "Session shutdown completed successfully."))
-        return true
+        transitionTo(if (markFailed || !cleanupSucceeded) WineSessionState.FAILED else WineSessionState.STOPPED)
+        diagnostics.record(RuntimeDiagnostic(
+            if (cleanupSucceeded) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.ERROR,
+            "supervisor",
+            "Session shutdown completed; process-group cleanup success=$cleanupSucceeded."
+        ))
+        return cleanupSucceeded
     }
 
-    private fun reapWineserver(box64: File, wineserver: File, env: Map<String, String>) {
-        runCatching {
+    private fun reapWineserver(box64: File, wineserver: File, env: Map<String, String>): Boolean {
+        return runCatching {
             val killArgs = WineLaunchCommand.wineserverKillArguments(wineserver.absolutePath)
             val proc = runner.start(box64, killArgs, env, prefix, "WINESERVER")
-            proc.waitFor(2000)
+            val result = proc.waitFor(2000)
+            !result.timedOut && result.exitCode == 0
+        }.getOrElse {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "supervisor", "wineserver -k failed: ${it.message}"))
+            false
         }
     }
 
@@ -532,4 +711,37 @@ class WineSessionSupervisor(
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "supervisor", "Ignoring invalid transition: $prev -> $next"))
         }
     }
+}
+
+
+internal fun runSessionTerminationSequence(
+    stopWineserver: () -> Boolean,
+    terminateProcessGroup: () -> Boolean,
+    cleanupState: () -> Boolean
+): Boolean {
+    var success = true
+    for (step in listOf(stopWineserver, terminateProcessGroup, cleanupState)) {
+        if (!runCatching { step() }.getOrDefault(false)) success = false
+    }
+    return success
+}
+
+/** Strictly validates the guest x86-64 glibc closure and Wine loader modules before wineboot. */
+object WineRuntimeModuleValidator {
+    private val glibcNames = listOf(
+        "ld-linux-x86-64.so.2", "libc.so.6", "libm.so.6",
+        "libpthread.so.0", "libdl.so.2", "librt.so.1"
+    )
+    private val wineModules = listOf(
+        "x86_64-unix/ntdll.so", "x86_64-unix/win32u.so",
+        "x86_64-windows/kernel32.dll", "x86_64-windows/user32.dll"
+    )
+
+    fun missingGuestGlibcFiles(directory: File?): List<File> =
+        glibcNames.map { name -> directory?.let { File(it, name) } ?: File(name) }
+            .filter { !it.isFile || it.length() <= 0L }
+
+    fun missingWineModules(directory: File?): List<File> =
+        wineModules.map { relative -> directory?.let { File(it, relative) } ?: File(relative) }
+            .filter { !it.isFile || it.length() <= 0L }
 }

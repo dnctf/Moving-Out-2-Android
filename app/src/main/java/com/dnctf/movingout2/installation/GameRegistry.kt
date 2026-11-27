@@ -115,7 +115,7 @@ class GameRegistry(
 
     private fun validateAndCacheImported(rootPath: String, displayName: String): RegisteredGame {
         val rootFile = File(rootPath)
-        val report = fileValidator.validate(rootFile)
+        val report = fileValidator.validate(rootFile, runtimeBundleRoot = File(context.filesDir, "native_runtime/bundle"))
         val now = System.currentTimeMillis()
         val id = "internal:$rootPath"
         repository.markValidated(id, now)
