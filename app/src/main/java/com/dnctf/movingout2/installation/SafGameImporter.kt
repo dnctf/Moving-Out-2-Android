@@ -30,12 +30,18 @@ class SafGameImporter(
         private val importLock = ReentrantLock()
     }
 
+    private val stageDiagnostics = RuntimeStageDiagnostics(context)
+
     fun import(
         uri: Uri,
         onProgress: (SafGameImportProgress) -> Unit = {},
         cancelled: () -> Boolean = { false }
     ): SafGameImportResult = importLock.withLock {
-        importLocked(uri, onProgress, cancelled)
+        stageDiagnostics.event("STAGE_1_SAF_IMPORT", "START", mapOf("uriScheme" to uri.scheme))
+        runCatching { importLocked(uri, onProgress, cancelled) }
+            .onSuccess { stageDiagnostics.event("STAGE_1_SAF_IMPORT", "PASS", mapOf("files" to it.copiedFiles, "bytes" to it.copiedBytes, "integrity" to "validated")) }
+            .onFailure { stageDiagnostics.event("STAGE_1_SAF_IMPORT", "FAIL", error = it) }
+            .getOrThrow()
     }
 
     private fun importLocked(
