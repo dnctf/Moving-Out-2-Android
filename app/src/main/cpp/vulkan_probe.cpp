@@ -26,18 +26,6 @@ static std::string join(const std::vector<std::string>& values) {
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_dnctf_movingout2_runtime_NativeProcessGroup_assignNative(
-    JNIEnv*, jobject, jlong pid, jlong processGroupId) {
-    return setpgid(static_cast<pid_t>(pid), static_cast<pid_t>(processGroupId)) == 0 ? JNI_TRUE : JNI_FALSE;
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
-Java_com_dnctf_movingout2_runtime_NativeProcessGroup_signalProcessNative(
-    JNIEnv*, jobject, jlong pid, jint signal) {
-    return kill(static_cast<pid_t>(pid), signal) == 0 ? JNI_TRUE : JNI_FALSE;
-}
-
-extern "C" JNIEXPORT jboolean JNICALL
 Java_com_dnctf_movingout2_runtime_NativeProcessGroup_signalGroupNative(
     JNIEnv*, jobject, jlong processGroupId, jint signal) {
     return kill(-static_cast<pid_t>(processGroupId), signal) == 0 ? JNI_TRUE : JNI_FALSE;
