@@ -182,7 +182,7 @@ jobs:
           unzip -l "$APK_PATH" | grep -F "lib/arm64-v8a/libbox64.so"
           unzip -lv "$APK_PATH" | grep -F "lib/arm64-v8a/libbox64.so" | grep -Eq "Defl:N"
           mkdir -p "$RUNNER_TEMP/apk-native"
-          for so in libbox64.so libmo2_input_bridge.so libvulkan_probe.so; do
+          for so in libbox64.so libmo2_input_bridge.so libvulkan_probe.so libmo2_process_group.so; do
             unzip -p "$APK_PATH" "lib/arm64-v8a/$so" > "$RUNNER_TEMP/apk-native/$so"
             file "$RUNNER_TEMP/apk-native/$so" | grep -F "ELF 64-bit LSB"
             readelf -h "$RUNNER_TEMP/apk-native/$so" | grep -Eq "Class:.*ELF64"
@@ -192,6 +192,8 @@ jobs:
           cmp "$RUNNER_TEMP/apk-native/libbox64.so" app/src/main/jniLibs/arm64-v8a/libbox64.so
           unzip -l "$APK_PATH" | grep -F "lib/arm64-v8a/libvulkan_probe.so"
           unzip -l "$APK_PATH" | grep -F "lib/arm64-v8a/libmo2_input_bridge.so"
+          unzip -l "$APK_PATH" | grep -F "lib/arm64-v8a/libmo2_process_group.so"
+          readelf -h "$RUNNER_TEMP/apk-native/libmo2_process_group.so" | grep -Eq "Type:.*DYN"
           unzip -l "$APK_PATH" | grep -F "assets/runtime/xinput1_3.dll"
           unzip -l "$APK_PATH" | grep -F "assets/runtime/xinput1_4.dll"
           unzip -l "$APK_PATH" | grep -F "assets/runtime/xinput9_1_0.dll"
