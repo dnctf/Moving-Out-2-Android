@@ -43,7 +43,10 @@ class GameLaunchSurfaceCoordinator {
         val shouldStop = state == GameLaunchSurfaceState.RUNNING ||
             state == GameLaunchSurfaceState.SURFACE_READY ||
             state == GameLaunchSurfaceState.WAITING_FOR_SURFACE
-        state = if (shouldStop) GameLaunchSurfaceState.STOPPING else GameLaunchSurfaceState.IDLE
+        state = when (state) {
+            GameLaunchSurfaceState.RUNNING, GameLaunchSurfaceState.SURFACE_READY -> GameLaunchSurfaceState.STOPPING
+            else -> GameLaunchSurfaceState.IDLE
+        }
         return SurfaceLaunchDecision(false, shouldStop, state)
     }
 
