@@ -63,7 +63,7 @@ object ProcessGroupSpawner {
         } else {
             // Stop the child before exec so the parent can atomically assign its PGID.
             // This avoids the setpgid-after-exec EACCES race on Android.
-            val stopScript = "kill -STOP " + 36.toChar() + 36.toChar() + "; exec " + 36.toChar() + "@"
+            val stopScript = "kill -STOP " + 36.toChar() + 36.toChar() + "; exec \"" + 36.toChar() + "@\""
             val shellCommand = listOf(shell().absolutePath, "-c", stopScript, "mo2-process-group") + command
             val child = ProcessBuilder(shellCommand).apply {
                 if (workingDirectory != null) directory(workingDirectory)
