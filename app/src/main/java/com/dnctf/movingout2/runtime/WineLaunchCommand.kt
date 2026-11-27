@@ -50,6 +50,7 @@ object WineLaunchCommand {
             "DXVK_FRAME_RATE" to fpsCap.coerceIn(15, 240).toString(),
             "LD_LIBRARY_PATH" to hostLibraryDirectory.absolutePath
         )
+        guestLibraryDirectory?.takeIf { it.isDirectory && it.canRead() }?.let { result["WINEDLLPATH"] = it.absolutePath }
         guestLibrarySearchPath(guestGlibcDirectory, guestLibraryDirectory)?.let {
             result["BOX64_LD_LIBRARY_PATH"] = it
         }
