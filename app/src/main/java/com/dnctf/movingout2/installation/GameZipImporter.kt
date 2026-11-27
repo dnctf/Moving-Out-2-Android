@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
 import java.util.zip.ZipFile
 import com.dnctf.movingout2.core.logging.ImportDiagnosticJournal
+import com.dnctf.movingout2.runtime.RuntimeStageDiagnostics
 
 interface ImportFaultInjector {
     fun onPreflightComplete() {}
@@ -39,6 +40,7 @@ class GameZipImporter(
     }
 
     private val resolver = context.contentResolver
+    private val stageLog = RuntimeStageDiagnostics(context)
     private val appContext = context.applicationContext
     val root = File(context.filesDir, "game_import")
     val staging = File(context.filesDir, "game_import_staging")
@@ -51,6 +53,7 @@ class GameZipImporter(
         onProgress: (ImportProgress) -> Unit = {},
         faultInjector: ImportFaultInjector? = null
     ): GameZipImportResult {
+        stageLog.event("STAGE_1_SAF_IMPORT", "GAME_ZIP_START", mapOf("uriScheme" to uri.scheme))
         val lock = getLockFor(root)
         if (!lock.tryLock()) {
             throw IllegalStateException("Game import already in progress for destination: ${root.absolutePath}")
@@ -157,9 +160,11 @@ class GameZipImporter(
                 backup.deleteRecursively()
                 journal.checkpoint("GAME_ZIP", archiveName, sourceZip.length(), entryCount, bytesWritten, spaceBefore, runCatching { StatFs(storagePath).availableBytes }.getOrNull(), stage="ACTIVATED", activationStatus="SUCCESS", rollbackStatus="NOT_REQUIRED")
                 onProgress(ImportProgress("Complete", normalized.size, normalized.size, bytesWritten, totalBytes))
+                stageLog.event("STAGE_1_SAF_IMPORT", "GAME_ZIP_PASS", mapOf("entries" to entryCount, "files" to entriesDone, "bytes" to bytesWritten, "integrity" to "validated", "rollback" to "not_required"))
                 return GameZipImportResult(entriesDone, bytesWritten, active)
             }
         } catch (e: Exception) {
+            stageLog.event("STAGE_1_SAF_IMPORT", "GAME_ZIP_FAIL", mapOf("entries" to entryCount, "bytes" to extractedBytes), e)
             staging.deleteRecursively()
             val rollback = runCatching { rollbackActivation() }
             journal.checkpoint("GAME_ZIP", archiveName, sourceZip.length().takeIf { sourceZip.exists() }, entryCount, extractedBytes, spaceBefore, runCatching { StatFs(storagePath).availableBytes }.getOrNull(), stage="IMPORT_FAILED", activationStatus="FAILED", rollbackStatus=if (rollback.isSuccess) "ROLLBACK_COMPLETED" else "ROLLBACK_FAILED", error=rollback.exceptionOrNull() ?: e)
