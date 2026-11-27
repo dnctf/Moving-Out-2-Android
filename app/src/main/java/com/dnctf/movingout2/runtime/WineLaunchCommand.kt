@@ -36,6 +36,7 @@ object WineLaunchCommand {
         val overrides = buildList {
             if (useDxvk) add("d3d11,dxgi=n,b") else add("d3d11,dxgi=b")
             add("xinput1_3,xinput1_4,xinput9_1_0=n,b")
+            add("steam_api64=b")
         }.joinToString(";")
         val result = linkedMapOf(
             "WINEPREFIX" to prefix.absolutePath,
