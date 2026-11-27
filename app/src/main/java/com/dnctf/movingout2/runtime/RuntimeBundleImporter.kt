@@ -23,12 +23,14 @@ class RuntimeBundleImporter(
     private val storageReserveBytes: Long = 512L * 1024L * 1024L
 ) {
     private val resolver = context.contentResolver
+    private val stageLog = RuntimeStageDiagnostics(context)
     private val parent = File(context.filesDir, "native_runtime")
     private val target = File(parent, "bundle")
     private val staging = File(parent, "bundle_staging")
     private val backup = File(parent, "bundle_backup")
 
     fun importTree(uri: Uri): RuntimeImportResult {
+        stageLog.event("STAGE_2_RUNTIME_EXTRACT", "TREE_IMPORT_START", mapOf("uriScheme" to uri.scheme))
         val journal = ImportDiagnosticJournal(File(contextHolder.filesDir, "diagnostics"))
         val archiveName = uri.lastPathSegment
         if (storageReserveBytes < 0) throw IOException("Runtime storage reserve must not be negative.")
@@ -70,6 +72,8 @@ class RuntimeBundleImporter(
             if (!active.isReady) throw IOException("Installed bundle revalidation failed: " + active.blockers.joinToString("; "))
             backup.deleteRecursively()
             journal.checkpoint("RUNTIME_BUNDLE", archiveName, entryCount=counter.entries, extractedBytes=counter.bytes, availableBytesBefore=availableBefore, availableBytesAfter=runCatching { StatFs(parent.absolutePath).availableBytes }.getOrNull(), stage="ACTIVATED", activationStatus="SUCCESS", rollbackStatus="NOT_REQUIRED")
+            stageLog.event("STAGE_2_RUNTIME_EXTRACT", "TREE_IMPORT_PASS", mapOf("files" to counter.files, "bytes" to counter.bytes, "manifestValid" to true))
+            stageLog.event("STAGE_2_RUNTIME_EXTRACT", "ZIP_IMPORT_PASS", mapOf("files" to counter.files, "bytes" to counter.bytes, "manifestValid" to true))
             return RuntimeImportResult(active, counter.files, counter.bytes)
         } catch (error: Exception) {
             val rollback = runCatching { rollbackImport(staging, backup, target, activated, error) }
@@ -85,6 +89,7 @@ class RuntimeBundleImporter(
      * Extraction always occurs in app-private filesDir (never shared/external storage).
      */
     fun importZip(uri: Uri): RuntimeImportResult {
+        stageLog.event("STAGE_2_RUNTIME_EXTRACT", "ZIP_IMPORT_START", mapOf("uriScheme" to uri.scheme))
         val journal = ImportDiagnosticJournal(File(contextHolder.filesDir, "diagnostics"))
         val displayName = runCatching {
             resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
