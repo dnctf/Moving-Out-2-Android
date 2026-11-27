@@ -20,6 +20,9 @@ import android.widget.CheckBox
 import android.widget.Button
 import android.widget.ScrollView
 import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.graphics.Color
+import android.view.Surface
 import android.os.Handler
 import android.os.Looper
 import com.dnctf.movingout2.runtime.RuntimeDiagnostic
@@ -38,6 +41,9 @@ import com.dnctf.movingout2.installation.InstallationRepository
 import com.dnctf.movingout2.runtime.RuntimeBundleImporter
 import com.dnctf.movingout2.runtime.RuntimeLaunchConfig
 import com.dnctf.movingout2.graphics.VulkanCapabilities
+import com.dnctf.movingout2.graphics.GameSurfaceHost
+import com.dnctf.movingout2.graphics.SurfaceLifecycleListener
+import com.dnctf.movingout2.graphics.VulkanNativeProbe
 import com.dnctf.movingout2.runtime.RuntimeBundleValidator
 import com.dnctf.movingout2.runtime.RuntimeInstallationState
 import com.dnctf.movingout2.runtime.AndroidExecCapabilityProbe
@@ -63,6 +69,11 @@ class MainActivity : Activity() {
     private val runtimeInstallInProgress = AtomicBoolean(false)
     private val gameImportInProgress = AtomicBoolean(false)
     private val launchReadinessCoordinator = com.dnctf.movingout2.runtime.LaunchReadinessCoordinator()
+    private val gameLaunchSurfaceCoordinator = com.dnctf.movingout2.runtime.GameLaunchSurfaceCoordinator()
+    @Volatile private var gameSurfaceHost: GameSurfaceHost? = null
+    @Volatile private var pendingGameExecutable: File? = null
+    @Volatile private var pendingGameLaunchOptions: com.dnctf.movingout2.runtime.WineLaunchOptions? = null
+    @Volatile private var surfaceLaunchGeneration: Int = 0
     @Volatile private var vulkanAvailable = false
     @Volatile private var graphicsProbeComplete = false
     private val graphicsProbeInProgress = AtomicBoolean(false)
@@ -343,6 +354,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        VulkanNativeProbe.detachSessionSurface()
         activeWineSession?.let { session ->
             Thread({ session.shutdownAll() }, "wine-session-destroy").apply { isDaemon = true; start() }
         }
@@ -739,16 +751,18 @@ class MainActivity : Activity() {
             return
         }
         val existing = activeWineSession
-        if (existing != null && existing.state == WineSessionState.RUNNING) {
+        if (existing?.state == WineSessionState.RUNNING) {
             Thread({
                 existing.shutdownAll()
                 activeWineSession = null
-                runOnUiThread {
-                    playButton.text = "Play Moving Out 2"
-                    refreshRuntimeStatus()
-                    Toast.makeText(this, "Game session stopped.", Toast.LENGTH_LONG).show()
-                }
+                runOnUiThread { finishGameSurface("Game session stopped.") }
             }, "wine-session-stop").apply { isDaemon = true; start() }
+            return
+        }
+        if (gameSurfaceHost != null) {
+            runtimeStatus.text = if (gameSurfaceHost?.isSurfaceAvailable == true)
+                "Android game surface is ready; validating presentation target…"
+            else "Waiting for GameSurfaceHost surfaceCreated and a valid non-zero size…"
             return
         }
         val active = runCatching { gameRegistry.getActiveGame() }.getOrNull()
@@ -767,24 +781,6 @@ class MainActivity : Activity() {
             return
         }
         val root = File(filesDir, "native_runtime/bundle")
-        playButton.isEnabled = false
-        runtimeStatus.text = "Starting Box64 / Wine session…"
-        val supervisor = WineSessionSupervisor(
-            this, root, "moving-out-2", diagnosticLog,
-            onSessionFinished = {
-                runOnUiThread {
-                    if (!isFinishing && !isDestroyed) {
-                        activeWineSession = null
-                        removeVirtualGamepad()
-                        playButton.text = "Play Moving Out 2"
-                        playButton.isEnabled = lastLaunchReady
-                        playButton.alpha = if (lastLaunchReady) 1f else 0.55f
-                        runtimeStatus.text = "Game process exited. Manual relaunch is available when readiness remains READY."
-                        refreshRuntimeStatus()
-                    }
-                }
-            }
-        )
         val displayWidth = maxOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
         val displayHeight = minOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
         val runtimeSettings = RuntimeSettingsConsumer().consume(
@@ -792,30 +788,163 @@ class MainActivity : Activity() {
             File(root, "turnip/freedreno_icd.aarch64.json").takeIf { it.isFile },
             File(root, "dxvk/x64").takeIf { it.isDirectory }
         )
+        pendingGameExecutable = gameExe
+        pendingGameLaunchOptions = runtimeSettings.launchOptions
+        surfaceLaunchGeneration += 1
+        gameLaunchSurfaceCoordinator.requestLaunch()
+
+        val host = GameSurfaceHost(this).apply {
+            setBackgroundColor(Color.BLACK)
+            lifecycleListener = object : SurfaceLifecycleListener {
+                override fun onSurfaceCreated(surface: Surface, width: Int, height: Int) {
+                    validateSurfaceAndLaunch(this@MainActivity.gameSurfaceHost, surface, width, height)
+                }
+
+                override fun onSurfaceChanged(surface: Surface, width: Int, height: Int) {
+                    if (width > 0 && height > 0) {
+                        val resized = VulkanNativeProbe.resizeSessionSurface(surface, width, height)
+                        diagnosticLog.record(RuntimeDiagnostic(
+                            if (resized) RuntimeDiagnostic.Severity.INFO else RuntimeDiagnostic.Severity.WARNING,
+                            "surface",
+                            "Surface size changed to ${width}x${height}; native window resize lease success=$resized."
+                        ))
+                    }
+                }
+
+                override fun onSurfaceDestroyed() {
+                    VulkanNativeProbe.detachSessionSurface()
+                    val decision = gameLaunchSurfaceCoordinator.onSurfaceDestroyed()
+                    surfaceLaunchGeneration += 1
+                    pendingGameExecutable = null
+                    pendingGameLaunchOptions = null
+                    if (decision.stopSession) {
+                        val session = activeWineSession
+                        if (session != null) {
+                            Thread({
+                                session.shutdownAll()
+                                activeWineSession = null
+                                runOnUiThread { finishGameSurface("Game surface destroyed; Wine session stopped safely.") }
+                            }, "wine-surface-destroyed").apply { isDaemon = true; start() }
+                        } else {
+                            runOnUiThread { finishGameSurface("Surface disappeared before runtime launch; launch cancelled.") }
+                        }
+                    }
+                }
+            }
+        }
+        gameSurfaceHost = host
+        playButton.isEnabled = false
+        runtimeStatus.text = "Waiting for Android SurfaceView before starting Box64 / Wine…"
+        addContentView(host, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+        ))
+        host.bringToFront()
+    }
+
+    private fun validateSurfaceAndLaunch(host: GameSurfaceHost?, surface: Surface, width: Int, height: Int) {
+        if (host == null || width <= 0 || height <= 0 || !surface.isValid) return
+        val generation = surfaceLaunchGeneration
         Thread({
-            val started = runCatching { supervisor.startSession(gameExe, runtimeSettings.launchOptions) }
+            val retained = VulkanNativeProbe.attachSessionSurface(surface, width, height)
+            val probe = if (retained) host.probeCurrentSwapchain() else null
             runOnUiThread {
-                if (isFinishing || isDestroyed) {
-                    supervisor.shutdownAll()
+                if (generation != surfaceLaunchGeneration || gameSurfaceHost !== host ||
+                    host.isSurfaceAvailable.not() || isFinishing || isDestroyed) {
+                    VulkanNativeProbe.detachSessionSurface()
                     return@runOnUiThread
                 }
-                if (started.getOrDefault(false) && supervisor.state == WineSessionState.RUNNING) {
-                    activeWineSession = supervisor
+                if (!retained || probe?.isReady != true) {
+                    diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "surface",
+                        "Android surface/Vulkan swapchain preflight failed: ${probe?.detail ?: "native ANativeWindow attach failed"}"))
+                    VulkanNativeProbe.detachSessionSurface()
+                    finishGameSurface("Surface presentation preflight failed. Wine was not launched.")
+                    return@runOnUiThread
+                }
+                val decision = gameLaunchSurfaceCoordinator.onSurfaceReady(width, height)
+                if (!decision.launchAllowed) return@runOnUiThread
+                val executable = pendingGameExecutable ?: return@runOnUiThread
+                val options = pendingGameLaunchOptions?.copy(width = width, height = height) ?: return@runOnUiThread
+                diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.INFO, "surface",
+                    "Surface is valid (${width}x${height}); Android Vulkan swapchain acquire/present probe passed. This probe is not the DXVK guest WSI path."))
+                launchWineSessionOnSurface(executable, options, generation)
+            }
+        }, "game-surface-preflight").apply { isDaemon = true; start() }
+    }
+
+    private fun launchWineSessionOnSurface(
+        gameExe: File,
+        launchOptions: com.dnctf.movingout2.runtime.WineLaunchOptions,
+        generation: Int
+    ) {
+        val root = File(filesDir, "native_runtime/bundle")
+        val supervisor = WineSessionSupervisor(
+            this, root, "moving-out-2", diagnosticLog,
+            onSessionFinished = {
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        activeWineSession = null
+                        removeVirtualGamepad()
+                        gameLaunchSurfaceCoordinator.onSessionStopped()
+                        playButton.text = "Play Moving Out 2"
+                        playButton.isEnabled = lastLaunchReady
+                        playButton.alpha = if (lastLaunchReady) 1f else 0.55f
+                        runtimeStatus.text = "Game process exited. Android surface lease released after session cleanup."
+                        finishGameSurface("Game process exited.")
+                        refreshRuntimeStatus()
+                    }
+                }
+            }
+        )
+        activeWineSession = supervisor
+        playButton.isEnabled = false
+        runtimeStatus.text = "Android surface validated. Starting Box64 / Wine session…"
+        Thread({
+            val started = runCatching {
+                if (generation != surfaceLaunchGeneration || gameSurfaceHost?.isSurfaceAvailable != true) false
+                else supervisor.startSession(gameExe, launchOptions)
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed || generation != surfaceLaunchGeneration ||
+                    gameSurfaceHost?.isSurfaceAvailable != true) {
+                    supervisor.shutdownAll()
+                    if (activeWineSession === supervisor) activeWineSession = null
+                    return@runOnUiThread
+                }
+                if (started.getOrDefault(false) && supervisor.state == WineSessionState.RUNNING &&
+                    gameLaunchSurfaceCoordinator.onSessionStarted()) {
                     attachVirtualGamepad()
                     playButton.text = "Stop Game Session"
                     playButton.isEnabled = true
                     playButton.alpha = 1f
-                    runtimeStatus.text = "Game session: RUNNING\nBox64 executable: ${File(applicationInfo.nativeLibraryDir, "libbox64.so").absolutePath}\nWine session logs: files/diagnostics/wine_session.log and runtime-process.log"
-                    Toast.makeText(this, "Box64 / Wine game session started.", Toast.LENGTH_LONG).show()
+                    runtimeStatus.text = "Game process: RUNNING\nAndroid surface preflight: PASS\nDXVK guest WSI: NOT YET VERIFIED"
+                    Toast.makeText(this, "Box64 / Wine process started; DXVK presentation still requires physical validation.", Toast.LENGTH_LONG).show()
                 } else {
-                    activeWineSession = null
+                    supervisor.shutdownAll()
+                    if (activeWineSession === supervisor) activeWineSession = null
+                    gameLaunchSurfaceCoordinator.onSessionStopped()
                     playButton.text = "Play Moving Out 2"
-                    runtimeStatus.text = "Game session failed during preflight/startup. Export diagnostics and inspect wine_session.log."
+                    runtimeStatus.text = "Game session failed or surface was lost during startup. Export diagnostics."
+                    finishGameSurface("Runtime startup failed.")
                     refreshRuntimeStatus()
-                    Toast.makeText(this, "Game session could not start. Export diagnostics.", Toast.LENGTH_LONG).show()
                 }
             }
         }, "wine-session-start").apply { isDaemon = true; start() }
+    }
+
+    private fun finishGameSurface(message: String) {
+        VulkanNativeProbe.detachSessionSurface()
+        gameSurfaceHost?.let { host ->
+            host.lifecycleListener = null
+            (host.parent as? ViewGroup)?.removeView(host)
+        }
+        gameSurfaceHost = null
+        pendingGameExecutable = null
+        pendingGameLaunchOptions = null
+        gameLaunchSurfaceCoordinator.onSessionStopped()
+        playButton.text = "Play Moving Out 2"
+        playButton.isEnabled = lastLaunchReady
+        playButton.alpha = if (lastLaunchReady) 1f else 0.55f
+        runtimeStatus.text = message
     }
 
     @Deprecated("Use Activity Result API in a later refactor")
