@@ -31,54 +31,32 @@ class RuntimeProcessTest {
             file.delete()
         }
     }
-    @Test fun processGroupBootstrapAssignsStoppedChildBeforeResume() {
-        available()
-        val assigned = java.util.concurrent.CopyOnWriteArrayList<Pair<Long, Long>>()
-        val controller = object : ProcessGroupController {
-            override fun assign(pid: Long, processGroupId: Long): Boolean {
-                assigned += pid to processGroupId
-                return true
-            }
-            override fun signalProcess(pid: Long, signal: Int): Boolean {
-                val flag = when (signal) { 18 -> "-CONT"; 9 -> "-KILL"; else -> "-$signal" }
-                return runCatching {
-                    ProcessBuilder("/bin/kill", flag, pid.toString()).start().waitFor() == 0
-                }.getOrDefault(false)
-            }
-            override fun signalGroup(processGroupId: Long, signal: Int) = true
-            override fun isGroupAlive(processGroupId: Long) = false
-        }
-        val spawned = ProcessGroupSpawner.start(
-            listOf(shell.absolutePath, "-c", "exit 0"),
-            emptyMap(), null, null, true, controller
+    @Test fun processGroupLauncherBuildsLeaderCommandWithPgidZero() {
+        val helper = File("/data/app/example/lib/arm64/libmo2_process_group.so")
+        val command = listOf("/data/app/example/lib/arm64/libbox64.so", "wine64", "mo2.exe")
+        val actual = ProcessGroupSpawner.launcherCommand(helper, command, null, createProcessGroup = true)
+        assertEquals(
+            listOf(helper.absolutePath, "--pgid", "0", "--") + command,
+            actual
         )
-        assertNotNull(spawned.pid)
-        assertEquals(spawned.pid, spawned.processGroupId)
-        assertEquals(listOf(spawned.pid!! to spawned.pid), assigned)
-        assertTrue(spawned.process.waitFor(3000, java.util.concurrent.TimeUnit.MILLISECONDS))
-        assertEquals(0, spawned.process.exitValue())
     }
 
-    @Test fun processGroupSpawnerCanJoinAnExistingSessionGroup() {
-        available()
-        val assigned = java.util.concurrent.CopyOnWriteArrayList<Pair<Long, Long>>()
-        val controller = object : ProcessGroupController {
-            override fun assign(pid: Long, processGroupId: Long): Boolean { assigned += pid to processGroupId; return true }
-            override fun signalProcess(pid: Long, signal: Int): Boolean =
-                runCatching { ProcessBuilder("/bin/kill", if (signal == 18) "-CONT" else "-KILL", pid.toString()).start().waitFor() == 0 }.getOrDefault(false)
-            override fun signalGroup(processGroupId: Long, signal: Int) = true
-            override fun isGroupAlive(processGroupId: Long) = false
-        }
-        val leader = ProcessGroupSpawner.start(
-            listOf(shell.absolutePath, "-c", "exec sleep 1"), emptyMap(), null, null, true, controller
+    @Test fun processGroupLauncherBuildsJoinCommandWithExistingPgid() {
+        val helper = File("/data/app/example/lib/arm64/libmo2_process_group.so")
+        val command = listOf("/data/app/example/lib/arm64/libbox64.so", "wine64", "mo2.exe")
+        val actual = ProcessGroupSpawner.launcherCommand(helper, command, 12345L, createProcessGroup = false)
+        assertEquals(
+            listOf(helper.absolutePath, "--pgid", "12345", "--") + command,
+            actual
         )
-        val child = ProcessGroupSpawner.start(
-            listOf(shell.absolutePath, "-c", "exit 0"), emptyMap(), null, leader.processGroupId, false, controller
-        )
-        assertEquals(leader.processGroupId, child.processGroupId)
-        assertEquals(leader.processGroupId, assigned.last().second)
-        child.process.waitFor(3000, java.util.concurrent.TimeUnit.MILLISECONDS)
-        leader.process.waitFor(3000, java.util.concurrent.TimeUnit.MILLISECONDS)
+    }
+
+    @Test fun processGroupLauncherRejectsConflictingLeaderAndJoinArguments() {
+        val helper = File("/data/app/example/lib/arm64/libmo2_process_group.so")
+        val rejected = runCatching {
+            ProcessGroupSpawner.launcherCommand(helper, listOf("/bin/true"), 12345L, createProcessGroup = true)
+        }.isFailure
+        assertTrue(rejected)
     }
 
     @Test fun pidParserAcceptsOnlyValidPidPatterns() {
