@@ -73,7 +73,6 @@ class RuntimeBundleImporter(
             backup.deleteRecursively()
             journal.checkpoint("RUNTIME_BUNDLE", archiveName, entryCount=counter.entries, extractedBytes=counter.bytes, availableBytesBefore=availableBefore, availableBytesAfter=runCatching { StatFs(parent.absolutePath).availableBytes }.getOrNull(), stage="ACTIVATED", activationStatus="SUCCESS", rollbackStatus="NOT_REQUIRED")
             stageLog.event("STAGE_2_RUNTIME_EXTRACT", "TREE_IMPORT_PASS", mapOf("files" to counter.files, "bytes" to counter.bytes, "manifestValid" to true))
-            stageLog.event("STAGE_2_RUNTIME_EXTRACT", "ZIP_IMPORT_PASS", mapOf("files" to counter.files, "bytes" to counter.bytes, "manifestValid" to true))
             return RuntimeImportResult(active, counter.files, counter.bytes)
         } catch (error: Exception) {
             val rollback = runCatching { rollbackImport(staging, backup, target, activated, error) }
@@ -173,6 +172,7 @@ class RuntimeBundleImporter(
             journal.checkpoint("RUNTIME_BUNDLE_ZIP", displayName, entryCount=counter.entries, extractedBytes=counter.bytes,
                 availableBytesBefore=availableBefore, availableBytesAfter=runCatching { StatFs(parent.absolutePath).availableBytes }.getOrNull(),
                 stage="ZIP_ACTIVATED", activationStatus="SUCCESS", rollbackStatus="NOT_REQUIRED")
+            stageLog.event("STAGE_2_RUNTIME_EXTRACT", "ZIP_IMPORT_PASS", mapOf("files" to counter.files, "bytes" to counter.bytes, "manifestValid" to true))
             return RuntimeImportResult(active, counter.files, counter.bytes)
         } catch (error: Exception) {
             val rollback = runCatching { rollbackImport(staging, backup, target, activated, error) }
