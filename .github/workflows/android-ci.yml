@@ -96,6 +96,7 @@ jobs:
         run: |
           bash -n scripts/package_runtime_bundle.sh
           bash -n scripts/build_box64_android.sh
+          bash -n scripts/verify_device_bootstrap.sh
       - name: Verify MO2X protocol layout
         run: |
           set -euo pipefail
