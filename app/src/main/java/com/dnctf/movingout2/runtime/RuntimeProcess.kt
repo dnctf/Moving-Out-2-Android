@@ -135,8 +135,11 @@ data class ProcessResult(
         require(timeoutMs == null || timeoutMs >= 0)
         val timedOut = timeoutMs != null && !process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
         if (timedOut) {
-            terminate(250)
-            closeStreamsAndJoinReaders()
+            if (processGroupId != null) terminateProcessGroup(250)
+            else {
+                terminate(250)
+                closeStreamsAndJoinReaders()
+            }
         } else if (timeoutMs == null) process.waitFor()
         return ExitResult(exitCodeSafely(), pid, timedOut, false, elapsed())
     }
