@@ -13,7 +13,7 @@ import java.util.Locale
 /** Machine-readable bootstrap milestones mirrored to logcat and bounded app-private storage. */
 class RuntimeStageDiagnostics(context: Context) {
     private val directory = File(context.filesDir, "diagnostics")
-    private val logFile = File(directory, "native-runtime.log")
+    private val logFile = File(directory, "native-runtime-stages.log")
     private val maxBytes = 2L * 1024L * 1024L
     private val timestamp = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ", Locale.US)
 
