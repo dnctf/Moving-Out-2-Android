@@ -172,7 +172,7 @@ class WineSessionSupervisor(
     private val runner: SessionProcessRunner = DefaultSessionProcessRunner(
         diagnostics,
         File(context.filesDir, "diagnostics/wine_session.log"),
-        File(context.filesDir, "diagnostics/runtime-process.log")
+        File(context.filesDir, "diagnostics/native-runtime.log")
     ),
     private val onSessionFinished: (() -> Unit)? = null
 ) {
