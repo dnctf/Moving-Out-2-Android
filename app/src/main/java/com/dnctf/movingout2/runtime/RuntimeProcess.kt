@@ -123,9 +123,13 @@ data class ProcessResult(
         val group = processGroupId ?: return !process.isAlive || stop(gracePeriodMs).let { !process.isAlive }
         val controller = processGroupController ?: return false
         controller.signalGroup(group, OsConstants.SIGTERM)
-        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
-        while (System.nanoTime() < deadline && controller.isGroupAlive(group)) Thread.sleep(20)
-        if (controller.isGroupAlive(group)) controller.signalGroup(group, OsConstants.SIGKILL)
+        val termDeadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(gracePeriodMs)
+        while (System.nanoTime() < termDeadline && controller.isGroupAlive(group)) Thread.sleep(20)
+        if (controller.isGroupAlive(group)) {
+            controller.signalGroup(group, OsConstants.SIGKILL)
+            val killDeadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(FORCE_REAP_TIMEOUT_MS)
+            while (System.nanoTime() < killDeadline && controller.isGroupAlive(group)) Thread.sleep(20)
+        }
         process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         closeStreamsAndJoinReaders()
         return !controller.isGroupAlive(group)
@@ -146,14 +150,18 @@ data class ProcessResult(
     }
     fun stop(gracePeriodMs: Long = 1000): ExitResult {
         require(gracePeriodMs >= 0)
+        val group = processGroupId
+        if (group != null && processGroupController != null) {
+            val wasAlive = process.isAlive || processGroupController.isGroupAlive(group)
+            val stopped = terminateProcessGroup(gracePeriodMs)
+            return ExitResult(exitCodeSafely(), pid, !stopped, wasAlive, elapsed())
+        }
         val wasAliveAtStopRequest = synchronized(terminationLock) {
             val alive = process.isAlive
             if (alive) {
                 process.destroy()
                 if (!process.waitFor(gracePeriodMs, TimeUnit.MILLISECONDS)) {
                     process.destroyForcibly()
-                    // Forced termination is also bounded; retain a nullable exit code if
-                    // the OS/process implementation has not been reaped within this window.
                     process.waitFor(FORCE_REAP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 }
             }
