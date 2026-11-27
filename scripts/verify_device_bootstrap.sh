@@ -52,6 +52,8 @@ if ! "${ADB[@]}" exec-out run-as "$PACKAGE" cat files/diagnostics/native-runtime
   : > "$OUT_DIR/native-runtime.log"
 fi
 if ! "${ADB[@]}" exec-out run-as "$PACKAGE" cat files/diagnostics/native-runtime.log.1 > "$OUT_DIR/native-runtime.log.1" 2>/dev/null; then : > "$OUT_DIR/native-runtime.log.1"; fi
+if ! "${ADB[@]}" exec-out run-as "$PACKAGE" cat files/diagnostics/native-runtime-stages.log > "$OUT_DIR/native-runtime-stages.log" 2>/dev/null; then : > "$OUT_DIR/native-runtime-stages.log"; fi
+if ! "${ADB[@]}" exec-out run-as "$PACKAGE" cat files/diagnostics/native-runtime-stages.log.1 > "$OUT_DIR/native-runtime-stages.log.1" 2>/dev/null; then : > "$OUT_DIR/native-runtime-stages.log.1"; fi
 if [[ "$FAILURE" -ne 0 || ( "$LOGCAT_STATUS" -ne 0 && "$LOGCAT_STATUS" -ne 130 ) ]]; then
   echo "Diagnostic collection saved under $OUT_DIR"
   exit 1
