@@ -7,8 +7,9 @@ object WineLaunchCommand {
     fun guestLibrarySearchPath(guestGlibcDirectory: File?, guestWineLibraryDirectory: File?): String? =
         listOfNotNull(
             guestGlibcDirectory?.takeIf { it.isDirectory && it.canRead() },
+            guestWineLibraryDirectory?.let { File(it, "x86_64-unix") }?.takeIf { it.isDirectory && it.canRead() },
             guestWineLibraryDirectory?.takeIf { it.isDirectory && it.canRead() }
-        ).joinToString(":").takeIf { it.isNotBlank() }
+        ).distinct().joinToString(":").takeIf { it.isNotBlank() }
 
     fun toWineZPath(path: String): String = "Z:" + path.replace('/', '\\')
 
@@ -31,7 +32,8 @@ object WineLaunchCommand {
         guestGlibcDirectory: File? = null,
         guestBinaryDirectory: File? = null,
         useDxvk: Boolean = true,
-        diagnosticHud: Boolean = false
+        diagnosticHud: Boolean = false,
+        additionalHostLibraryDirectories: List<File> = emptyList()
     ): Map<String, String> {
         val overrides = buildList {
             if (useDxvk) add("d3d11,dxgi=n,b") else add("d3d11,dxgi=b")
@@ -48,7 +50,8 @@ object WineLaunchCommand {
             "BOX64_DYNAREC_SAFEFLAGS" to "1",
             "DXVK_STATE_CACHE" to "1",
             "DXVK_FRAME_RATE" to fpsCap.coerceIn(15, 240).toString(),
-            "LD_LIBRARY_PATH" to hostLibraryDirectory.absolutePath
+            "LD_LIBRARY_PATH" to (listOf(hostLibraryDirectory) + additionalHostLibraryDirectories)
+                .filter { it.isDirectory && it.canRead() }.distinct().joinToString(File.pathSeparator)
         )
         guestLibraryDirectory?.takeIf { it.isDirectory && it.canRead() }?.let { result["WINEDLLPATH"] = it.absolutePath }
         guestLibrarySearchPath(guestGlibcDirectory, guestLibraryDirectory)?.let {
