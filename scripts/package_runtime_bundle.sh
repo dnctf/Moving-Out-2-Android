@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 usage(){ echo "Usage: $0 --box64 FILE --wine-dir DIR --dxvk-dir DIR --xinput-dir DIR [--turnip-so FILE] [--bundle-version VERSION] --output ZIP" >&2; }
-BOX64='' WINE_DIR='' DXVK_DIR='' XINPUT_DIR='' TURNIP_SO='' VERSION=1 OUTPUT=''
+BOX64='' WINE_DIR='' DXVK_DIR='' XINPUT_DIR='' TURNIP_SO='' TURNIP_LICENSE_DIR='' VERSION=1 OUTPUT=''
 while (($#)); do case "$1" in
  --box64) BOX64=${2:?};shift 2;; --wine-dir) WINE_DIR=${2:?};shift 2;; --dxvk-dir) DXVK_DIR=${2:?};shift 2;; --xinput-dir) XINPUT_DIR=${2:?};shift 2;;
- --turnip-so) TURNIP_SO=${2:?};shift 2;; --bundle-version) VERSION=${2:?};shift 2;; --output) OUTPUT=${2:?};shift 2;;
+ --turnip-so) TURNIP_SO=${2:?};shift 2;; --turnip-license-dir) TURNIP_LICENSE_DIR=${2:?};shift 2;; --bundle-version) VERSION=${2:?};shift 2;; --output) OUTPUT=${2:?};shift 2;;
  -h|--help) usage;exit 0;; *) echo "Unknown argument: $1" >&2;usage;exit 2;; esac; done
 [[ -n "$BOX64" && -n "$WINE_DIR" && -n "$DXVK_DIR" && -n "$XINPUT_DIR" && -n "$OUTPUT" ]] || { usage;exit 2; }
 [[ "$VERSION" =~ ^[A-Za-z0-9._+-]+$ ]] || { echo "Invalid bundle version." >&2; exit 2; }
 command -v zip >/dev/null || { echo "zip command is required." >&2; exit 1; }
 for f in "$BOX64" "$WINE_DIR/bin/wine64" "$WINE_DIR/bin/wineserver" "$DXVK_DIR/d3d11.dll" "$DXVK_DIR/dxgi.dll" "$XINPUT_DIR/xinput1_3.dll" "$XINPUT_DIR/xinput1_4.dll" "$XINPUT_DIR/xinput9_1_0.dll"; do [[ -s "$f" ]] || { echo "Required file missing/empty: $f" >&2;exit 1;}; done
 [[ -d "$WINE_DIR/lib/wine" && -n "$(find -L "$WINE_DIR/lib/wine" -type f -size +0c -print -quit)" ]] || { echo "wine/lib/wine is missing or empty" >&2;exit 1; }
+for unix_module in ntdll.so win32u.so; do
+  [[ -s "$WINE_DIR/lib/wine/x86_64-unix/$unix_module" ]] || { echo "Required Wine UNIX module missing: wine/lib/wine/x86_64-unix/$unix_module" >&2; exit 1; }
+done
 [[ -d "$WINE_DIR/lib/x86_64-linux-gnu" && -s "$WINE_DIR/lib/x86_64-linux-gnu/libc.so.6" ]] || { echo "wine/lib/x86_64-linux-gnu with libc.so.6 is required" >&2; exit 1; }
 check_elf(){ local f="$1" machine="$2"; command -v readelf >/dev/null || { echo "readelf is required for ABI provenance validation." >&2; exit 1; }; readelf -h "$f" | grep -Eq "Class:.*ELF64" || { echo "ELF is not ELF64: $f" >&2;exit 1; }; readelf -h "$f" | grep -Eq "Machine:.*$machine" || { echo "Unexpected ELF machine (expected $machine): $f" >&2;exit 1;}; }
 check_elf "$BOX64" "AArch64"
@@ -39,7 +42,13 @@ if [[ -n "$TURNIP_SO" ]];then [[ -s "$TURNIP_SO" ]] || { echo "Turnip SO missing
 OUT_DIR="$(dirname "$OUTPUT")";mkdir -p "$OUT_DIR";OUTPUT="$(cd "$OUT_DIR" && pwd)/$(basename "$OUTPUT")";TMP="$(mktemp -d)";trap 'rm -rf "$TMP"' EXIT
 ROOT="$TMP/root";mkdir -p "$ROOT/box64/bin" "$ROOT/wine/bin" "$ROOT/wine/lib" "$ROOT/dxvk/x64"
 cp "$BOX64" "$ROOT/box64/bin/box64";cp "$WINE_DIR/bin/wine64" "$ROOT/wine/bin/wine64";cp "$WINE_DIR/bin/wineserver" "$ROOT/wine/bin/wineserver"
-cp -aL "$WINE_DIR/lib/wine" "$ROOT/wine/lib/wine";mkdir -p "$ROOT/wine/lib/wine/x86_64-windows";cp -aL "$WINE_DIR/lib/x86_64-linux-gnu" "$ROOT/wine/lib/x86_64-linux-gnu";cp "$DXVK_DIR/d3d11.dll" "$ROOT/dxvk/x64/";cp "$DXVK_DIR/dxgi.dll" "$ROOT/dxvk/x64/"
+cp -aL "$WINE_DIR/lib/wine" "$ROOT/wine/lib/wine";mkdir -p "$ROOT/wine/lib/wine/x86_64-windows";
+# Box64/Wine's current loader resolves these UNIX modules from the wine/lib/wine root.
+# Keep the canonical x86_64-unix layout and add verified regular-file compatibility copies.
+for unix_module in ntdll.so win32u.so; do
+  cp "$ROOT/wine/lib/wine/x86_64-unix/$unix_module" "$ROOT/wine/lib/wine/$unix_module"
+  check_elf_shared "$ROOT/wine/lib/wine/$unix_module" "Advanced Micro Devices X86-64"
+donecp -aL "$WINE_DIR/lib/x86_64-linux-gnu" "$ROOT/wine/lib/x86_64-linux-gnu";cp "$DXVK_DIR/d3d11.dll" "$ROOT/dxvk/x64/";cp "$DXVK_DIR/dxgi.dll" "$ROOT/dxvk/x64/"
 cp "$XINPUT_DIR/xinput1_3.dll" "$ROOT/wine/lib/wine/x86_64-windows/";cp "$XINPUT_DIR/xinput1_4.dll" "$ROOT/wine/lib/wine/x86_64-windows/";cp "$XINPUT_DIR/xinput9_1_0.dll" "$ROOT/wine/lib/wine/x86_64-windows/"
 for redistributable in vcruntime140.dll vcruntime140_1.dll msvcp140.dll; do
   source="$WINE_DIR/lib/wine/x86_64-windows/$redistributable"
@@ -54,7 +63,22 @@ check_guest_glibc(){
 }
 check_guest_glibc
 if find "$ROOT/wine/lib" -type l -print -quit | grep -q .; then echo "Symlink found under wine/lib; refusing non-portable Android ZIP." >&2; exit 1; fi
-if [[ -n "$TURNIP_SO" ]];then mkdir -p "$ROOT/turnip";cp "$TURNIP_SO" "$ROOT/turnip/libvulkan_freedreno.so";cp "$(dirname "$TURNIP_SO")/freedreno_icd.aarch64.json" "$ROOT/turnip/";fi
+if [[ -n "$TURNIP_SO" ]];then
+  mkdir -p "$ROOT/turnip"
+  cp "$TURNIP_SO" "$ROOT/turnip/libvulkan_freedreno.so"
+  check_elf_shared "$ROOT/turnip/libvulkan_freedreno.so" "AArch64"
+  if [[ -s "$(dirname "$TURNIP_SO")/freedreno_icd.aarch64.json" ]]; then
+    cp "$(dirname "$TURNIP_SO")/freedreno_icd.aarch64.json" "$ROOT/turnip/"
+  else
+    printf '{\n  "file_format_version": "1.0.0",\n  "library_path": "libvulkan_freedreno.so"\n}\n' > "$ROOT/turnip/freedreno_icd.aarch64.json"
+  fi
+  if [[ -n "$TURNIP_LICENSE_DIR" ]]; then
+    [[ -s "$TURNIP_LICENSE_DIR/NOTICE" && -s "$TURNIP_LICENSE_DIR/LICENSES/GPL-3.0.txt" ]] || { echo "Turnip NOTICE/GPL-3.0 license missing" >&2; exit 1; }
+    cp "$TURNIP_LICENSE_DIR/NOTICE" "$ROOT/turnip/NOTICE"
+    mkdir -p "$ROOT/turnip/LICENSES"
+    cp -a "$TURNIP_LICENSE_DIR/LICENSES/." "$ROOT/turnip/LICENSES/"
+  fi
+fi
 MANIFEST_FILE="$ROOT/runtime-manifest.json"
 python3 scripts/write_runtime_manifest.py --root "$ROOT" --version "$VERSION"
 python3 -m json.tool "$MANIFEST_FILE" > /dev/null
