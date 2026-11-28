@@ -70,6 +70,13 @@ class RuntimeBundleValidator {
     }
    }
    if (libs != null) {
+    for (module in listOf("ntdll.so", "win32u.so")) {
+     val requiredModule = File(libs, module)
+     if (!requiredModule.isFile || requiredModule.length() <= 0L) blockers += "Required Wine UNIX loader module missing: $module"
+     else if (!RuntimeBinaryInspector.matches(requiredModule, RuntimeBinaryInspector.ELF64_X86_64_SHARED)) {
+      blockers += "Wine UNIX loader module is not ELF64 x86-64 shared: $module"
+     }
+    }
     val guestLibraries = libs.walkTopDown().filter { it.isFile && (it.name.endsWith(".so", true) || it.name.contains(".so.", true)) }.toList()
     if (guestLibraries.isEmpty()) blockers += "Wine guest library directory contains no shared ELF objects."
     guestLibraries.forEach { library ->
