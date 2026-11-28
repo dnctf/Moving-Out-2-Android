@@ -102,8 +102,8 @@ class RuntimeManifestParser {
                 val metadata = runCatching { JSONObject(metaFile.readText()) }.getOrNull()
                 if (metadata == null || metadata.optString("libraryName") != "libvulkan_freedreno.so") {
                     errors += "Turnip AdrenoTools metadata is invalid or names the wrong library."
-                } else if (metadata.optInt("minApi", 999) > 31) {
-                    errors += "Turnip driver requires Android API ${metadata.optInt("minApi")}; minimum supported device API is 31."
+                } else if (metadata.optInt("minApi", 0) <= 0) {
+                    errors += "Turnip AdrenoTools metadata has no valid minApi."
                 }
             }
         }
