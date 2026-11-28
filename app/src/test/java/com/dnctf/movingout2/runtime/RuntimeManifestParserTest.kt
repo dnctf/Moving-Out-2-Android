@@ -10,23 +10,40 @@ import java.nio.ByteOrder
 import java.security.MessageDigest
 
 class RuntimeManifestParserTest {
- private fun x64SharedElf():ByteArray{
+ private fun x64SharedElf(machine:Int=62,type:Int=3):ByteArray{
   val bytes=ByteArray(120)
   val b=ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
   bytes[0]=0x7f;bytes[1]='E'.code.toByte();bytes[2]='L'.code.toByte();bytes[3]='F'.code.toByte()
   bytes[4]=2;bytes[5]=1;bytes[6]=1
-  b.putShort(16,3.toShort());b.putShort(18,62.toShort());b.putInt(20,1)
+  b.putShort(16,type.toShort());b.putShort(18,machine.toShort());b.putInt(20,1)
   b.putLong(24,0x400000);b.putLong(32,64);b.putShort(52,64.toShort());b.putShort(54,56.toShort());b.putShort(56,1.toShort())
   b.putInt(64,1);b.putInt(68,5);b.putLong(72,0);b.putLong(80,0x400000);b.putLong(88,0x400000);b.putLong(96,120);b.putLong(104,120);b.putLong(112,0x1000)
+  return bytes
+ }
+ private fun pe64():ByteArray {
+  val bytes=ByteArray(512); val b=ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+  bytes[0]='M'.code.toByte();bytes[1]='Z'.code.toByte();b.putInt(0x3c,0x80)
+  bytes[0x80]='P'.code.toByte();bytes[0x81]='E'.code.toByte()
+  b.putShort(0x84,0x8664.toShort());b.putShort(0x86,1.toShort());b.putShort(0x94,0xF0.toShort());b.putShort(0x98,0x20b.toShort())
   return bytes
  }
  private fun sha(file:File):String{val d=MessageDigest.getInstance("SHA-256");file.inputStream().use{input->val b=ByteArray(4096);while(true){val n=input.read(b);if(n<0)break;d.update(b,0,n)}};return d.digest().joinToString(""){"%02x".format(it)}}
  private fun fixture(turnip:Boolean=false):File{
   val root=Files.createTempDirectory("manifest-v1").toFile()
   val components=JSONObject()
-  fun put(key:String,path:String,contents:String){val f=File(root,path);f.parentFile.mkdirs();f.writeText(contents);val abi = when (key) {
+  fun put(key:String,path:String,contents:String){val f=File(root,path);f.parentFile.mkdirs()
+   when(key){
+    "box64" -> f.writeBytes(x64SharedElf(183,2))
+    "wine64","wineserver" -> f.writeBytes(x64SharedElf(62,2))
+    "turnipSo" -> f.writeBytes(x64SharedElf(183,3))
+    "d3d11","dxgi","xinput1_3","xinput1_4","xinput9_1_0","vcruntime140","vcruntime140_1","msvcp140" -> f.writeBytes(pe64())
+    else -> f.writeText(contents)
+   }
+   val abi = when (key) {
    "box64" -> RuntimeBinaryInspector.ELF64_AARCH64
    "turnipSo" -> RuntimeBinaryInspector.ELF64_AARCH64_SHARED
+   "turnipSource" -> "SOURCE_ARCHIVE"
+   "turnipNotice", "turnipLicense" -> "TEXT"
    "wine64", "wineserver" -> RuntimeBinaryInspector.ELF64_X86_64
    "d3d11", "dxgi", "xinput1_3", "xinput1_4", "xinput9_1_0", "vcruntime140", "vcruntime140_1", "msvcp140" -> RuntimeBinaryInspector.PE32_PLUS_X86_64
    else -> "JSON"
@@ -35,7 +52,8 @@ class RuntimeManifestParserTest {
   put("box64","box64/bin/box64","box64")
   put("wine64","wine/bin/wine64","wine64")
   put("wineserver","wine/bin/wineserver","server")
-  val lib=File(root,"wine/lib/wine");lib.mkdirs();File(lib,"module.so").writeText("module")
+  val lib=File(root,"wine/lib/wine");lib.mkdirs();File(lib,"module.so").writeBytes(x64SharedElf());
+  val unix=File(lib,"x86_64-unix");unix.mkdirs();File(unix,"ntdll.so").writeBytes(x64SharedElf());File(unix,"win32u.so").writeBytes(x64SharedElf())
   components.put("wineLib",JSONObject().put("included",true).put("path","wine/lib/wine").put("sha256",hashDir(lib)).put("abi","DIRECTORY_SHA256_X86_64"))
   val glibc=File(root,"wine/lib/x86_64-linux-gnu");glibc.mkdirs()
   File(glibc,"libc.so.6").writeBytes(x64SharedElf())
@@ -54,6 +72,10 @@ class RuntimeManifestParserTest {
   if(turnip){
    put("turnipSo","turnip/libvulkan_freedreno.so","vk")
    put("turnipIcd","turnip/freedreno_icd.aarch64.json","{}")
+    put("turnipMeta","turnip/meta.json","{\"libraryName\":\"libvulkan_freedreno.so\",\"minApi\":28}")
+    put("turnipSource","turnip/SOURCE.tar.xz","source-archive-fixture")
+    put("turnipNotice","turnip/NOTICE","Turnip driver notice")
+    put("turnipLicense","turnip/LICENSES/GPL-3.0.txt","GPL-3.0")
   } else {
    components.put("turnipSo",JSONObject().put("included",false).put("path","turnip/libvulkan_freedreno.so").put("abi","ELF64_AARCH64_SHARED").put("sha256",""))
    components.put("turnipIcd",JSONObject().put("included",false).put("path","turnip/freedreno_icd.aarch64.json").put("abi","JSON").put("sha256",""))
@@ -66,7 +88,7 @@ class RuntimeManifestParserTest {
   return root
  }
  private fun hashDir(dir:File):String{val listing=StringBuilder();dir.walkTopDown().filter{it.isFile}.sortedBy{it.relativeTo(dir).invariantSeparatorsPath}.forEach{f->listing.append(sha(f)).append("  ./").append(f.relativeTo(dir).invariantSeparatorsPath).append('\n')};val d=MessageDigest.getInstance("SHA-256");d.update(listing.toString().toByteArray(Charsets.UTF_8));return d.digest().joinToString(""){"%02x".format(it)}}
- @Test fun acceptsValidBundleWithAndWithoutTurnip(){val a=fixture();assertTrue(RuntimeManifestParser().validate(a).errors.toString(),RuntimeManifestParser().validate(a).valid);a.deleteRecursively();val b=fixture(true);assertTrue(RuntimeManifestParser().validate(b).errors.toString(),RuntimeManifestParser().validate(b).valid);b.deleteRecursively()}
+ @Test fun acceptsValidBundleWithAndWithoutTurnip(){val a=fixture();val ar=RuntimeManifestParser().validate(a);println("NON_TURNIP_MANIFEST_ERRORS=${ar.errors}");assertTrue(ar.errors.toString(),ar.valid);a.deleteRecursively();val b=fixture(true);val br=RuntimeManifestParser().validate(b);println("TURNIP_MANIFEST_ERRORS=${br.errors}");assertTrue(br.errors.toString(),br.valid);b.deleteRecursively()}
  @Test fun rejectsMissingGuestGlibcComponent(){
   val root=fixture()
   val json=JSONObject(File(root,"runtime-manifest.json").readText())

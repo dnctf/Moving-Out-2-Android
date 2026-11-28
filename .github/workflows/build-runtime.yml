@@ -28,6 +28,16 @@ on:
         required: false
         default: "40565b4a724aadc4433fa4e010b4b23916d9b1f1baeee64e17186db94f54e608"
         type: string
+      turnip_url:
+        description: "Pinned Android Turnip driver release archive URL"
+        required: false
+        default: "https://github.com/Droid-Deck/Drivers/releases/download/DD-Turnip-v1.0.0/DD-Turnip-v1.0.0.zip"
+        type: string
+      turnip_sha256:
+        description: "Expected SHA-256 of the Turnip archive"
+        required: false
+        default: "50d80ae267617f425893ba6590c4b2a0a64957280ecb3eeef6138085a77b89f4"
+        type: string
       bundle_version:
         description: "Runtime bundle version"
         required: false
@@ -284,6 +294,40 @@ jobs:
             objdump -p "$f" | grep -Eqi 'Magic[[:space:]]+020b'
           done
 
+      - name: Download and verify Android Turnip driver
+        shell: bash
+        env:
+          TURNIP_URL: ${{ inputs.turnip_url || 'https://github.com/Droid-Deck/Drivers/releases/download/DD-Turnip-v1.0.0/DD-Turnip-v1.0.0.zip' }}
+          TURNIP_SHA256: ${{ inputs.turnip_sha256 || '50d80ae267617f425893ba6590c4b2a0a64957280ecb3eeef6138085a77b89f4' }}
+          TURNIP_SOURCE_URL: "https://github.com/Droid-Deck/Drivers/releases/download/DD-Turnip-v1.0.0/DD-Turnip-v1.0.0-source.tar.xz"
+          TURNIP_SOURCE_SHA256: "14fe1b5042916f75f23b992d7d2515007b29641cd49d78491e9c48341af632e5"
+        run: |
+          set -euo pipefail
+          [[ "$TURNIP_SHA256" =~ ^[a-fA-F0-9]{64}$ ]] || { echo "::error::Invalid pinned Turnip SHA-256"; exit 2; }
+          curl --fail --location --retry 3 --retry-all-errors "$TURNIP_URL" -o "$RUNNER_TEMP/turnip.zip"
+          printf '%s  %s\n' "$TURNIP_SHA256" "$RUNNER_TEMP/turnip.zip" | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/turnip-extract" "$RUNNER_TEMP/runtime-input/turnip"
+          unzip -q "$RUNNER_TEMP/turnip.zip" -d "$RUNNER_TEMP/turnip-extract"
+          TURNIP_SO="$RUNNER_TEMP/turnip-extract/android/libvulkan_freedreno.so"
+          TURNIP_META="$RUNNER_TEMP/turnip-extract/android/meta.json"
+          [[ -s "$TURNIP_SO" && -s "$TURNIP_META" ]]
+          python3 - "$TURNIP_META" <<'PY'
+          import json,sys
+          m=json.load(open(sys.argv[1],encoding="utf-8"))
+          assert m.get("libraryName") == "libvulkan_freedreno.so", m
+          assert int(m.get("minApi", 999)) <= 31, m
+          print("Turnip metadata validated:", m.get("driverVersion"), "minApi=", m.get("minApi"))
+          PY
+          readelf -h "$TURNIP_SO" | grep -Eq 'Class:.*ELF64'
+          readelf -h "$TURNIP_SO" | grep -Eq 'Machine:.*AArch64'
+          install -m 0644 "$TURNIP_SO" "$RUNNER_TEMP/runtime-input/turnip/libvulkan_freedreno.so"
+          install -m 0644 "$TURNIP_META" "$RUNNER_TEMP/runtime-input/turnip/meta.json"
+          curl --fail --location --retry 3 --retry-all-errors "$TURNIP_SOURCE_URL" -o "$RUNNER_TEMP/turnip-source.tar.xz"
+          printf '%s  %s\n' "$TURNIP_SOURCE_SHA256" "$RUNNER_TEMP/turnip-source.tar.xz" | sha256sum --check --status
+          install -m 0644 "$RUNNER_TEMP/turnip-source.tar.xz" "$RUNNER_TEMP/runtime-input/turnip/SOURCE.tar.xz"
+          cp -a "$RUNNER_TEMP/turnip-extract/NOTICE" "$RUNNER_TEMP/runtime-input/turnip/NOTICE"
+          cp -a "$RUNNER_TEMP/turnip-extract/LICENSES" "$RUNNER_TEMP/runtime-input/turnip/LICENSES"
+
       - name: Package runtime manifest v2
         shell: bash
         run: |
@@ -294,6 +338,8 @@ jobs:
             --wine-dir "$RUNNER_TEMP/runtime-input/wine" \
             --dxvk-dir "$RUNNER_TEMP/runtime-input/dxvk/x64" \
             --xinput-dir "$RUNNER_TEMP/runtime-input/xinput" \
+            --turnip-so "$RUNNER_TEMP/runtime-input/turnip/libvulkan_freedreno.so" \
+            --turnip-license-dir "$RUNNER_TEMP/runtime-input/turnip" \
             --bundle-version "${{ inputs.bundle_version || '0.1.1' }}" \
             --output "dist/moving-out-2-runtime-arm64-v8a.zip"
           test -s dist/SHA256SUMS.txt

@@ -52,6 +52,10 @@ def main():
         "turnip": {"included": has_turnip},
         "turnipSo": component(root, "turnipSo", "turnip/libvulkan_freedreno.so", "ELF64_AARCH64_SHARED", has_turnip),
         "turnipIcd": component(root, "turnipIcd", "turnip/freedreno_icd.aarch64.json", "JSON", has_turnip),
+        "turnipMeta": component(root, "turnipMeta", "turnip/meta.json", "JSON", has_turnip),
+        "turnipSource": component(root, "turnipSource", "turnip/SOURCE.tar.xz", "SOURCE_ARCHIVE", has_turnip),
+        "turnipNotice": component(root, "turnipNotice", "turnip/NOTICE", "TEXT", has_turnip),
+        "turnipLicense": component(root, "turnipLicense", "turnip/LICENSES/GPL-3.0.txt", "TEXT", has_turnip),
     }
     manifest = {
         "schemaVersion": 2,

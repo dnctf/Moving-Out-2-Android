@@ -51,6 +51,7 @@ class WineSessionSupervisorTest {
         val root = java.nio.file.Files.createTempDirectory("wineboot-glibc-path").toFile()
         val glibc = File(root, "wine/lib/x86_64-linux-gnu").apply { mkdirs() }
         val wineLib = File(root, "wine/lib/wine").apply { mkdirs() }
+        File(wineLib, "x86_64-unix").mkdirs()
         val bootEnvironment = buildMap {
             WineLaunchCommand.guestLibrarySearchPath(glibc, wineLib)?.let { put("BOX64_LD_LIBRARY_PATH", it) }
             put("LD_LIBRARY_PATH", File(root, "nativeLibraryDir").absolutePath)
@@ -59,7 +60,7 @@ class WineSessionSupervisorTest {
             File(root, "prefix"), File(root, "xinput_shm.bin"), File(root, "nativeLibraryDir"), 30,
             guestLibraryDirectory = wineLib, guestGlibcDirectory = glibc
         )
-        val expected = glibc.absolutePath + ":" + wineLib.absolutePath
+        val expected = glibc.absolutePath + ":" + File(wineLib, "x86_64-unix").absolutePath + ":" + wineLib.absolutePath
         assertEquals(expected, bootEnvironment["BOX64_LD_LIBRARY_PATH"])
         assertEquals(expected, gameEnvironment["BOX64_LD_LIBRARY_PATH"])
         assertEquals(File(root, "nativeLibraryDir").absolutePath, bootEnvironment["LD_LIBRARY_PATH"])

@@ -94,6 +94,18 @@ class RuntimeManifestParser {
         if (components.optJSONObject("turnip")?.optBoolean("included", false) == true) {
             verify("turnipSo", "turnip/libvulkan_freedreno.so", true, RuntimeBinaryInspector.ELF64_AARCH64_SHARED)
             verify("turnipIcd", "turnip/freedreno_icd.aarch64.json", true, "JSON")
+            verify("turnipMeta", "turnip/meta.json", true, "JSON")
+            verify("turnipSource", "turnip/SOURCE.tar.xz", true, "SOURCE_ARCHIVE")
+            verify("turnipNotice", "turnip/NOTICE", true, "TEXT")
+            verify("turnipLicense", "turnip/LICENSES/GPL-3.0.txt", true, "TEXT")
+            files["turnipMeta"]?.let { metaFile ->
+                val metadata = runCatching { JSONObject(metaFile.readText()) }.getOrNull()
+                if (metadata == null || metadata.optString("libraryName") != "libvulkan_freedreno.so") {
+                    errors += "Turnip AdrenoTools metadata is invalid or names the wrong library."
+                } else if (metadata.optInt("minApi", 0) <= 0) {
+                    errors += "Turnip AdrenoTools metadata has no valid minApi."
+                }
+            }
         }
         return RuntimeManifestValidation(errors.isEmpty(), errors.distinct(), json, files)
     }

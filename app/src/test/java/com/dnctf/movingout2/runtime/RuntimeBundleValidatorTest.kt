@@ -141,7 +141,10 @@ class RuntimeBundleValidatorTest {
         addFile("msvcp140", "wine/lib/wine/x86_64-windows/msvcp140.dll", pe32PlusX64())
 
         val libraryDirectory = File(root, "wine/lib/wine").apply { mkdirs() }
-        File(libraryDirectory, "module.so").writeBytes(arm64Elf(machine = 62).also { ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).putLong(24, 0L) })
+        for (module in listOf("ntdll.so", "win32u.so")) {
+            File(libraryDirectory, module).writeBytes(arm64Elf(machine = 62))
+        }
+        File(libraryDirectory, "module.so").writeBytes(arm64Elf(machine = 62))
         components.put(
             "wineLib",
             JSONObject()
