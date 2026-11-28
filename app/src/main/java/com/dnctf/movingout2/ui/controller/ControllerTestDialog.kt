@@ -2,9 +2,12 @@ package com.dnctf.movingout2.ui.controller
 
 import android.app.Activity
 import android.app.Dialog
+import android.os.Handler
+import android.os.Looper
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.dnctf.movingout2.input.ControllerInputCoordinator
+import com.dnctf.movingout2.input.InputBridgeStatus
 import com.dnctf.movingout2.input.ControllerProfile
 import com.dnctf.movingout2.input.RuntimeInputBridge
 import com.dnctf.movingout2.input.VirtualControllerView
@@ -16,24 +19,30 @@ object ControllerTestDialog {
         activity: Activity,
         inputBridge: RuntimeInputBridge,
         inputCoordinator: ControllerInputCoordinator,
-        controllerProfile: ControllerProfile
+        controllerProfile: ControllerProfile,
+        runtimeInputStatus: () -> InputBridgeStatus = { inputBridge.status }
     ) {
         val dialog = Dialog(activity)
         val container = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 20, 24, 12)
         }
-        val transportStatus = when {
-            inputBridge.isNativeAvailable() && inputBridge.isInitialized() ->
-                "native shared memory ready; Wine reader pending"
-            inputBridge.isInitialized() ->
-                "JVM fallback active; native shared memory unavailable"
-            else -> "transport initialization failed"
-        }
         val info = TextView(activity).apply {
-            text = "Touch the controls or connect a controller.\nMO2X: $transportStatus"
             textSize = 14f
         }
+        fun bridgeStatusLabel(): String = when (runtimeInputStatus()) {
+            InputBridgeStatus.BRIDGE_CONNECTED ->
+                "Wine XInput reader active (game input still unverified)"
+            InputBridgeStatus.BRIDGE_READY_WAITING_RUNTIME ->
+                "shared memory ready; waiting for Wine XInput reader"
+            InputBridgeStatus.BRIDGE_UNSUPPORTED ->
+                if (inputBridge.isNativeAvailable()) "native input transport is not initialized"
+                else "native shared memory unavailable"
+        }
+        fun refreshBridgeInfo() {
+            info.text = "Touch the controls or connect a controller.\nMO2X: ${bridgeStatusLabel()}"
+        }
+        refreshBridgeInfo()
         val stateText = TextView(activity).apply {
             text = "Input: idle"
             textSize = 13f
@@ -66,7 +75,19 @@ object ControllerTestDialog {
         )
         dialog.setContentView(container)
         dialog.setTitle("Controller test")
-        dialog.setOnDismissListener { inputCoordinator.clearTouch() }
+        val statusHandler = Handler(Looper.getMainLooper())
+        val statusPoll = object : Runnable {
+            override fun run() {
+                if (!dialog.isShowing) return
+                refreshBridgeInfo()
+                statusHandler.postDelayed(this, 500L)
+            }
+        }
+        dialog.setOnShowListener { statusHandler.post(statusPoll) }
+        dialog.setOnDismissListener {
+            statusHandler.removeCallbacks(statusPoll)
+            inputCoordinator.clearTouch()
+        }
         dialog.show()
         dialog.window?.setLayout(
             (activity.resources.displayMetrics.widthPixels * .96f).toInt(),

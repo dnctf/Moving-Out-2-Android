@@ -3,7 +3,6 @@ package com.dnctf.movingout2
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.ProgressDialog
-import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.os.Bundle
@@ -181,7 +180,13 @@ class MainActivity : Activity() {
     }
 
     private fun showControllerTest() =
-        ControllerTestDialog.show(this, inputBridge, inputCoordinator, controllerProfile)
+        ControllerTestDialog.show(
+            this,
+            inputBridge,
+            inputCoordinator,
+            controllerProfile,
+            runtimeInputStatus = { activeWineSession?.inputBridgeStatus() ?: inputBridge.status }
+        )
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (isGameControllerSource(event.source)) {
