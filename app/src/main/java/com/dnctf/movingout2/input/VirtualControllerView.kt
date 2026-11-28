@@ -7,7 +7,6 @@ import android.graphics.RectF
 import android.view.MotionEvent
 import android.view.HapticFeedbackConstants
 import android.view.View
-import kotlin.math.min
 import kotlin.math.sqrt
 
 /** Responsive touch overlay. Geometry is recomputed from current view size/orientation. */
@@ -25,6 +24,7 @@ class VirtualControllerView(
     private var dpadCenter = Pair(0f, 0f)
     private var dpadRadius = 1f
     private var stickRadius = 1f
+    private var controlUnit = 1f
     private var scale = 1f
     private var opacity = .44f
     private var offsetX = 0f
@@ -70,7 +70,7 @@ class VirtualControllerView(
         if (!overlayVisible || width <= 0 || height <= 0) return
         calculateGeometry()
         val alpha = (opacity * 255f).toInt().coerceIn(0, 255)
-        val unit = min(width, height) * .12f * scale
+        val unit = controlUnit
         drawDpad(canvas, alpha, unit)
         drawStick(canvas, leftCenter, false, alpha)
         drawStick(canvas, rightCenter, true, alpha)
@@ -79,35 +79,25 @@ class VirtualControllerView(
     }
 
     private fun calculateGeometry() {
-        buttonRects.clear(); triggerRects.clear()
-        val w = width.toFloat(); val h = height.toFloat(); val u = min(w, h) * .12f * scale
-        val ox = w * offsetX; val oy = h * offsetY
-        leftCenter = Pair(w * .16f + ox, h * .72f + oy)
-        rightCenter = Pair(w * .58f + ox, h * .72f + oy)
-        stickRadius = u * 1.35f
-        dpadCenter = Pair(w * .20f + ox, h * .40f + oy)
-        dpadRadius = u * 1.18f
-        val dSize = u * .28f; val dOffset = u * .58f
-        buttonRects[ControllerButton.UP] = rect(dpadCenter.first, dpadCenter.second - dOffset, dSize)
-        buttonRects[ControllerButton.DOWN] = rect(dpadCenter.first, dpadCenter.second + dOffset, dSize)
-        buttonRects[ControllerButton.LEFT] = rect(dpadCenter.first - dOffset, dpadCenter.second, dSize)
-        buttonRects[ControllerButton.RIGHT] = rect(dpadCenter.first + dOffset, dpadCenter.second, dSize)
-        val faceCenter = Pair(w * .82f + ox, h * .55f + oy); val fr = u * .30f; val fOffset = u * .62f
-        buttonRects[ControllerButton.Y] = rect(faceCenter.first, faceCenter.second - fOffset, fr)
-        buttonRects[ControllerButton.A] = rect(faceCenter.first, faceCenter.second + fOffset, fr)
-        buttonRects[ControllerButton.X] = rect(faceCenter.first - fOffset, faceCenter.second, fr)
-        buttonRects[ControllerButton.B] = rect(faceCenter.first + fOffset, faceCenter.second, fr)
-        val top = VirtualControllerTopLayout.calculate(w, h, u, offsetX, offsetY)
-        buttonRects[ControllerButton.LB] = top.leftBumper.toRectF()
-        buttonRects[ControllerButton.BACK] = top.back.toRectF()
-        buttonRects[ControllerButton.START] = top.start.toRectF()
-        buttonRects[ControllerButton.RB] = top.rightBumper.toRectF()
-        triggerRects[false] = top.leftTrigger.toRectF()
-        triggerRects[true] = top.rightTrigger.toRectF()
+        buttonRects.clear()
+        triggerRects.clear()
+        val layout = VirtualControllerGeometry.calculate(
+            width = width.toFloat(),
+            height = height.toFloat(),
+            scale = scale,
+            offsetX = offsetX,
+            offsetY = offsetY
+        )
+        controlUnit = layout.unit
+        leftCenter = layout.leftStickCenter.x to layout.leftStickCenter.y
+        rightCenter = layout.rightStickCenter.x to layout.rightStickCenter.y
+        dpadCenter = layout.dpadCenter.x to layout.dpadCenter.y
+        stickRadius = layout.stickRadius
+        dpadRadius = layout.dpadRadius
+        layout.buttonBounds.forEach { (button, bounds) -> buttonRects[button] = bounds.toRectF() }
+        layout.triggerBounds.forEach { (right, bounds) -> triggerRects[right] = bounds.toRectF() }
     }
-    private fun rect(cx: Float, cy: Float, radius: Float): RectF = RectF(cx-radius, cy-radius, cx+radius, cy+radius)
-    private fun rect(cx: Float, cy: Float, halfWidth: Float, halfHeight: Float): RectF = RectF(cx-halfWidth, cy-halfHeight, cx+halfWidth, cy+halfHeight)
-    private fun VirtualControllerTopLayout.Bounds.toRectF(): RectF =
+    private fun VirtualControllerGeometry.Bounds.toRectF(): RectF =
         RectF(left, top, right, bottom)
 
     private fun drawDpad(canvas: Canvas, alpha: Int, unit: Float) {
@@ -207,7 +197,7 @@ class VirtualControllerView(
     }
     private fun insideStick(x: Float, y: Float, center: Pair<Float,Float>): Boolean {
         val dx=x-center.first; val dy=y-center.second
-        return sqrt(dx*dx+dy*dy)<=stickRadius*1.25f
+        return sqrt(dx*dx+dy*dy)<=stickRadius
     }
     private fun moveStick(id: Int, x: Float, y: Float, right: Boolean) {
         val center = if (right) rightCenter else leftCenter
