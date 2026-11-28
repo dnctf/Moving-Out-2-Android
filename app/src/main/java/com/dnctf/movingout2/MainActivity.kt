@@ -3,7 +3,6 @@ package com.dnctf.movingout2
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.ProgressDialog
-import android.app.Dialog
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -24,7 +23,6 @@ import com.dnctf.movingout2.runtime.RuntimeDiagnostics
 import com.dnctf.movingout2.compatibility.DeviceDiagnosticsProvider
 import com.dnctf.movingout2.input.RuntimeInputBridge
 import com.dnctf.movingout2.input.ControllerInputCoordinator
-import com.dnctf.movingout2.input.VirtualControllerView
 import com.dnctf.movingout2.input.PhysicalGamepadManager
 import com.dnctf.movingout2.input.ControllerProfile
 import com.dnctf.movingout2.input.ControllerProfileRepository
@@ -44,6 +42,7 @@ import com.dnctf.movingout2.runtime.RuntimeGraphicsComponents
 import com.dnctf.movingout2.settings.LauncherSettings
 import com.dnctf.movingout2.settings.RuntimeSettingsConsumer
 import com.dnctf.movingout2.ui.home.LauncherHomeView
+import com.dnctf.movingout2.ui.controller.ControllerTestDialog
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -178,32 +177,8 @@ class MainActivity : Activity() {
             }
     }
 
-    private fun showControllerTest() {
-        val dialog = Dialog(this)
-        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 20, 24, 12) }
-        val info = TextView(this).apply { text = "Touch the controls or connect a controller.\nMO2X: " + if (inputBridge.isNativeAvailable() && inputBridge.isInitialized()) "native shared memory ready; Wine reader pending" else if (inputBridge.isInitialized()) "JVM fallback active; native shared memory unavailable" else "transport initialization failed"; textSize = 14f }
-        val stateText = TextView(this).apply { text = "Input: idle"; textSize = 13f; setPadding(0, 8, 0, 8) }
-        val pad = VirtualControllerView(this, controllerProfile.deadzone) { state ->
-            inputCoordinator.updateTouchState(state)
-            val readback = inputCoordinator.previewPacket(state).serializeLittleEndian().joinToString(" ") { byte -> "%02X".format(byte.toInt() and 0xFF) }
-            stateText.text = "Input: buttons=" + state.buttons.joinToString() + " | left=(" + state.leftX + ", " + state.leftY + ") | right=(" + state.rightX + ", " + state.rightY + ")\nMO2X packet: " + readback
-        }
-        val overlay = LauncherSettings.load(this)
-        pad.configure(overlay.controllerScale / 100f, overlay.controllerOpacity / 100f, (overlay.controllerOffsetX - 50) / 100f, (overlay.controllerOffsetY - 50) / 100f)
-        pad.setHapticsEnabled(overlay.controllerHaptics)
-        pad.setOverlayVisible(overlay.controllerEnabled)
-        container.addView(info)
-        container.addView(stateText)
-        val padHeight = (resources.displayMetrics.heightPixels * .52f).toInt().coerceIn(260, 520)
-        container.addView(pad, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, padHeight))
-        dialog.setContentView(container)
-        dialog.setTitle("Controller test")
-        dialog.setOnDismissListener {
-            inputCoordinator.clearTouch()
-        }
-        dialog.show()
-        dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.96f).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
-    }
+    private fun showControllerTest() =
+        ControllerTestDialog.show(this, inputBridge, inputCoordinator, controllerProfile)
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.source and (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK) != 0) {
