@@ -283,16 +283,48 @@ class WineSessionSupervisor(
 
         // Build environment
         val hostLibDir = File(context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
+        val manifestComponents = RuntimeManifestParser().validate(bundleRoot).componentFiles
+        val turnipLibrary = manifestComponents["turnipSo"]
+        val turnipIcdSource = manifestComponents["turnipIcd"]
+        val turnipIcd = if (options.useTurnip && turnipLibrary != null && turnipIcdSource != null) {
+            runCatching {
+                TurnipIcdConfig.rewrite(
+                    turnipIcdSource,
+                    turnipLibrary,
+                    File(context.filesDir, "runtime-session/freedreno_icd.aarch64.json")
+                )
+            }.onFailure {
+                diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "turnip", "Turnip ICD setup failed; retaining system Vulkan fallback: ${it.message}"))
+            }.getOrNull()
+        } else null
+        if (options.useTurnip && turnipIcd == null) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "turnip", "Turnip is not present or could not be configured; using Android's system Vulkan driver."))
+        }
+        val unixModulesReady = listOf("ntdll.so", "win32u.so").all {
+            File(report.libraryDirectory, it).let { module -> module.isFile && module.length() > 0L }
+        }
+        stageLog.event("STAGE_4_WINE_BOOTSTRAP", if (unixModulesReady) "WINE_UNIX_MODULES_READY" else "WINE_UNIX_MODULES_MISSING", mapOf(
+            "ntdll" to File(report.libraryDirectory, "ntdll.so").isFile,
+            "win32u" to File(report.libraryDirectory, "win32u.so").isFile,
+            "unixLibraryDirectory" to File(report.libraryDirectory, "x86_64-unix").isDirectory
+        ))
+        if (!unixModulesReady) {
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Wine UNIX compatibility modules ntdll.so/win32u.so are missing from the loader search root."))
+            transitionTo(WineSessionState.FAILED)
+            return false
+        }
         val env = WineLaunchCommand.environment(
             prefix = prefix,
             sharedInput = sharedInput,
             hostLibraryDirectory = hostLibDir,
             fpsCap = options.fpsCap,
+            turnipIcd = turnipIcd,
             guestLibraryDirectory = report.libraryDirectory,
             guestGlibcDirectory = report.guestGlibcDirectory,
             guestBinaryDirectory = wineCandidate.parentFile,
             dxvkDirectory = File(bundleRoot, "dxvk/x64").takeIf { options.useDxvk && it.isDirectory },
-            useDxvk = options.useDxvk
+            useDxvk = options.useDxvk,
+            additionalHostLibraryDirectories = listOfNotNull(turnipLibrary?.parentFile)
         ).toMutableMap()
         env.putAll(options.environmentOverrides)
         activeSessionEnvironment = env.toMap()
