@@ -72,9 +72,12 @@ if [[ -n "$TURNIP_SO" ]];then
   else
     printf '{\n  "file_format_version": "1.0.0",\n  "library_path": "libvulkan_freedreno.so"\n}\n' > "$ROOT/turnip/freedreno_icd.aarch64.json"
   fi
+  [[ -s "$(dirname "$TURNIP_SO")/meta.json" ]] || { echo "Turnip AdrenoTools meta.json missing" >&2; exit 1; }
+  cp "$(dirname "$TURNIP_SO")/meta.json" "$ROOT/turnip/meta.json"
   if [[ -n "$TURNIP_LICENSE_DIR" ]]; then
-    [[ -s "$TURNIP_LICENSE_DIR/NOTICE" && -s "$TURNIP_LICENSE_DIR/LICENSES/GPL-3.0.txt" ]] || { echo "Turnip NOTICE/GPL-3.0 license missing" >&2; exit 1; }
+    [[ -s "$TURNIP_LICENSE_DIR/NOTICE" && -s "$TURNIP_LICENSE_DIR/LICENSES/GPL-3.0.txt" && -s "$TURNIP_LICENSE_DIR/SOURCE.tar.xz" ]] || { echo "Turnip NOTICE/GPL-3.0 license/corresponding source archive missing" >&2; exit 1; }
     cp "$TURNIP_LICENSE_DIR/NOTICE" "$ROOT/turnip/NOTICE"
+    cp "$TURNIP_LICENSE_DIR/SOURCE.tar.xz" "$ROOT/turnip/SOURCE.tar.xz"
     mkdir -p "$ROOT/turnip/LICENSES"
     cp -a "$TURNIP_LICENSE_DIR/LICENSES/." "$ROOT/turnip/LICENSES/"
   fi
