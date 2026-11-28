@@ -28,6 +28,16 @@ on:
         required: false
         default: "40565b4a724aadc4433fa4e010b4b23916d9b1f1baeee64e17186db94f54e608"
         type: string
+      turnip_url:
+        description: "Pinned Android Turnip driver release archive URL"
+        required: false
+        default: "https://github.com/Droid-Deck/Drivers/releases/download/DD-Turnip-v1.0.0/DD-Turnip-v1.0.0.zip"
+        type: string
+      turnip_sha256:
+        description: "Expected SHA-256 of the Turnip archive"
+        required: false
+        default: "50d80ae267617f425893ba6590c4b2a0a64957280ecb3eeef6138085a77b89f4"
+        type: string
       bundle_version:
         description: "Runtime bundle version"
         required: false
@@ -283,6 +293,34 @@ jobs:
             objdump -f "$f" | grep -q 'architecture: i386:x86-64'
             objdump -p "$f" | grep -Eqi 'Magic[[:space:]]+020b'
           done
+
+      - name: Download and verify Android Turnip driver
+        shell: bash
+        env:
+          TURNIP_URL: ${{ inputs.turnip_url || 'https://github.com/Droid-Deck/Drivers/releases/download/DD-Turnip-v1.0.0/DD-Turnip-v1.0.0.zip' }}
+          TURNIP_SHA256: ${{ inputs.turnip_sha256 || '50d80ae267617f425893ba6590c4b2a0a64957280ecb3eeef6138085a77b89f4' }}
+        run: |
+          set -euo pipefail
+          [[ "$TURNIP_SHA256" =~ ^[a-fA-F0-9]{64}$ ]] || { echo "::error::Invalid pinned Turnip SHA-256"; exit 2; }
+          curl --fail --location --retry 3 --retry-all-errors "$TURNIP_URL" -o "$RUNNER_TEMP/turnip.zip"
+          printf '%s  %s\\n' "$TURNIP_SHA256" "$RUNNER_TEMP/turnip.zip" | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/turnip-extract" "$RUNNER_TEMP/runtime-input/turnip"
+          unzip -q "$RUNNER_TEMP/turnip.zip" -d "$RUNNER_TEMP/turnip-extract"
+          TURNIP_SO="$RUNNER_TEMP/turnip-extract/android/libvulkan_freedreno.so"
+          TURNIP_META="$RUNNER_TEMP/turnip-extract/android/meta.json"
+          [[ -s "$TURNIP_SO" && -s "$TURNIP_META" ]]
+          python3 - "$TURNIP_META" <<'PY'
+          import json,sys
+          m=json.load(open(sys.argv[1],encoding="utf-8"))
+          assert m.get("libraryName") == "libvulkan_freedreno.so", m
+          assert int(m.get("minApi", 999)) <= 31, m
+          print("Turnip metadata validated:", m.get("driverVersion"), "minApi=", m.get("minApi"))
+          PY
+          readelf -h "$TURNIP_SO" | grep -Eq 'Class:.*ELF64'
+          readelf -h "$TURNIP_SO" | grep -Eq 'Machine:.*AArch64'
+          install -m 0644 "$TURNIP_SO" "$RUNNER_TEMP/runtime-input/turnip/libvulkan_freedreno.so"
+          cp -a "$RUNNER_TEMP/turnip-extract/NOTICE" "$RUNNER_TEMP/runtime-input/turnip/NOTICE"
+          cp -a "$RUNNER_TEMP/turnip-extract/LICENSES" "$RUNNER_TEMP/runtime-input/turnip/LICENSES"
 
       - name: Package runtime manifest v2
         shell: bash
