@@ -14,7 +14,11 @@ The intended flow is:
 
 The existing MO2X protocol uses a 128-byte shared-memory file: a 32-byte header and four 24-byte player slots. Slots use a sequence counter for consistent reads. Controller packet serialization is little-endian (12 bytes: buttons, triggers, four signed axes). The JNI transport writes the shared file; the native Wine XInput DLL exposes `XInputGetState` and reads the same protocol.
 
-This is a real transport implementation and CI builds the XInput DLL, but it is **not yet an active game session**: no Wine/Box64 process is launched or supervised by the Android app, no DLL reader is confirmed running inside a Wine prefix, and no game has consumed the controller packet. The bridge must remain in waiting/unsupported state until runtime connection evidence exists.
+The Android launcher now has an explicit supervised launch path in `MainActivity.startGameSession` and `WineSessionSupervisor.startSession`. The supervisor validates the runtime manifest and executable, checks the native exec capability, bootstraps the Wine prefix, deploys the XInput DLLs, starts and probes wineserver, launches the target through Box64/Wine, and couples target/wineserver lifetimes with a watchdog.
+
+The supervisor initializes the MO2X mapping and polls its reader counter every 200 ms while the target process is alive. It reports `BRIDGE_READY_WAITING_RUNTIME` until the in-prefix Wine XInput DLL increments the counter during that session; process startup alone is not considered a connection. Failed startup paths release the mapping, and shutdown stops the reader monitor before unmapping it.
+
+These code paths and the runtime bundle are CI-buildable, but **device execution remains unverified**. A successful supervisor state of `RUNNING` means the target process was launched and remained alive at the last check; it does not prove that Unity rendered a frame, that the game reached its menu, or that it consumed controller state. A reader heartbeat proves that an XInput entry point was called, not that the game acted on the packet. No physical-device gameplay or FPS claim is made.
 
 ## Compatibility stack hypothesis (not a verified launch profile)
 

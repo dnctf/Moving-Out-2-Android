@@ -1,6 +1,7 @@
 package com.dnctf.movingout2.runtime
 
 import android.content.Context
+import com.dnctf.movingout2.input.InputBridgeStatus
 import com.dnctf.movingout2.input.RuntimeInputBridge
 import java.io.File
 import java.io.FileWriter
@@ -196,9 +197,13 @@ class WineSessionSupervisor(
     @Volatile var targetProcess: ProcessResult? = null
         private set
     @Volatile private var watchdogThread: Thread? = null
+    @Volatile private var readerHeartbeatThread: Thread? = null
 
     val state: WineSessionState
         get() = stateRef.get()
+
+    /** Runtime input status is based on the Wine XInput reader, not process startup alone. */
+    fun inputBridgeStatus(): InputBridgeStatus = inputBridge.status
 
     @Synchronized
     fun startSession(gameExe: File, options: WineLaunchOptions = WineLaunchOptions()): Boolean {
@@ -280,6 +285,13 @@ class WineSessionSupervisor(
             transitionTo(WineSessionState.FAILED)
             return false
         }
+        // Snapshot the current counter so an earlier Wine process cannot satisfy this session.
+        inputBridge.beginRuntimeSession()
+        diagnostics.record(RuntimeDiagnostic(
+            RuntimeDiagnostic.Severity.INFO,
+            "input-bridge",
+            "MO2X transport ready; waiting for a fresh Wine XInput reader heartbeat."
+        ))
 
         // Build environment
         val hostLibDir = File(context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
@@ -309,7 +321,11 @@ class WineSessionSupervisor(
             "steam_api64_b" to overrides.contains("steam_api64=b"), "xinputOverrides" to listOf("xinput1_3","xinput1_4","xinput9_1_0").all { overrides.contains(it) },
             "mo2xBytes" to shmLayout, "xinputDllsPresent" to xinputDllsPresent, "contractValid" to envOk
         ))
-        if (!envOk) { transitionTo(WineSessionState.FAILED); return false }
+        if (!envOk) {
+            releaseInputBridgeAfterFailedStart()
+            transitionTo(WineSessionState.FAILED)
+            return false
+        }
 
         // 3. STARTING_WINESERVER
         transitionTo(WineSessionState.STARTING_WINESERVER)
@@ -318,6 +334,7 @@ class WineSessionSupervisor(
             runner.start(activeBox64, wineserverArgs, env, prefix, "WINESERVER")
         } catch (e: Exception) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Failed to start wineserver: ${e.message}"))
+            releaseInputBridgeAfterFailedStart()
             transitionTo(WineSessionState.FAILED)
             return false
         }
@@ -331,6 +348,7 @@ class WineSessionSupervisor(
         if (!isReady || !serverProc.process.isAlive) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Wineserver readiness probe timed out or server died"))
             reapWineserver(activeBox64, wineserverCandidate, env)
+            releaseInputBridgeAfterFailedStart()
             transitionTo(WineSessionState.FAILED)
             return false
         }
@@ -344,6 +362,7 @@ class WineSessionSupervisor(
         } catch (e: Exception) {
             diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "supervisor", "Failed to launch target game: ${e.message}"))
             reapWineserver(activeBox64, wineserverCandidate, env)
+            releaseInputBridgeAfterFailedStart()
             transitionTo(WineSessionState.FAILED)
             return false
         }
@@ -351,6 +370,7 @@ class WineSessionSupervisor(
 
         // 5. RUNNING & Crash Coupling Watchdog
         transitionTo(WineSessionState.RUNNING)
+        startReaderHeartbeatMonitor(targetProc)
         startCrashCouplingWatchdog(activeBox64, wineserverCandidate, env)
         return true
     }
@@ -441,6 +461,67 @@ class WineSessionSupervisor(
         }
     }
 
+    /**
+     * Polls the native MO2X header while the supervised Wine target is alive. A running
+     * Box64/Wine process is not enough: CONNECTED requires the in-prefix XInput DLL to
+     * increment the shared reader counter during this session.
+     */
+    private fun startReaderHeartbeatMonitor(process: ProcessResult) {
+        stopReaderHeartbeatMonitor()
+        readerHeartbeatThread = Thread({
+            var previous = inputBridge.status
+            while (process.process.isAlive &&
+                stateRef.get() == WineSessionState.RUNNING &&
+                !Thread.currentThread().isInterrupted
+            ) {
+                inputBridge.refreshRuntimeConnectionFromReader()
+                val current = inputBridge.status
+                if (current != previous) {
+                    diagnostics.record(RuntimeDiagnostic(
+                        RuntimeDiagnostic.Severity.INFO,
+                        "input-bridge",
+                        "Wine XInput reader status changed: $current."
+                    ))
+                    previous = current
+                }
+                try {
+                    Thread.sleep(200L)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    break
+                }
+            }
+            inputBridge.setNativeRuntimeConnected(false)
+            val finalStatus = inputBridge.status
+            if (finalStatus != previous) {
+                diagnostics.record(RuntimeDiagnostic(
+                    RuntimeDiagnostic.Severity.INFO,
+                    "input-bridge",
+                    "Wine target ended; reader status is $finalStatus."
+                ))
+            }
+        }, "mo2x-reader-monitor").apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun stopReaderHeartbeatMonitor() {
+        val thread = readerHeartbeatThread ?: return
+        readerHeartbeatThread = null
+        thread.interrupt()
+        if (thread !== Thread.currentThread()) {
+            runCatching { thread.join(1000L) }
+        }
+    }
+
+    /** Releases a mapping if startup fails after native IPC initialization. */
+    private fun releaseInputBridgeAfterFailedStart() {
+        stopReaderHeartbeatMonitor()
+        runCatching { inputBridge.neutralizeAllPlayers() }
+        runCatching { inputBridge.destroy() }
+    }
+
     private fun startCrashCouplingWatchdog(
         box64: File,
         wineserver: File,
@@ -510,6 +591,9 @@ class WineSessionSupervisor(
         if (curr != WineSessionState.STOPPING) {
             transitionTo(WineSessionState.STOPPING)
         }
+
+        // Stop the reader before unmapping the shared memory it polls.
+        stopReaderHeartbeatMonitor()
 
         // 1. Neutralize input
         inputBridge.neutralizeAllPlayers()

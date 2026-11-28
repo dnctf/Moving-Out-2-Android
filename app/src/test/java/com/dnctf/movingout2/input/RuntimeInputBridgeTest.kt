@@ -152,6 +152,22 @@ class RuntimeInputBridgeTest {
         assertEquals(InputBridgeStatus.BRIDGE_READY_WAITING_RUNTIME, bridge.status)
     }
 
+    @Test fun endingRuntimeSessionReturnsBridgeToWaitingWithoutDestroyingTransport() {
+        val fake = FakeTransport().apply { readerHeartbeat = 10L }
+        val bridge = RuntimeInputBridge(fake)
+        assertTrue(bridge.initialize("/tmp/input.shm"))
+        bridge.beginRuntimeSession()
+        fake.readerHeartbeat = 11L
+        assertTrue(bridge.refreshRuntimeConnectionFromReader())
+        assertEquals(InputBridgeStatus.BRIDGE_CONNECTED, bridge.status)
+
+        // The supervisor calls this when the target process exits or the monitor is stopped.
+        bridge.setNativeRuntimeConnected(false)
+        assertEquals(InputBridgeStatus.BRIDGE_READY_WAITING_RUNTIME, bridge.status)
+        assertTrue(bridge.isInitialized())
+        assertTrue(bridge.isNativeAvailable())
+    }
+
     @Test fun neutralizationIsIdempotentAfterBridgeDestroy() {
         val fake = FakeTransport()
         val bridge = RuntimeInputBridge(fake)
