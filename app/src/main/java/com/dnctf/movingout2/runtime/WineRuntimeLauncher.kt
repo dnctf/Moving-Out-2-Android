@@ -121,13 +121,14 @@ class WineRuntimeLauncher(
             if (!sharedInput.exists()) sharedInput.writeBytes(ByteArray(128))
             val zPath = toWineZPath(gameExe)
             val args = WineLaunchCommand.arguments(wine!!.absolutePath, zPath, options.width, options.height)
-            val hostLibraryDirectory = turnipLibrary?.parentFile ?: File(context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
+            val hostLibraryDirectory = File(context.applicationInfo.nativeLibraryDir ?: context.applicationInfo.dataDir)
             val env = WineLaunchCommand.environment(
                 prefix, sharedInput, hostLibraryDirectory, options.fpsCap,
                 if (options.useTurnip && turnipDir != null) icd else null, dxvkDlls,
                 guestLibraryDirectory = if (manifestFile.isFile) report.libraryDirectory else null,
                 guestBinaryDirectory = wine!!.parentFile,
-                useDxvk = options.useDxvk
+                useDxvk = options.useDxvk,
+                additionalHostLibraryDirectories = listOfNotNull(turnipLibrary?.parentFile)
             ).toMutableMap()
             properties.stringPropertyNames().filter { it.startsWith("profile_env_") }.forEach { p ->
                 val envKey = p.removePrefix("profile_env_")
