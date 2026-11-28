@@ -59,6 +59,7 @@ done
 if [[ -d "$ROOT/turnip" ]]; then
   check_shared "$ROOT/turnip/libvulkan_freedreno.so" AArch64
   [[ -s "$ROOT/turnip/freedreno_icd.aarch64.json" ]]
+  [[ -s "$ROOT/turnip/meta.json" && -s "$ROOT/turnip/SOURCE.tar.xz" ]]
   [[ -s "$ROOT/turnip/NOTICE" && -s "$ROOT/turnip/LICENSES/GPL-3.0.txt" ]]
   python3 - "$ROOT/turnip/freedreno_icd.aarch64.json" <<'PY'
 import json,sys
