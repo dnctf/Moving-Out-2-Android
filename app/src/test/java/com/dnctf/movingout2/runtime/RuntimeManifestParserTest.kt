@@ -42,6 +42,8 @@ class RuntimeManifestParserTest {
    val abi = when (key) {
    "box64" -> RuntimeBinaryInspector.ELF64_AARCH64
    "turnipSo" -> RuntimeBinaryInspector.ELF64_AARCH64_SHARED
+   "turnipSource" -> "SOURCE_ARCHIVE"
+   "turnipNotice", "turnipLicense" -> "TEXT"
    "wine64", "wineserver" -> RuntimeBinaryInspector.ELF64_X86_64
    "d3d11", "dxgi", "xinput1_3", "xinput1_4", "xinput9_1_0", "vcruntime140", "vcruntime140_1", "msvcp140" -> RuntimeBinaryInspector.PE32_PLUS_X86_64
    else -> "JSON"
