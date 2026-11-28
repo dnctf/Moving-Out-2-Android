@@ -86,7 +86,7 @@ object VirtualControllerGeometry {
             maxOf(width * .36f, height * (stickY - dpadY)) / (1.35f + 1.18f),
             maxOf(width * .26f, height * (stickY - faceY)) / (1.35f + .92f)
         )
-        val unit = min(min(width, height) * .12f * safeScale, maxUnit)
+        // Leave a small physical gap after Float rounding so adjacent hit bounds never overlap.\n        val unit = min(min(width, height) * .12f * safeScale, maxUnit) * .995f
         require(unit.isFinite() && unit > 0f) { "Controller geometry cannot fit this view." }
 
         val stickRadius = unit * 1.35f
