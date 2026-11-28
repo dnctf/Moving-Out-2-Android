@@ -50,8 +50,8 @@ object WineLaunchCommand {
             "BOX64_DYNAREC_SAFEFLAGS" to "1",
             "DXVK_STATE_CACHE" to "1",
             "DXVK_FRAME_RATE" to fpsCap.coerceIn(15, 240).toString(),
-            "LD_LIBRARY_PATH" to (listOf(hostLibraryDirectory) + additionalHostLibraryDirectories)
-                .filter { it.isDirectory && it.canRead() }.distinct().joinToString(File.pathSeparator)
+            "LD_LIBRARY_PATH" to (listOf(hostLibraryDirectory.absoluteFile) + additionalHostLibraryDirectories
+                .filter { it.isDirectory && it.canRead() }).distinct().joinToString(File.pathSeparator)
         )
         guestLibraryDirectory?.takeIf { it.isDirectory && it.canRead() }?.let { result["WINEDLLPATH"] = it.absolutePath }
         guestLibrarySearchPath(guestGlibcDirectory, guestLibraryDirectory)?.let {
