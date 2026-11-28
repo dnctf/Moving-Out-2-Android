@@ -46,6 +46,9 @@ while IFS= read -r -d '' lib; do
   glibc_count=$((glibc_count+1))
 done < <(find "$GLIBC_DIR" -type f -name '*.so*' -print0)
 (( glibc_count > 0 )) || { echo "No guest glibc shared objects found." >&2; exit 1; }
+for unix_module in ntdll.so win32u.so; do
+  check_shared "$ROOT/wine/lib/wine/$unix_module" 'X86-64'
+done
 if find "$ROOT/wine/lib" -type l -print -quit | grep -q .; then
   echo "Symlink found in wine/lib." >&2
   exit 1
@@ -53,4 +56,14 @@ fi
 for dll in dxvk/x64/d3d11.dll dxvk/x64/dxgi.dll wine/lib/wine/x86_64-windows/xinput1_3.dll wine/lib/wine/x86_64-windows/xinput1_4.dll wine/lib/wine/x86_64-windows/xinput9_1_0.dll wine/lib/wine/x86_64-windows/vcruntime140.dll wine/lib/wine/x86_64-windows/vcruntime140_1.dll wine/lib/wine/x86_64-windows/msvcp140.dll; do
   check_pe "$ROOT/$dll"
 done
+if [[ -d "$ROOT/turnip" ]]; then
+  check_shared "$ROOT/turnip/libvulkan_freedreno.so" AArch64
+  [[ -s "$ROOT/turnip/freedreno_icd.aarch64.json" ]]
+  [[ -s "$ROOT/turnip/NOTICE" && -s "$ROOT/turnip/LICENSES/GPL-3.0.txt" ]]
+  python3 - "$ROOT/turnip/freedreno_icd.aarch64.json" <<'PY'
+import json,sys
+icd=json.load(open(sys.argv[1],encoding="utf-8"))
+assert icd.get("library_path") == "libvulkan_freedreno.so", icd
+PY
+fi
 echo "Multi-ABI runtime audit passed."
