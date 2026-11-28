@@ -1,6 +1,7 @@
 package com.dnctf.movingout2.runtime
 
 import android.content.Context
+import android.os.Build
 import com.dnctf.movingout2.input.RuntimeInputBridge
 import java.io.File
 import java.io.FileWriter
@@ -286,7 +287,11 @@ class WineSessionSupervisor(
         val manifestComponents = RuntimeManifestParser().validate(bundleRoot).componentFiles
         val turnipLibrary = manifestComponents["turnipSo"]
         val turnipIcdSource = manifestComponents["turnipIcd"]
-        val turnipIcd = if (options.useTurnip && turnipLibrary != null && turnipIcdSource != null) {
+        val turnipMinApi = manifestComponents["turnipMeta"]?.let { meta ->
+            runCatching { org.json.JSONObject(meta.readText()).optInt("minApi", 999) }.getOrDefault(999)
+        } ?: 999
+        val turnipSupportedOnDevice = Build.VERSION.SDK_INT >= turnipMinApi
+        val turnipIcd = if (options.useTurnip && turnipSupportedOnDevice && turnipLibrary != null && turnipIcdSource != null) {
             runCatching {
                 TurnipIcdConfig.rewrite(
                     turnipIcdSource,
@@ -298,7 +303,9 @@ class WineSessionSupervisor(
             }.getOrNull()
         } else null
         if (options.useTurnip && turnipIcd == null) {
-            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "turnip", "Turnip is not present or could not be configured; using Android's system Vulkan driver."))
+            diagnostics.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.WARNING, "turnip",
+                if (!turnipSupportedOnDevice) "Bundled Turnip requires Android API $turnipMinApi; device API is ${Build.VERSION.SDK_INT}. Using system Vulkan driver."
+                else "Turnip is not present or could not be configured; using Android's system Vulkan driver."))
         }
         val unixModulesReady = listOf("ntdll.so", "win32u.so").all {
             File(report.libraryDirectory, it).let { module -> module.isFile && module.length() > 0L }
