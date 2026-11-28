@@ -299,6 +299,8 @@ jobs:
         env:
           TURNIP_URL: ${{ inputs.turnip_url || 'https://github.com/Droid-Deck/Drivers/releases/download/DD-Turnip-v1.0.0/DD-Turnip-v1.0.0.zip' }}
           TURNIP_SHA256: ${{ inputs.turnip_sha256 || '50d80ae267617f425893ba6590c4b2a0a64957280ecb3eeef6138085a77b89f4' }}
+          TURNIP_SOURCE_URL: "https://github.com/Droid-Deck/Drivers/releases/download/DD-Turnip-v1.0.0/DD-Turnip-v1.0.0-source.tar.xz"
+          TURNIP_SOURCE_SHA256: "14fe1b5042916f75f23b992d7d2515007b29641cd49d78491e9c48341af632e5"
         run: |
           set -euo pipefail
           [[ "$TURNIP_SHA256" =~ ^[a-fA-F0-9]{64}$ ]] || { echo "::error::Invalid pinned Turnip SHA-256"; exit 2; }
@@ -319,6 +321,10 @@ jobs:
           readelf -h "$TURNIP_SO" | grep -Eq 'Class:.*ELF64'
           readelf -h "$TURNIP_SO" | grep -Eq 'Machine:.*AArch64'
           install -m 0644 "$TURNIP_SO" "$RUNNER_TEMP/runtime-input/turnip/libvulkan_freedreno.so"
+          install -m 0644 "$TURNIP_META" "$RUNNER_TEMP/runtime-input/turnip/meta.json"
+          curl --fail --location --retry 3 --retry-all-errors "$TURNIP_SOURCE_URL" -o "$RUNNER_TEMP/turnip-source.tar.xz"
+          printf '%s  %s\\n' "$TURNIP_SOURCE_SHA256" "$RUNNER_TEMP/turnip-source.tar.xz" | sha256sum --check --status
+          install -m 0644 "$RUNNER_TEMP/turnip-source.tar.xz" "$RUNNER_TEMP/runtime-input/turnip/SOURCE.tar.xz"
           cp -a "$RUNNER_TEMP/turnip-extract/NOTICE" "$RUNNER_TEMP/runtime-input/turnip/NOTICE"
           cp -a "$RUNNER_TEMP/turnip-extract/LICENSES" "$RUNNER_TEMP/runtime-input/turnip/LICENSES"
 
