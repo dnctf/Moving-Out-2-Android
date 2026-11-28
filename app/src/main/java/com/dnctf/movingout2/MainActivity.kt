@@ -58,6 +58,8 @@ class MainActivity : Activity() {
     private val inputBridge = RuntimeInputBridge()
     private val runtimeInstallInProgress = AtomicBoolean(false)
     private val gameImportInProgress = AtomicBoolean(false)
+    @Volatile private var activeGameImportCancellation: AtomicBoolean? = null
+    private var activeGameImportProgressDialog: ProgressDialog? = null
     private val launchReadinessCoordinator = com.dnctf.movingout2.runtime.LaunchReadinessCoordinator()
     @Volatile private var vulkanAvailable = false
     @Volatile private var graphicsProbeComplete = false
@@ -220,6 +222,12 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        activeGameImportCancellation?.set(true)
+        activeGameImportCancellation = null
+        activeGameImportProgressDialog?.let { dialog ->
+            runCatching { if (dialog.isShowing) dialog.dismiss() }
+        }
+        activeGameImportProgressDialog = null
         activeWineSession?.let { session ->
             Thread({ session.shutdownAll() }, "wine-session-destroy").apply { isDaemon = true; start() }
         }
@@ -245,6 +253,9 @@ class MainActivity : Activity() {
         lastLaunchReady = false
         playButton.isEnabled = false
         playButton.alpha = 0.55f
+
+        val cancelled = AtomicBoolean(false)
+        activeGameImportCancellation = cancelled
         val progress = ProgressDialog(this).apply {
             setTitle("Importing game folder")
             setMessage("Copying SAF files into private app storage…")
@@ -254,33 +265,54 @@ class MainActivity : Activity() {
             setCancelable(false)
             show()
         }
+        activeGameImportProgressDialog = progress
+
+        // The worker owns only application context and weak UI references. Activity destruction
+        // cancels the copy and prevents callbacks from touching a dead window.
+        val activityRef = java.lang.ref.WeakReference(this)
+        val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        val appContext = applicationContext
         Thread({
             val result = runCatching {
-                com.dnctf.movingout2.installation.SafGameImporter(this).import(uri, onProgress = { update ->
-                    runOnUiThread {
-                        if (!isFinishing && !isDestroyed) {
-                            progress.progress = update.percent
-                            progress.setMessage("Copying game files: ${update.percent}% (${update.copiedFiles} files, ${update.copiedBytes / (1024 * 1024)} MiB)")
+                com.dnctf.movingout2.installation.SafGameImporter(appContext).import(
+                    uri,
+                    onProgress = { update ->
+                        mainHandler.post {
+                            val activity = activityRef.get() ?: return@post
+                            if (activity.isFinishing || activity.isDestroyed ||
+                                activity.activeGameImportCancellation !== cancelled) return@post
+                            activity.activeGameImportProgressDialog?.let { dialog ->
+                                dialog.progress = update.percent
+                                dialog.setMessage("Copying game files: ${update.percent}% (${update.copiedFiles} files, ${update.copiedBytes / (1024 * 1024)} MiB)")
+                            }
                         }
-                    }
-                })
+                    },
+                    cancelled = { cancelled.get() }
+                ).also { imported ->
+                    repository.registerImported(imported.gameRoot.absolutePath)
+                }
             }
-            gameImportInProgress.set(false)
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                progress.dismiss()
+            mainHandler.post {
+                val activity = activityRef.get() ?: return@post
+                if (activity.activeGameImportCancellation !== cancelled) return@post
+                activity.gameImportInProgress.set(false)
+                activity.activeGameImportCancellation = null
+                val dialog = activity.activeGameImportProgressDialog
+                activity.activeGameImportProgressDialog = null
+                if (activity.isFinishing || activity.isDestroyed) return@post
+                runCatching { dialog?.dismiss() }
                 result.onSuccess { imported ->
-                    val activeGame = gameRegistry.registerImportedZip(imported.gameRoot)
-                    activateControllerProfileForGame(activeGame)
-                    status.text = "SAF game folder imported automatically to ${imported.gameRoot.absolutePath}.\nFiles: ${imported.copiedFiles} | Copied: ${imported.copiedBytes / (1024 * 1024)} MiB\nGame validation: ${activeGame.validationStatus}"
-                    probeGraphicsAsync()
-                    refreshRuntimeStatus()
-                    Toast.makeText(this, "Game files copied and validated in app storage.", Toast.LENGTH_LONG).show()
+                    val activeGame = activity.gameRegistry.registerImportedZip(imported.gameRoot)
+                    activity.activateControllerProfileForGame(activeGame)
+                    activity.status.text = "SAF game folder imported automatically to ${imported.gameRoot.absolutePath}.\nFiles: ${imported.copiedFiles} | Copied: ${imported.copiedBytes / (1024 * 1024)} MiB\nGame validation: ${activeGame.validationStatus}"
+                    activity.probeGraphicsAsync()
+                    activity.refreshRuntimeStatus()
+                    Toast.makeText(activity, "Game files copied and validated in app storage.", Toast.LENGTH_LONG).show()
                 }.onFailure { error ->
-                    status.text = "Automatic SAF import failed safely: ${error.message ?: error.javaClass.simpleName}\nThe original SAF folder was not modified. Check free storage and permissions."
-                    diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "saf-game-import", status.text.toString()))
-                    refreshRuntimeStatus()
-                    Toast.makeText(this, "Game folder import failed: ${error.message}", Toast.LENGTH_LONG).show()
+                    activity.status.text = "Automatic SAF import failed safely: ${error.message ?: error.javaClass.simpleName}\nThe original SAF folder was not modified. Check free storage and permissions."
+                    activity.diagnosticLog.record(RuntimeDiagnostic(RuntimeDiagnostic.Severity.ERROR, "saf-game-import", activity.status.text.toString()))
+                    activity.refreshRuntimeStatus()
+                    Toast.makeText(activity, "Game folder import failed: ${error.message}", Toast.LENGTH_LONG).show()
                 }
             }
         }, "saf-game-import").apply { isDaemon = true; start() }
@@ -753,7 +785,12 @@ class MainActivity : Activity() {
                 }, "runtime-folder-importer").apply { isDaemon = false; start() }
             }
             pickGameZip -> {
+                if (!gameImportInProgress.compareAndSet(false, true)) {
+                    status.text = "Another game import is already running."
+                    return
+                }
                 val cancelled = AtomicBoolean(false)
+                activeGameImportCancellation = cancelled
                 val progressDialog = ProgressDialog(this).apply {
                     setTitle("Importing game ZIP")
                     setMessage("Preparing safe import…")
@@ -761,34 +798,55 @@ class MainActivity : Activity() {
                     setMax(100)
                     setProgress(0)
                     setCancelable(false)
-                    setButton(android.content.DialogInterface.BUTTON_NEGATIVE, "Cancel") { _, _ -> cancelled.set(true); setMessage("Cancelling safely…") }
+                    setButton(android.content.DialogInterface.BUTTON_NEGATIVE, "Cancel") { _, _ ->
+                        cancelled.set(true)
+                        setMessage("Cancelling safely…")
+                    }
                 }
                 progressDialog.show()
-                com.dnctf.movingout2.installation.GameZipImportCoordinator(this, repository)
-                    .importAsync(uri, cancelled = { cancelled.get() }, onProgress = { progress ->
-                        progressDialog.setProgress(progress.percent)
-                        val mibDone = progress.bytesDone / (1024 * 1024)
-                        val mibTotal = progress.totalBytes / (1024 * 1024)
-                        progressDialog.setMessage("${progress.phase}: ${progress.percent}% (${progress.entriesDone}/${progress.totalEntries} entries, ${mibDone}/${mibTotal} MiB)")
-                    }) { result ->
-                        progressDialog.dismiss()
-                        status.text = result.fold({ summary ->
-                            val activeGame = gameRegistry.registerImportedZip(summary.imported.gameRoot)
-                            activateControllerProfileForGame(activeGame)
-                            buildString {
-                                append("ZIP import successful. Files: ").append(summary.imported.fileCount)
-                                append("\nExpanded: ").append(summary.imported.bytesWritten / (1024 * 1024)).append(" MiB")
-                                append("\nImported game root: ").append(summary.imported.gameRoot.absolutePath)
-                                append("\n\nGame validation: ").append(summary.validation.status)
-                                summary.validation.stages.forEach { stage ->
-                                    append("\n").append(stage.stage).append(": ").append(if (stage.passed) "PASS" else "FAIL")
+                activeGameImportProgressDialog = progressDialog
+                val activityRef = java.lang.ref.WeakReference(this)
+                com.dnctf.movingout2.installation.GameZipImportCoordinator(applicationContext, repository)
+                    .importAsync(
+                        uri = uri,
+                        cancelled = { cancelled.get() },
+                        onProgress = { progress ->
+                            val activity = activityRef.get() ?: return@importAsync
+                            if (activity.isFinishing || activity.isDestroyed ||
+                                activity.activeGameImportCancellation !== cancelled) return@importAsync
+                            val dialog = activity.activeGameImportProgressDialog ?: return@importAsync
+                            dialog.progress = progress.percent
+                            val mibDone = progress.bytesDone / (1024 * 1024)
+                            val mibTotal = progress.totalBytes / (1024 * 1024)
+                            dialog.setMessage("${progress.phase}: ${progress.percent}% (${progress.entriesDone}/${progress.totalEntries} entries, ${mibDone}/${mibTotal} MiB)")
+                        },
+                        onComplete = { result ->
+                            val activity = activityRef.get() ?: return@importAsync
+                            if (activity.activeGameImportCancellation !== cancelled) return@importAsync
+                            activity.gameImportInProgress.set(false)
+                            activity.activeGameImportCancellation = null
+                            val dialog = activity.activeGameImportProgressDialog
+                            activity.activeGameImportProgressDialog = null
+                            if (activity.isFinishing || activity.isDestroyed) return@importAsync
+                            runCatching { dialog?.dismiss() }
+                            activity.status.text = result.fold({ summary ->
+                                val activeGame = activity.gameRegistry.registerImportedZip(summary.imported.gameRoot)
+                                activity.activateControllerProfileForGame(activeGame)
+                                buildString {
+                                    append("ZIP import successful. Files: ").append(summary.imported.fileCount)
+                                    append("\nExpanded: ").append(summary.imported.bytesWritten / (1024 * 1024)).append(" MiB")
+                                    append("\nImported game root: ").append(summary.imported.gameRoot.absolutePath)
+                                    append("\n\nGame validation: ").append(summary.validation.status)
+                                    summary.validation.stages.forEach { stage ->
+                                        append("\n").append(stage.stage).append(": ").append(if (stage.passed) "PASS" else "FAIL")
+                                    }
+                                    append("\nRuntime readiness: shown in the Runtime panel")
                                 }
-                                append("\nRuntime readiness: shown in the Runtime panel")
-                            }
-                        }, { "ZIP import failed safely: ${it.message ?: it.javaClass.simpleName}" })
-                        probeGraphicsAsync()
-                        refreshRuntimeStatus()
-                    }
+                            }, { "ZIP import failed safely: ${it.message ?: it.javaClass.simpleName}" })
+                            activity.probeGraphicsAsync()
+                            activity.refreshRuntimeStatus()
+                        }
+                    )
             }
         }
     }
