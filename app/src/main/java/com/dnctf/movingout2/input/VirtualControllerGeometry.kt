@@ -144,7 +144,7 @@ object VirtualControllerGeometry {
         buttons[ControllerButton.X] = rect(face.x - faceOffset, face.y, faceSize, faceSize)
         buttons[ControllerButton.B] = rect(face.x + faceOffset, face.y, faceSize, faceSize)
 
-        fun VirtualControllerTopLayout.Bounds.toBounds() = Bounds(left, top, right, bottom)
+        fun VirtualControllerTopLayout.Bounds.toBounds() = Bounds(this.left, this.top, this.right, this.bottom)
         buttons[ControllerButton.LB] = top.leftBumper.toBounds()
         buttons[ControllerButton.BACK] = top.back.toBounds()
         buttons[ControllerButton.START] = top.start.toBounds()
