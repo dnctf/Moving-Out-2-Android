@@ -24,6 +24,7 @@ import com.dnctf.movingout2.compatibility.DeviceDiagnosticsProvider
 import com.dnctf.movingout2.input.RuntimeInputBridge
 import com.dnctf.movingout2.input.ControllerInputCoordinator
 import com.dnctf.movingout2.input.PhysicalGamepadManager
+import com.dnctf.movingout2.input.isGameControllerSource
 import com.dnctf.movingout2.input.ControllerProfile
 import com.dnctf.movingout2.input.ControllerProfileRepository
 import com.dnctf.movingout2.input.controllerProfileStorageKey
@@ -183,14 +184,14 @@ class MainActivity : Activity() {
         ControllerTestDialog.show(this, inputBridge, inputCoordinator, controllerProfile)
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.source and (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK) != 0) {
+        if (isGameControllerSource(event.source)) {
             if (::physicalGamepadManager.isInitialized) physicalGamepadManager.handleKey(event)?.let { return true }
         }
         return super.dispatchKeyEvent(event)
     }
 
     override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
-        if (event.source and (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK) != 0) {
+        if (isGameControllerSource(event.source)) {
             if (::physicalGamepadManager.isInitialized) physicalGamepadManager.handleMotion(event)?.let { return true }
         }
         return super.dispatchGenericMotionEvent(event)

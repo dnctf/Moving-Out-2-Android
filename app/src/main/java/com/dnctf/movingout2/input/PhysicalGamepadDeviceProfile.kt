@@ -53,6 +53,15 @@ data class PhysicalGamepadAxisLayout(
     }
 }
 
+/**
+ * Matches complete Android input sources rather than shared source-class bits.
+ * A keyboard also carries SOURCE_CLASS_BUTTON, so a non-zero bitwise intersection
+ * with SOURCE_GAMEPAD is not sufficient to identify a game controller.
+ */
+internal fun isGameControllerSource(sources: Int): Boolean =
+    (sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
+        (sources and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
+
 data class PhysicalGamepadDeviceProfile(
     val deviceId: Int,
     val name: String,

@@ -91,8 +91,8 @@ class PhysicalGamepadManager(
         stateStore.remove(deviceId)
         profiles.remove(deviceId)
     }
-    private fun isGamepad(device: InputDevice?): Boolean = device != null &&
-        (device.sources and (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK)) != 0
+    private fun isGamepad(device: InputDevice?): Boolean =
+        device != null && isGameControllerSource(device.sources)
 
     private fun emitDevice(deviceId: Int, connected: Boolean) {
         val profile = profiles[deviceId] ?: return

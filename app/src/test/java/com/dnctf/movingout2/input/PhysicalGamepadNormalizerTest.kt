@@ -1,5 +1,6 @@
 package com.dnctf.movingout2.input
 
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import org.junit.Assert.*
@@ -85,6 +86,16 @@ class PhysicalGamepadNormalizerTest {
             PhysicalGamepadNormalizer.hatButtons(normalizedRight, normalizedUp)
         )
     }
+    @Test fun sourceMatcherRejectsKeyboardAndTouchButAcceptsGamepadAndJoystick() {
+        // SOURCE_KEYBOARD shares SOURCE_CLASS_BUTTON with SOURCE_GAMEPAD.
+        // The complete source mask must be matched to avoid false discovery.
+        assertFalse(isGameControllerSource(InputDevice.SOURCE_KEYBOARD))
+        assertFalse(isGameControllerSource(InputDevice.SOURCE_TOUCHSCREEN))
+        assertTrue(isGameControllerSource(InputDevice.SOURCE_GAMEPAD))
+        assertTrue(isGameControllerSource(InputDevice.SOURCE_JOYSTICK))
+        assertTrue(isGameControllerSource(InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK))
+    }
+
     @Test fun standardAndroidButtonsMapToCanonicalButtons() {
         assertEquals(ControllerButton.A, GamepadKeyMapping.mapKeyCode(KeyEvent.KEYCODE_BUTTON_A))
         assertEquals(ControllerButton.RB, GamepadKeyMapping.mapKeyCode(KeyEvent.KEYCODE_BUTTON_R1))
