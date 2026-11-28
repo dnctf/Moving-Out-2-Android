@@ -52,7 +52,8 @@ class RuntimeManifestParserTest {
   put("box64","box64/bin/box64","box64")
   put("wine64","wine/bin/wine64","wine64")
   put("wineserver","wine/bin/wineserver","server")
-  val lib=File(root,"wine/lib/wine");lib.mkdirs();File(lib,"module.so").writeBytes(x64SharedElf());\n  val unix=File(lib,"x86_64-unix");unix.mkdirs();File(unix,"ntdll.so").writeBytes(x64SharedElf());File(unix,"win32u.so").writeBytes(x64SharedElf())
+  val lib=File(root,"wine/lib/wine");lib.mkdirs();File(lib,"module.so").writeBytes(x64SharedElf());
+  val unix=File(lib,"x86_64-unix");unix.mkdirs();File(unix,"ntdll.so").writeBytes(x64SharedElf());File(unix,"win32u.so").writeBytes(x64SharedElf())
   components.put("wineLib",JSONObject().put("included",true).put("path","wine/lib/wine").put("sha256",hashDir(lib)).put("abi","DIRECTORY_SHA256_X86_64"))
   val glibc=File(root,"wine/lib/x86_64-linux-gnu");glibc.mkdirs()
   File(glibc,"libc.so.6").writeBytes(x64SharedElf())
