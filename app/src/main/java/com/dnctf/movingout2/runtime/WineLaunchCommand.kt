@@ -3,7 +3,7 @@ package com.dnctf.movingout2.runtime
 import java.io.File
 
 object WineLaunchCommand {
-    /** Guest x86-64 search order: GNU glibc first, then Wine's Unix libraries. */
+    /** Guest x86-64 search order: GNU glibc first, then Wine UNIX modules and libraries. */
     fun guestLibrarySearchPath(guestGlibcDirectory: File?, guestWineLibraryDirectory: File?): String? =
         listOfNotNull(
             guestGlibcDirectory?.takeIf { it.isDirectory && it.canRead() },
