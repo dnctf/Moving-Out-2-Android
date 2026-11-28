@@ -305,7 +305,7 @@ jobs:
           set -euo pipefail
           [[ "$TURNIP_SHA256" =~ ^[a-fA-F0-9]{64}$ ]] || { echo "::error::Invalid pinned Turnip SHA-256"; exit 2; }
           curl --fail --location --retry 3 --retry-all-errors "$TURNIP_URL" -o "$RUNNER_TEMP/turnip.zip"
-          printf '%s  %s\\n' "$TURNIP_SHA256" "$RUNNER_TEMP/turnip.zip" | sha256sum --check --status
+          printf '%s  %s\n' "$TURNIP_SHA256" "$RUNNER_TEMP/turnip.zip" | sha256sum --check --status
           mkdir -p "$RUNNER_TEMP/turnip-extract" "$RUNNER_TEMP/runtime-input/turnip"
           unzip -q "$RUNNER_TEMP/turnip.zip" -d "$RUNNER_TEMP/turnip-extract"
           TURNIP_SO="$RUNNER_TEMP/turnip-extract/android/libvulkan_freedreno.so"
@@ -323,7 +323,7 @@ jobs:
           install -m 0644 "$TURNIP_SO" "$RUNNER_TEMP/runtime-input/turnip/libvulkan_freedreno.so"
           install -m 0644 "$TURNIP_META" "$RUNNER_TEMP/runtime-input/turnip/meta.json"
           curl --fail --location --retry 3 --retry-all-errors "$TURNIP_SOURCE_URL" -o "$RUNNER_TEMP/turnip-source.tar.xz"
-          printf '%s  %s\\n' "$TURNIP_SOURCE_SHA256" "$RUNNER_TEMP/turnip-source.tar.xz" | sha256sum --check --status
+          printf '%s  %s\n' "$TURNIP_SOURCE_SHA256" "$RUNNER_TEMP/turnip-source.tar.xz" | sha256sum --check --status
           install -m 0644 "$RUNNER_TEMP/turnip-source.tar.xz" "$RUNNER_TEMP/runtime-input/turnip/SOURCE.tar.xz"
           cp -a "$RUNNER_TEMP/turnip-extract/NOTICE" "$RUNNER_TEMP/runtime-input/turnip/NOTICE"
           cp -a "$RUNNER_TEMP/turnip-extract/LICENSES" "$RUNNER_TEMP/runtime-input/turnip/LICENSES"
@@ -338,6 +338,8 @@ jobs:
             --wine-dir "$RUNNER_TEMP/runtime-input/wine" \
             --dxvk-dir "$RUNNER_TEMP/runtime-input/dxvk/x64" \
             --xinput-dir "$RUNNER_TEMP/runtime-input/xinput" \
+            --turnip-so "$RUNNER_TEMP/runtime-input/turnip/libvulkan_freedreno.so" \
+            --turnip-license-dir "$RUNNER_TEMP/runtime-input/turnip" \
             --bundle-version "${{ inputs.bundle_version || '0.1.1' }}" \
             --output "dist/moving-out-2-runtime-arm64-v8a.zip"
           test -s dist/SHA256SUMS.txt
