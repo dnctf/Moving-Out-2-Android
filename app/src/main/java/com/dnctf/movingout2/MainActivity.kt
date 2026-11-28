@@ -272,6 +272,7 @@ class MainActivity : Activity() {
         val activityRef = java.lang.ref.WeakReference(this)
         val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
         val appContext = applicationContext
+        val installationRepository = repository
         Thread({
             val result = runCatching {
                 com.dnctf.movingout2.installation.SafGameImporter(appContext).import(
@@ -289,7 +290,7 @@ class MainActivity : Activity() {
                     },
                     cancelled = { cancelled.get() }
                 ).also { imported ->
-                    repository.registerImported(imported.gameRoot.absolutePath)
+                    installationRepository.registerImported(imported.gameRoot.absolutePath)
                 }
             }
             mainHandler.post {
