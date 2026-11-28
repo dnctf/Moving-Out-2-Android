@@ -47,10 +47,11 @@ class WineRuntimeLauncherTest {
         val root = java.nio.file.Files.createTempDirectory("guest-glibc-path").toFile()
         val glibc = File(root, "wine/lib/x86_64-linux-gnu").apply { mkdirs() }
         val wineLib = File(root, "wine/lib/wine").apply { mkdirs() }
+        File(wineLib, "x86_64-unix").mkdirs()
         val host = File(root, "host-arm64").apply { mkdirs() }
         val env = WineLaunchCommand.environment(File(root, "prefix"), File(root, "shm"), host, 30,
             guestLibraryDirectory = wineLib, guestGlibcDirectory = glibc)
-        assertEquals(glibc.absolutePath + ":" + wineLib.absolutePath, env["BOX64_LD_LIBRARY_PATH"])
+        assertEquals(glibc.absolutePath + ":" + File(wineLib, "x86_64-unix").absolutePath + ":" + wineLib.absolutePath, env["BOX64_LD_LIBRARY_PATH"])
         assertEquals(host.absolutePath, env["LD_LIBRARY_PATH"])
         assertFalse(env["LD_LIBRARY_PATH"]!!.contains("x86_64-linux-gnu"))
         root.deleteRecursively()
