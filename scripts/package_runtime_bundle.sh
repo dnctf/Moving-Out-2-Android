@@ -48,7 +48,8 @@ cp -aL "$WINE_DIR/lib/wine" "$ROOT/wine/lib/wine";mkdir -p "$ROOT/wine/lib/wine/
 for unix_module in ntdll.so win32u.so; do
   cp "$ROOT/wine/lib/wine/x86_64-unix/$unix_module" "$ROOT/wine/lib/wine/$unix_module"
   check_elf_shared "$ROOT/wine/lib/wine/$unix_module" "Advanced Micro Devices X86-64"
-donecp -aL "$WINE_DIR/lib/x86_64-linux-gnu" "$ROOT/wine/lib/x86_64-linux-gnu";cp "$DXVK_DIR/d3d11.dll" "$ROOT/dxvk/x64/";cp "$DXVK_DIR/dxgi.dll" "$ROOT/dxvk/x64/"
+done
+cp -aL "$WINE_DIR/lib/x86_64-linux-gnu" "$ROOT/wine/lib/x86_64-linux-gnu";cp "$DXVK_DIR/d3d11.dll" "$ROOT/dxvk/x64/";cp "$DXVK_DIR/dxgi.dll" "$ROOT/dxvk/x64/"
 cp "$XINPUT_DIR/xinput1_3.dll" "$ROOT/wine/lib/wine/x86_64-windows/";cp "$XINPUT_DIR/xinput1_4.dll" "$ROOT/wine/lib/wine/x86_64-windows/";cp "$XINPUT_DIR/xinput9_1_0.dll" "$ROOT/wine/lib/wine/x86_64-windows/"
 for redistributable in vcruntime140.dll vcruntime140_1.dll msvcp140.dll; do
   source="$WINE_DIR/lib/wine/x86_64-windows/$redistributable"
