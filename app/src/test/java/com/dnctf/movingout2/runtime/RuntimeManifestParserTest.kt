@@ -50,7 +50,7 @@ class RuntimeManifestParserTest {
   put("box64","box64/bin/box64","box64")
   put("wine64","wine/bin/wine64","wine64")
   put("wineserver","wine/bin/wineserver","server")
-  val lib=File(root,"wine/lib/wine");lib.mkdirs();File(lib,"module.so").writeText("module")
+  val lib=File(root,"wine/lib/wine");lib.mkdirs();File(lib,"module.so").writeBytes(x64SharedElf());\n  val unix=File(lib,"x86_64-unix");unix.mkdirs();File(unix,"ntdll.so").writeBytes(x64SharedElf());File(unix,"win32u.so").writeBytes(x64SharedElf())
   components.put("wineLib",JSONObject().put("included",true).put("path","wine/lib/wine").put("sha256",hashDir(lib)).put("abi","DIRECTORY_SHA256_X86_64"))
   val glibc=File(root,"wine/lib/x86_64-linux-gnu");glibc.mkdirs()
   File(glibc,"libc.so.6").writeBytes(x64SharedElf())
@@ -85,7 +85,7 @@ class RuntimeManifestParserTest {
   return root
  }
  private fun hashDir(dir:File):String{val listing=StringBuilder();dir.walkTopDown().filter{it.isFile}.sortedBy{it.relativeTo(dir).invariantSeparatorsPath}.forEach{f->listing.append(sha(f)).append("  ./").append(f.relativeTo(dir).invariantSeparatorsPath).append('\n')};val d=MessageDigest.getInstance("SHA-256");d.update(listing.toString().toByteArray(Charsets.UTF_8));return d.digest().joinToString(""){"%02x".format(it)}}
- @Test fun acceptsValidBundleWithAndWithoutTurnip(){val a=fixture();assertTrue(RuntimeManifestParser().validate(a).errors.toString(),RuntimeManifestParser().validate(a).valid);a.deleteRecursively();val b=fixture(true);assertTrue(RuntimeManifestParser().validate(b).errors.toString(),RuntimeManifestParser().validate(b).valid);b.deleteRecursively()}
+ @Test fun acceptsValidBundleWithAndWithoutTurnip(){val a=fixture();val ar=RuntimeManifestParser().validate(a);println("NON_TURNIP_MANIFEST_ERRORS=${ar.errors}");assertTrue(ar.errors.toString(),ar.valid);a.deleteRecursively();val b=fixture(true);val br=RuntimeManifestParser().validate(b);println("TURNIP_MANIFEST_ERRORS=${br.errors}");assertTrue(br.errors.toString(),br.valid);b.deleteRecursively()}
  @Test fun rejectsMissingGuestGlibcComponent(){
   val root=fixture()
   val json=JSONObject(File(root,"runtime-manifest.json").readText())
